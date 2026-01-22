@@ -2,14 +2,29 @@
 
 Este diretório contém as migrações SQL do banco de dados PostgreSQL (Supabase).
 
-## Estrutura
+## Ordem de Aplicação (Obrigatória)
 
-As migrações são numeradas sequencialmente e devem ser aplicadas em ordem:
+As migrações devem ser aplicadas nesta ordem exata:
 
-- `001_init.sql` - Estrutura inicial do banco (FASE 1)
-- `002_auth_profiles_trigger.sql` - Sincronização automática Auth -> Profiles (FASE 1)
-- `003_rls.sql` - Row Level Security policies (FASE 2+)
-- `004_seed.sql` - Dados iniciais para desenvolvimento (opcional)
+1. **`001_init.sql`** - Estrutura inicial do banco (FASE 1)
+   - Cria todas as tabelas: profiles, contests, participations, draws, payments
+
+2. **`002_rls_profiles.sql`** - Row Level Security para tabela profiles (FASE 2)
+
+3. **`003_rls_contests.sql`** - Row Level Security para tabela contests (FASE 2)
+
+4. **`004_rls_draws.sql`** - Row Level Security para tabela draws (FASE 2)
+
+5. **`005_rls_payments.sql`** - Row Level Security para tabela payments (FASE 2)
+
+6. **`006_rls_participations.sql`** - Row Level Security para tabela participations (FASE 2)
+
+## Migrações Opcionais
+
+- **`002_auth_profiles_trigger.sql`** - Sincronização automática Auth -> Profiles (FASE 1)
+  - ⚠️ **Opcional**: Pode falhar por permissões em `auth.users` dependendo da configuração do Supabase
+  - Se falhar, você pode criar perfis manualmente ou ajustar permissões
+
 
 ## Aplicação das Migrações
 

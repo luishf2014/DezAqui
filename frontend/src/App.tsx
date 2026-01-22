@@ -1,13 +1,21 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './contexts/AuthContext'
 import Home from './pages/Home'
+import ContestsListPage from './pages/ContestsListPage'
+import ContestDetailsPage from './pages/ContestDetailsPage'
+import JoinContestPage from './pages/JoinContestPage'
 
 function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<Home />} />
+          <Route path="/" element={<Navigate to="/contests" replace />} />
+          <Route path="/home" element={<Home />} />
+          <Route path="/contests" element={<ContestsListPage />} />
+          <Route path="/contests/:id" element={<ContestDetailsPage />} />
+          {/* CHATGPT: Rota de participação adicionada */}
+          <Route path="/contests/:id/join" element={<JoinContestPage />} />
         </Routes>
       </BrowserRouter>
     </AuthProvider>

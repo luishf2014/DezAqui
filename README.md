@@ -57,7 +57,7 @@ Construir uma solução:
 
 2. **Configure o Supabase**
    - Crie um projeto no Supabase
-   - Execute as migrações em `backend/migrations/001_init.sql` no SQL Editor
+   - Execute as migrações na ordem correta (veja `backend/migrations/README.md`)
    - Anote a URL do projeto e a chave anon
 
 3. **Configure o Frontend**
@@ -250,15 +250,23 @@ Toda e qualquer responsabilidade legal, fiscal, regulatória ou comercial relaci
 
 ### 🟡 FASE 2 — Participações e Ranking
 
-**Objetivo:** Experiência completa do usuário final
+**Objetivo:** Segurança e experiência completa do usuário final
 
+**Segurança (RLS):**
+* [x] RLS da tabela profiles
+* [x] RLS da tabela contests
+* [x] RLS da tabela draws
+* [x] RLS da tabela payments
+* [x] RLS da tabela participations
+
+**Participações e Ranking:**
 * [ ] Pré-cadastro de usuários
-* [ ] Volante numérico dinâmico
-* [ ] Surpresinha automática
-* [ ] Status da participação (pendente / ativa)
+* [x] Volante numérico dinâmico
+* [x] Surpresinha automática
+* [x] Status da participação (pendente / ativa)
 * [ ] Ranking em tempo real
 * [ ] Destaque visual dos números sorteados
-* [ ] Histórico de sorteios
+* [x] Histórico de sorteios
 
 ---
 
