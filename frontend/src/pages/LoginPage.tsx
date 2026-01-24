@@ -1,25 +1,27 @@
 /**
- * Página de Login
+ * Página de Login/Cadastro
  * FASE 1: Autenticação Administrativa
  * 
- * Permite que usuários façam login com email e senha
+ * Permite que usuários façam login ou criem uma nova conta
  */
 import { useState, FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { useAuth } from '../contexts/AuthContext'
 
 export default function LoginPage() {
   const navigate = useNavigate()
-  const { refreshProfile } = useAuth()
+  const [isSignUp, setIsSignUp] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [name, setName] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
 
-  const handleSubmit = async (e: FormEvent) => {
+  const handleLogin = async (e: FormEvent) => {
     e.preventDefault()
     setError(null)
+    setSuccess(null)
     setLoading(true)
 
     try {
@@ -34,15 +36,44 @@ export default function LoginPage() {
       }
 
       if (data.user) {
-        // CHATGPT: atualizar profile após login
-        await refreshProfile()
-        
-        // Redirecionar baseado no perfil
-        // Se admin, vai para /admin, senão volta para /contests
         navigate('/contests')
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro inesperado ao fazer login')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleSignUp = async (e: FormEvent) => {
+    e.preventDefault()
+    setError(null)
+    setSuccess(null)
+    setLoading(true)
+
+    try {
+      const { data, error: signUpError } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            full_name: name,
+          },
+        },
+      })
+
+      if (signUpError) {
+        setError(signUpError.message || 'Erro ao criar conta')
+        return
+      }
+
+      if (data.user) {
+        setSuccess('Conta criada com sucesso! Você já pode fazer login.')
+        setIsSignUp(false)
+        setPassword('')
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro inesperado ao criar conta')
     } finally {
       setLoading(false)
     }
@@ -53,21 +84,44 @@ export default function LoginPage() {
       <div className="max-w-md w-full space-y-8">
         <div>
           <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-            Login
+            {isSignUp ? 'Criar Conta' : 'Login'}
           </h2>
           <p className="mt-2 text-center text-sm text-gray-600">
-            Acesse sua conta para continuar
+            {isSignUp ? 'Crie sua conta para começar' : 'Acesse sua conta para continuar'}
           </p>
         </div>
 
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+        <form className="mt-8 space-y-6" onSubmit={isSignUp ? handleSignUp : handleLogin}>
           {error && (
             <div className="rounded-md bg-red-50 p-4">
               <div className="text-sm text-red-700">{error}</div>
             </div>
           )}
 
+          {success && (
+            <div className="rounded-md bg-green-50 p-4">
+              <div className="text-sm text-green-700">{success}</div>
+            </div>
+          )}
+
           <div className="rounded-md shadow-sm -space-y-px">
+            {isSignUp && (
+              <div>
+                <label htmlFor="name" className="sr-only">
+                  Nome completo
+                </label>
+                <input
+                  id="name"
+                  name="name"
+                  type="text"
+                  required
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
+                  placeholder="Nome completo"
+                />
+              </div>
+            )}
             <div>
               <label htmlFor="email" className="sr-only">
                 Email
@@ -80,7 +134,9 @@ export default function LoginPage() {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
+                className={`appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 ${
+                  isSignUp ? '' : 'rounded-t-md'
+                } focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm`}
                 placeholder="Email"
               />
             </div>
@@ -92,12 +148,12 @@ export default function LoginPage() {
                 id="password"
                 name="password"
                 type="password"
-                autoComplete="current-password"
+                autoComplete={isSignUp ? 'new-password' : 'current-password'}
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
-                placeholder="Senha"
+                placeholder={isSignUp ? 'Senha (mínimo 6 caracteres)' : 'Senha'}
               />
             </div>
           </div>
@@ -115,7 +171,21 @@ export default function LoginPage() {
                 }
               `}
             >
-              {loading ? 'Entrando...' : 'Entrar'}
+              {loading ? (isSignUp ? 'Criando conta...' : 'Entrando...') : (isSignUp ? 'Criar Conta' : 'Entrar')}
+            </button>
+          </div>
+
+          <div className="text-center">
+            <button
+              type="button"
+              onClick={() => {
+                setIsSignUp(!isSignUp)
+                setError(null)
+                setSuccess(null)
+              }}
+              className="text-sm text-blue-600 hover:text-blue-500"
+            >
+              {isSignUp ? 'Já tem uma conta? Faça login' : 'Não tem uma conta? Cadastre-se'}
             </button>
           </div>
         </form>
