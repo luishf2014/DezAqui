@@ -48,15 +48,15 @@ export default function NumberPicker({
   return (
     <div className="space-y-4">
       {/* Contador e ações */}
-      <div className="flex justify-between items-center">
-        <div className="text-sm font-medium text-gray-700">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-0">
+        <div className="text-sm font-semibold text-[#1F1F1F]">
           {selectedNumbers.length} de {maxSelected} selecionados
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 w-full sm:w-auto">
           <button
             type="button"
             onClick={generateRandom}
-            className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 transition-colors text-sm"
+            className="flex-1 sm:flex-none px-4 py-2 bg-[#1E7F43] text-white rounded-xl hover:bg-[#3CCB7F] transition-colors text-sm font-semibold shadow-lg"
           >
             Surpresinha
           </button>
@@ -64,7 +64,7 @@ export default function NumberPicker({
             <button
               type="button"
               onClick={clearSelection}
-              className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors text-sm"
+              className="flex-1 sm:flex-none px-4 py-2 bg-[#E5E5E5] text-[#1F1F1F] rounded-xl hover:bg-[#E5E5E5]/80 transition-colors text-sm font-semibold"
             >
               Limpar
             </button>
@@ -73,7 +73,7 @@ export default function NumberPicker({
       </div>
 
       {/* Grid de números */}
-      <div className="grid grid-cols-6 sm:grid-cols-8 md:grid-cols-10 gap-2">
+      <div className="grid grid-cols-5 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-2">
         {numbers.map((number) => {
           const isSelected = selectedNumbers.includes(number)
           const isDisabled =
@@ -86,13 +86,13 @@ export default function NumberPicker({
               onClick={() => toggleNumber(number)}
               disabled={isDisabled}
               className={`
-                px-4 py-3 rounded-lg font-medium text-sm transition-all
+                px-2 py-2 sm:px-3 sm:py-2.5 md:px-4 md:py-3 rounded-lg sm:rounded-xl font-bold text-xs sm:text-sm transition-all
                 ${
                   isSelected
-                    ? 'bg-blue-600 text-white shadow-md scale-105'
+                    ? 'bg-[#F4C430] text-[#1F1F1F] shadow-md scale-105'
                     : isDisabled
-                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                    : 'bg-white text-gray-700 border-2 border-gray-300 hover:border-blue-500 hover:bg-blue-50'
+                    ? 'bg-[#F9F9F9] text-[#E5E5E5] cursor-not-allowed border border-[#E5E5E5]'
+                    : 'bg-white text-[#1F1F1F] border-2 border-[#E5E5E5] hover:border-[#1E7F43] hover:bg-[#F9F9F9]'
                 }
               `}
             >
@@ -104,15 +104,15 @@ export default function NumberPicker({
 
       {/* Números selecionados */}
       {selectedNumbers.length > 0 && (
-        <div className="mt-4 p-4 bg-blue-50 rounded-lg">
-          <p className="text-sm font-medium text-gray-700 mb-2">
+        <div className="mt-4 p-4 bg-[#F9F9F9] rounded-xl border border-[#E5E5E5]">
+          <p className="text-sm font-semibold text-[#1F1F1F] mb-2">
             Números selecionados:
           </p>
           <div className="flex flex-wrap gap-2">
             {selectedNumbers.map((number) => (
               <span
                 key={number}
-                className="px-3 py-1 bg-blue-600 text-white rounded-full text-sm font-medium"
+                className="px-3 py-1 bg-[#F4C430] text-[#1F1F1F] rounded-full text-sm font-bold"
               >
                 {number}
               </span>

@@ -11,6 +11,8 @@ import { createParticipation } from '../services/participationsService'
 import { Contest } from '../types'
 import NumberPicker from '../components/NumberPicker'
 import { useAuth } from '../contexts/AuthContext'
+import Header from '../components/Header'
+import Footer from '../components/Footer'
 
 export default function JoinContestPage() {
   const { id } = useParams<{ id: string }>()
@@ -105,47 +107,59 @@ export default function JoinContestPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Carregando concurso...</p>
+      <div className="min-h-screen bg-[#F9F9F9] flex flex-col">
+        <Header />
+        <div className="flex items-center justify-center flex-1">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#1E7F43] mx-auto"></div>
+            <p className="mt-4 text-[#1F1F1F]/70">Carregando concurso...</p>
+          </div>
         </div>
+        <Footer />
       </div>
     )
   }
 
   if (error && !contest) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-red-600 text-xl mb-2">⚠️ Erro</div>
-          <p className="text-gray-700 mb-4">{error}</p>
-          <Link
-            to="/contests"
-            className="text-blue-600 hover:text-blue-800 underline"
-          >
-            Voltar para lista de concursos
-          </Link>
+      <div className="min-h-screen bg-[#F9F9F9] flex flex-col">
+        <Header />
+        <div className="flex items-center justify-center flex-1 px-4">
+          <div className="text-center">
+            <div className="text-red-600 text-xl mb-2">⚠️ Erro</div>
+            <p className="text-[#1F1F1F]/70 mb-4">{error}</p>
+            <Link
+              to="/contests"
+              className="text-[#1E7F43] hover:text-[#3CCB7F] underline font-semibold"
+            >
+              Voltar para lista de concursos
+            </Link>
+          </div>
         </div>
+        <Footer />
       </div>
     )
   }
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-red-600 text-xl mb-2">⚠️ Autenticação necessária</div>
-          <p className="text-gray-700 mb-4">
-            Você precisa estar logado para participar de concursos
-          </p>
-          <Link
-            to="/contests"
-            className="text-blue-600 hover:text-blue-800 underline"
-          >
-            Voltar para lista de concursos
-          </Link>
+      <div className="min-h-screen bg-[#F9F9F9] flex flex-col">
+        <Header />
+        <div className="flex items-center justify-center flex-1 px-4">
+          <div className="text-center">
+            <div className="text-red-600 text-xl mb-2">⚠️ Autenticação necessária</div>
+            <p className="text-[#1F1F1F]/70 mb-4">
+              Você precisa estar logado para participar de concursos
+            </p>
+            <Link
+              to="/contests"
+              className="text-[#1E7F43] hover:text-[#3CCB7F] underline font-semibold"
+            >
+              Voltar para lista de concursos
+            </Link>
+          </div>
         </div>
+        <Footer />
       </div>
     )
   }
@@ -154,65 +168,75 @@ export default function JoinContestPage() {
 
   if (success) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-green-600 text-4xl mb-4">✓</div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">
-            Participação criada com sucesso!
-          </h2>
-          <p className="text-gray-600 mb-4">
-            Status: <span className="font-medium">Pendente</span>
-          </p>
-          <p className="text-sm text-gray-500">
-            Redirecionando para o concurso...
-          </p>
+      <div className="min-h-screen bg-[#F9F9F9] flex flex-col">
+        <Header />
+        <div className="flex items-center justify-center flex-1 px-4">
+          <div className="text-center rounded-3xl border border-[#E5E5E5] bg-white p-8 shadow-xl">
+            <div className="text-[#1E7F43] text-4xl mb-4">✓</div>
+            <h2 className="text-2xl font-extrabold text-[#1F1F1F] mb-2">
+              Participação criada com sucesso!
+            </h2>
+            <p className="text-[#1F1F1F]/70 mb-4">
+              Status: <span className="font-semibold text-[#1E7F43]">Pendente</span>
+            </p>
+            <p className="text-sm text-[#1F1F1F]/60">
+              Redirecionando para o concurso...
+            </p>
+          </div>
         </div>
+        <Footer />
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="container mx-auto px-4 py-8">
+    <div className="min-h-screen bg-[#F9F9F9] flex flex-col">
+      <Header />
+      <div className="container mx-auto px-2 sm:px-4 py-4 sm:py-6 md:py-8 flex-1 max-w-4xl">
         <Link
           to={`/contests/${id}`}
-          className="text-blue-600 hover:text-blue-800 mb-4 inline-block"
+          className="text-[#1E7F43] hover:text-[#3CCB7F] mb-4 inline-block font-semibold transition-colors text-sm sm:text-base"
         >
-          ← Voltar para o concurso
+          <span className="hidden sm:inline">← Voltar para o concurso</span>
+          <span className="sm:hidden">← Voltar</span>
         </Link>
 
-        <div className="bg-white rounded-lg shadow p-6 mb-6">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
+        <div className="rounded-2xl sm:rounded-3xl border border-[#E5E5E5] bg-white p-4 sm:p-6 mb-6 shadow-xl">
+          <h1 className="text-xl sm:text-2xl md:text-3xl font-extrabold text-[#1F1F1F] mb-2">
             Participar: {contest.name}
           </h1>
           {contest.description && (
-            <p className="text-gray-600 mb-4">{contest.description}</p>
+            <p className="text-[#1F1F1F]/70 mb-4">{contest.description}</p>
           )}
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-            <div>
-              <span className="text-gray-600">Intervalo numérico:</span>
-              <span className="ml-2 font-medium">
-                {contest.min_number} - {contest.max_number}
-              </span>
-            </div>
-            <div>
-              <span className="text-gray-600">Números por participação:</span>
-              <span className="ml-2 font-medium">
-                {contest.numbers_per_participation}
-              </span>
-            </div>
-            <div>
-              <span className="text-gray-600">Status:</span>
-              <span className="ml-2 px-2 py-1 bg-green-100 text-green-800 rounded text-xs font-medium">
-                {contest.status}
-              </span>
+          <div className="rounded-2xl border border-[#E5E5E5] bg-[#F9F9F9] p-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+              <div>
+                <span className="text-[#1F1F1F]/60">Intervalo numérico:</span>
+                <span className="ml-2 font-semibold">
+                  <span className="px-2 py-1 bg-[#F4C430] text-[#1F1F1F] rounded font-bold">{contest.min_number}</span>
+                  {' - '}
+                  <span className="px-2 py-1 bg-[#F4C430] text-[#1F1F1F] rounded font-bold">{contest.max_number}</span>
+                </span>
+              </div>
+              <div>
+                <span className="text-[#1F1F1F]/60">Números por participação:</span>
+                <span className="ml-2 px-2 py-1 bg-[#F4C430] text-[#1F1F1F] rounded font-bold">
+                  {contest.numbers_per_participation}
+                </span>
+              </div>
+              <div>
+                <span className="text-[#1F1F1F]/60">Status:</span>
+                <span className="ml-2 px-3 py-1 bg-[#3CCB7F]/20 text-[#1E7F43] rounded-full text-xs font-semibold">
+                  {contest.status}
+                </span>
+              </div>
             </div>
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">
+        <form onSubmit={handleSubmit} className="rounded-2xl sm:rounded-3xl border border-[#E5E5E5] bg-white p-4 sm:p-6 shadow-xl">
+          <h2 className="text-xl sm:text-2xl font-extrabold text-[#1F1F1F] mb-4">
             Escolha seus números
           </h2>
 
@@ -225,12 +249,12 @@ export default function JoinContestPage() {
           />
 
           {error && (
-            <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+            <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-xl">
               <p className="text-red-700 text-sm">{error}</p>
             </div>
           )}
 
-          <div className="mt-6 flex gap-4">
+          <div className="mt-6 flex flex-col sm:flex-row gap-3 sm:gap-4">
             <button
               type="submit"
               disabled={
@@ -238,12 +262,12 @@ export default function JoinContestPage() {
                 selectedNumbers.length !== contest.numbers_per_participation
               }
               className={`
-                flex-1 py-3 px-6 rounded-lg font-medium transition-colors
+                w-full sm:flex-1 py-3 px-6 rounded-xl font-semibold transition-colors shadow-lg text-sm sm:text-base
                 ${
                   submitting ||
                   selectedNumbers.length !== contest.numbers_per_participation
-                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                    ? 'bg-[#E5E5E5] text-[#1F1F1F]/60 cursor-not-allowed'
+                    : 'bg-[#1E7F43] text-white hover:bg-[#3CCB7F]'
                 }
               `}
             >
@@ -251,13 +275,14 @@ export default function JoinContestPage() {
             </button>
             <Link
               to={`/contests/${id}`}
-              className="py-3 px-6 rounded-lg font-medium bg-gray-200 text-gray-700 hover:bg-gray-300 transition-colors"
+              className="w-full sm:w-auto py-3 px-6 rounded-xl font-semibold bg-[#E5E5E5] text-[#1F1F1F] hover:bg-[#E5E5E5]/80 transition-colors text-center text-sm sm:text-base"
             >
               Cancelar
             </Link>
           </div>
         </form>
       </div>
+      <Footer />
     </div>
   )
 }
