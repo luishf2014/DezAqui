@@ -242,9 +242,28 @@ Toda e qualquer responsabilidade legal, fiscal, regulatória ou comercial relaci
   * [x] Participações
   * [x] Sorteios
   * [x] Pagamentos
-* [ ] Autenticação administrativa
-* [ ] Painel administrativo básico
-* [ ] CRUD de concursos
+* [x] Autenticação administrativa
+  * [x] Sistema de login/cadastro
+  * [x] Contexto de autenticação (AuthContext)
+  * [x] Verificação de permissões admin (isAdmin)
+  * [x] Proteção de rotas administrativas (RequireAdmin)
+  * [x] Correção de políticas RLS para perfis
+  * [x] Logout funcional com transições suaves
+  * [x] Redirecionamento automático pós-login baseado em role
+  * [x] Persistência de sessão
+* [x] Painel administrativo básico
+  * [x] Dashboard administrativo (/admin)
+  * [x] Lista de concursos (/admin/contests)
+  * [x] Formulário de criar/editar concursos (/admin/contests/new, /admin/contests/:id)
+  * [x] Placeholders para módulos futuros (sorteios, participantes, ativações, financeiro, relatórios)
+  * [x] Navegação e layout consistente
+* [x] CRUD de concursos
+  * [x] Criar novo concurso
+  * [x] Listar todos os concursos
+  * [x] Visualizar detalhes do concurso
+  * [x] Editar concurso existente
+  * [x] Deletar concurso
+  * [x] Filtros por status (Todos, Ativos, Rascunhos, Finalizados)
 
 ---
 
