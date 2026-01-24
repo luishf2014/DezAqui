@@ -4,7 +4,7 @@
  * 
  * Página para listar, visualizar e gerenciar todos os concursos
  */
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import Header from '../../components/Header'
 import Footer from '../../components/Footer'
@@ -12,6 +12,7 @@ import { listAllContests, deleteContest } from '../../services/contestsService'
 import { Contest } from '../../types'
 
 export default function AdminContestsList() {
+  const navigate = useNavigate()
   const [contests, setContests] = useState<Contest[]>([])
   const [loading, setLoading] = useState(true)
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -69,6 +70,15 @@ export default function AdminContestsList() {
       <main className="flex-1 container mx-auto px-4 sm:px-6 lg:px-8 py-8 max-w-7xl">
         {/* Cabeçalho */}
         <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <button
+            onClick={() => navigate('/admin')}
+            className="text-[#1E7F43] hover:text-[#3CCB7F] font-semibold mb-4 flex items-center gap-2"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            Voltar ao Dashboard
+          </button>
           <div>
             <h1 className="text-3xl sm:text-4xl font-extrabold text-[#1F1F1F] mb-2">
               Gerenciar Concursos
@@ -89,7 +99,7 @@ export default function AdminContestsList() {
         </div>
 
         {/* Filtros */}
-        <div className="mb-6 flex flex-wrap gap-2">
+        <div className="mb-6 flex flex-wrap gap-2 justify-center">
           <button
             onClick={() => setFilterStatus('all')}
             className={`px-4 py-2 rounded-xl font-semibold text-sm transition-all ${

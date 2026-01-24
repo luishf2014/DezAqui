@@ -10,20 +10,33 @@ import { Contest, ContestStatus } from '../types'
 
 /**
  * Lista todos os concursos ativos
- * Usuários autenticados podem ver apenas concursos com status = 'active'
+ * MODIFIQUEI AQUI - Usuários autenticados e não autenticados podem ver concursos com status = 'active'
  */
 export async function listActiveContests(): Promise<Contest[]> {
-  const { data, error } = await supabase
-    .from('contests')
-    .select('*')
-    .eq('status', 'active')
-    .order('created_at', { ascending: false })
+  try {
+    const { data, error } = await supabase
+      .from('contests')
+      .select('*')
+      .eq('status', 'active')
+      .order('created_at', { ascending: false })
 
-  if (error) {
-    throw new Error(`Erro ao buscar concursos: ${error.message}`)
+    if (error) {
+      console.error('[contestsService] Erro ao buscar concursos ativos:', {
+        error,
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint
+      })
+      throw new Error(`Erro ao buscar concursos: ${error.message}`)
+    }
+
+    console.log('[contestsService] Concursos ativos encontrados:', data?.length || 0)
+    return data || []
+  } catch (err) {
+    console.error('[contestsService] Exceção ao buscar concursos:', err)
+    throw err
   }
-
-  return data || []
 }
 
 /**

@@ -155,18 +155,21 @@ export default function AdminContestForm() {
       <main className="flex-1 container mx-auto px-4 sm:px-6 lg:px-8 py-8 max-w-4xl">
         {/* Cabeçalho */}
         <div className="mb-6">
+          <div className='mb-6 relative flex flex-col sm:flex-row sm:items-center'>
           <button
             onClick={() => navigate('/admin/contests')}
-            className="text-[#1E7F43] hover:text-[#3CCB7F] font-semibold mb-4 flex items-center gap-2"
+            className="text-[#1E7F43] hover:text-[#3CCB7F] font-semibold mb-4 sm:mb-0 flex items-center gap-2"
           >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
             Voltar para lista
           </button>
-          <h1 className="text-3xl sm:text-4xl font-extrabold text-[#1F1F1F] mb-2">
+          <h1 className="text-3xl sm:text-4xl font-extrabold text-[#1F1F1F] mb-2 sm:absolute sm:left-1/2 sm:-translate-x-1/2 sm:mb-0">
             {isEditing ? 'Editar Concurso' : 'Criar Novo Concurso'}
           </h1>
+          </div>
+          
           <p className="text-[#1F1F1F]/70">
             {isEditing ? 'Atualize as informações do concurso' : 'Preencha os dados para criar um novo concurso'}
           </p>

@@ -7,27 +7,64 @@
 import { supabase } from '../lib/supabase'
 import { User } from '../types'
 
+// MODIFIQUEI AQUI - Interface para tipar erros do Supabase
+interface SupabaseError {
+  code?: string
+  message?: string
+  details?: string
+  hint?: string
+}
+
 /**
  * Busca o perfil completo do usuário logado
  * Inclui informações de is_admin
+ * MODIFIQUEI AQUI - Usa uma abordagem mais direta que funciona melhor com RLS
  */
 export async function getCurrentUserProfile(): Promise<User | null> {
   try {
     const { data: { user: authUser }, error: authError } = await supabase.auth.getUser()
     
     if (authError) {
-      console.error('Erro ao obter usuário autenticado:', authError)
+      console.error('[profilesService] Erro ao obter usuário autenticado:', authError)
       return null
     }
     
     if (!authUser) {
-      console.log('Nenhum usuário autenticado')
+      console.log('[profilesService] Nenhum usuário autenticado')
       return null
     }
 
-    return await getUserProfileById(authUser.id)
+    // MODIFIQUEI AQUI - Buscar usando o ID do usuário autenticado
+    // A política RLS permite que usuários vejam seu próprio perfil quando id = auth.uid()
+    console.log('[profilesService] Buscando perfil do usuário atual usando RLS...')
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, email, name, phone, is_admin, created_at, updated_at')
+      .eq('id', authUser.id)
+      .maybeSingle()
+    
+    if (error) {
+      console.error('[profilesService] Erro ao buscar perfil do usuário atual:', error)
+      return await getUserProfileById(authUser.id)
+    }
+    
+    if (!data) {
+      console.warn('[profilesService] Perfil não encontrado para o usuário atual')
+      return await getUserProfileById(authUser.id)
+    }
+    
+    // Normalizar is_admin
+    const normalizedData = {
+      ...data,
+      is_admin: typeof data.is_admin === 'string' 
+        ? data.is_admin.toLowerCase() === 'true' 
+        : Boolean(data.is_admin)
+    }
+    
+    console.log('[profilesService] ✅ Perfil do usuário atual carregado:', normalizedData)
+    return normalizedData
   } catch (error) {
-    console.error('Erro inesperado ao buscar perfil:', error)
+    console.error('[profilesService] Erro inesperado ao buscar perfil:', error)
     return null
   }
 }
@@ -38,26 +75,56 @@ export async function getCurrentUserProfile(): Promise<User | null> {
  */
 export async function getUserProfileById(userId: string): Promise<User | null> {
   try {
-    const { data, error } = await supabase
+    console.log('[profilesService] Buscando perfil para userId:', userId)
+    
+    // MODIFIQUEI AQUI - Busca principal pelo id do profile
+    const byId = await supabase
       .from('profiles')
-      .select('*')
+      .select('id, email, name, phone, is_admin, created_at, updated_at')
       .eq('id', userId)
-      .single()
+      .maybeSingle()
+    
+    // MODIFIQUEI AQUI - Logar o RESULTADO COMPLETO após maybeSingle()
+    console.log('[profilesService] byId', { userId, data: byId.data, error: byId.error })
 
-    if (error) {
-      if (error.code === 'PGRST116') {
-        // Perfil não encontrado
-        console.warn('Perfil não encontrado para o usuário:', userId)
-        return null
+    if (byId.data) {
+      // MODIFIQUEI AQUI - Normalizar is_admin para boolean
+      const normalized = {
+        ...byId.data,
+        is_admin: typeof byId.data.is_admin === 'string' 
+          ? byId.data.is_admin.toLowerCase() === 'true' 
+          : Boolean(byId.data.is_admin)
       }
-      console.error('Erro ao buscar perfil:', error)
-      throw new Error(`Erro ao buscar perfil: ${error.message}`)
+      console.log('[profilesService] ✅ Perfil encontrado por id:', normalized)
+      return normalized
     }
 
-    console.log('Perfil carregado com sucesso:', { id: data?.id, is_admin: data?.is_admin })
-    return data
+    // MODIFIQUEI AQUI - Removido fallback para user_id (coluna não existe no schema)
+    // O schema usa apenas 'id' como chave primária que referencia auth.users(id)
+
+    console.warn('[profilesService] ⚠️ Perfil não encontrado para userId:', userId)
+    
+    // MODIFIQUEI AQUI - Log detalhado do erro para diagnóstico
+    if (byId.error) {
+      const error = byId.error as SupabaseError
+      console.error('[profilesService] Erro detalhado:', {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint
+      })
+      
+      // MODIFIQUEI AQUI - Se for erro de recursão infinita, indicar que precisa corrigir RLS
+      if (error.code === '42P17' || error.message?.includes('infinite recursion')) {
+        console.error('[profilesService] 🚨 ERRO DE RECURSÃO INFINITA NA POLÍTICA RLS!')
+        console.error('[profilesService] A política RLS está causando recursão infinita.')
+        console.error('[profilesService] Execute o SQL de correção em backend/migrations/007_fix_rls_profiles_select.sql')
+      }
+    }
+    
+    return null
   } catch (error) {
-    console.error('Erro inesperado ao buscar perfil por ID:', error)
+    console.error('[profilesService] Erro inesperado ao buscar perfil por ID:', error)
     return null
   }
 }

@@ -10,7 +10,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { supabase } from '../lib/supabase'
 import logodezaqui from '../assets/logodezaqui.png'
 
 // Constantes
@@ -18,9 +17,10 @@ const MENU_ANIMATION_DURATION = 200
 
 export default function Header() {
   const navigate = useNavigate()
-  const { user, isAdmin } = useAuth()
+  const { user, isAdmin, logout } = useAuth()
   const [showProfileMenu, setShowProfileMenu] = useState(false)
   const [isLoggingOut, setIsLoggingOut] = useState(false)
+  const [isFadingOut, setIsFadingOut] = useState(false)
   const profileMenuRef = useRef<HTMLDivElement>(null)
 
   /**
@@ -54,26 +54,38 @@ export default function Header() {
   }, [])
 
   /**
-   * Manipula o logout do usuário
+   * MODIFIQUEI AQUI - Manipula o logout do usuário com transições suaves
    */
   const handleLogout = useCallback(async () => {
     try {
       setIsLoggingOut(true)
-      closeProfileMenu()
-      const { error } = await supabase.auth.signOut()
       
-      if (error) {
-        console.error('Erro ao fazer logout:', error)
-        // Em produção, você pode querer mostrar uma notificação de erro
-      } else {
-        navigate('/login', { replace: true })
-      }
+      // MODIFIQUEI AQUI - Fechar menu com animação suave
+      closeProfileMenu()
+      
+      // MODIFIQUEI AQUI - Pequeno delay para animação do menu fechar
+      await new Promise(resolve => setTimeout(resolve, 150))
+      
+      // MODIFIQUEI AQUI - Iniciar fade-out da página
+      setIsFadingOut(true)
+      
+      // MODIFIQUEI AQUI - Aguardar animação de fade-out
+      await new Promise(resolve => setTimeout(resolve, 300))
+      
+      // MODIFIQUEI AQUI - Usar função logout do AuthContext
+      await logout()
+      
+      // MODIFIQUEI AQUI - Redirecionar para /contests após logout bem-sucedido
+      navigate('/contests', { replace: true })
     } catch (error) {
-      console.error('Erro inesperado ao fazer logout:', error)
+      console.error('[Header] Erro ao fazer logout:', error)
+      // Mesmo com erro, redirecionar para /contests
+      navigate('/contests', { replace: true })
     } finally {
       setIsLoggingOut(false)
+      setIsFadingOut(false)
     }
-  }, [navigate, closeProfileMenu])
+  }, [navigate, closeProfileMenu, logout])
 
   /**
    * Navega para a página de perfil (quando implementada)
@@ -127,28 +139,34 @@ export default function Header() {
     }
   }, [showProfileMenu, closeProfileMenu])
 
-  // Não renderiza o header se o usuário não estiver autenticado
-  if (!user) {
-    return null
-  }
-
   return (
-    <header 
-      className="relative sticky top-0 z-50 shadow-2xl"
-      role="banner"
-      aria-label="Cabeçalho principal"
-    >
+    <>
+      {/* MODIFIQUEI AQUI - Overlay de fade-out durante logout */}
+      {isFadingOut && (
+        <div 
+          className="fixed inset-0 bg-white z-[9999] transition-opacity duration-300 ease-out opacity-100"
+          aria-hidden="true"
+        />
+      )}
+      
+      <header 
+        className={`relative sticky top-0 z-50 shadow-2xl transition-opacity duration-300 ${
+          isFadingOut ? 'opacity-0' : 'opacity-100'
+        }`}
+        role="banner"
+        aria-label="Cabeçalho principal"
+      >
       {/* Gradiente de fundo com overlay sutil */}
       <div className="absolute inset-0 bg-gradient-to-br from-[#1E7F43] via-[#1E7F43] to-[#3CCB7F]" aria-hidden="true"></div>
       <div className="absolute inset-0 bg-black/5" aria-hidden="true"></div>
       
       <div className="relative container mx-auto px-4 sm:px-6 lg:px-8 py-4">
         <nav className="flex items-center justify-between" role="navigation" aria-label="Navegação principal">
-          {/* Logo e Nome da Plataforma */}
+          {/* MODIFIQUEI AQUI - Logo e Nome da Plataforma */}
           <Link 
-            to="/contests" 
+            to={user ? "/contests" : "/"} 
             className="flex items-center gap-3 hover:opacity-95 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-white/50 rounded-xl px-2 py-1 -ml-2"
-            aria-label="Ir para página de concursos"
+            aria-label={user ? "Ir para página de concursos" : "Ir para página inicial"}
           >
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white shadow-xl ring-2 ring-white/20" aria-hidden="true">
               <img 
@@ -173,33 +191,36 @@ export default function Header() {
               Concursos
             </Link>
             
-            {/* Links de Admin - Visíveis apenas para administradores */}
-            {isAdmin && (
-              <>
-                <Link
-                  to="/admin/contests"
-                  className="px-4 py-2 text-white/90 hover:text-white font-semibold text-sm rounded-lg hover:bg-white/10 transition-all flex items-center gap-2"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                  Gerenciar
-                </Link>
-                <Link
-                  to="/admin/contests/new"
-                  className="px-4 py-2 bg-white/20 hover:bg-white/30 text-white font-semibold text-sm rounded-lg transition-all flex items-center gap-2 border border-white/30"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                  </svg>
-                  Novo Concurso
-                </Link>
-              </>
+            {/* Apenas link "Dashboard" quando admin e autenticado */}
+            {user && isAdmin && (
+              <Link
+                to="/admin"
+                className="px-4 py-2 text-white/90 hover:text-white font-semibold text-sm rounded-lg hover:bg-white/10 transition-all"
+              >
+                Dashboard
+              </Link>
             )}
           </div>
 
-          {/* Menu de Perfil do Usuário */}
-          <div className="relative" ref={profileMenuRef}>
+          {/* MODIFIQUEI AQUI - Mostrar botões de Login/Cadastro quando não autenticado */}
+          {!user ? (
+            <div className="flex items-center gap-2">
+              <Link
+                to="/login"
+                className="px-4 py-2 text-white/90 hover:text-white font-semibold text-sm rounded-lg hover:bg-white/10 transition-all border border-white/30"
+              >
+                Login
+              </Link>
+              <Link
+                to="/login"
+                className="px-4 py-2 bg-white text-[#1E7F43] font-semibold text-sm rounded-lg hover:bg-white/90 transition-all shadow-lg"
+              >
+                Cadastrar
+              </Link>
+            </div>
+          ) : (
+            // MODIFIQUEI AQUI - Menu de Perfil do Usuário - Visível apenas quando autenticado
+            <div className="relative" ref={profileMenuRef}>
             <button
               type="button"
               onClick={toggleProfileMenu}
@@ -265,8 +286,20 @@ export default function Header() {
                 
                 {/* Itens do menu */}
                 <div className="p-2" role="group">
+                  {/* CHATGPT: alterei aqui - Links admin atualizados no dropdown do perfil */}
                   {isAdmin && (
                     <>
+                      <Link
+                        to="/admin"
+                        onClick={closeProfileMenu}
+                        role="menuitem"
+                        className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold text-[#1E7F43] hover:bg-[#1E7F43]/10 transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-[#1E7F43]/20 group"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-[#1E7F43]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                        </svg>
+                        Painel Administrativo
+                      </Link>
                       <Link
                         to="/admin/contests"
                         onClick={closeProfileMenu}
@@ -325,17 +358,53 @@ export default function Header() {
                     onClick={handleLogout}
                     disabled={isLoggingOut}
                     role="menuitem"
-                    className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold text-red-600 hover:bg-red-50 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-red-200 group"
+                    className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold text-red-600 hover:bg-red-50 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-red-200 group"
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 group-hover:scale-110 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                    </svg>
-                    {isLoggingOut ? 'Saindo...' : 'Sair'}
+                    {isLoggingOut ? (
+                      <>
+                        {/* MODIFIQUEI AQUI - Spinner animado durante logout */}
+                        <svg 
+                          className="animate-spin h-5 w-5 text-red-600" 
+                          xmlns="http://www.w3.org/2000/svg" 
+                          fill="none" 
+                          viewBox="0 0 24 24"
+                        >
+                          <circle 
+                            className="opacity-25" 
+                            cx="12" 
+                            cy="12" 
+                            r="10" 
+                            stroke="currentColor" 
+                            strokeWidth="4"
+                          />
+                          <path 
+                            className="opacity-75" 
+                            fill="currentColor" 
+                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                          />
+                        </svg>
+                        <span className="animate-pulse">Saindo...</span>
+                      </>
+                    ) : (
+                      <>
+                        <svg 
+                          xmlns="http://www.w3.org/2000/svg" 
+                          className="h-5 w-5 group-hover:scale-110 transition-transform duration-200" 
+                          fill="none" 
+                          viewBox="0 0 24 24" 
+                          stroke="currentColor"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                        </svg>
+                        <span>Sair</span>
+                      </>
+                    )}
                   </button>
                 </div>
               </div>
             )}
-          </div>
+            </div>
+          )}
         </nav>
       </div>
       
@@ -352,5 +421,6 @@ export default function Header() {
         }
       `}</style>
     </header>
+    </>
   )
 }

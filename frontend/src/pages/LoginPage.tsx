@@ -5,14 +5,16 @@
  * Permite que usuários façam login ou criem uma nova conta
  */
 import { useState, FormEvent, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import logodezaqui from '../assets/logodezaqui.png'
 
 export default function LoginPage() {
   const navigate = useNavigate()
-  const { user, loading: authLoading } = useAuth()
+  const location = useLocation()
+  // CHATGPT: alterei aqui - Adicionado isAdmin e profile para redirect baseado em role
+  const { user, isAdmin, profile, loading: authLoading } = useAuth()
   const [isSignUp, setIsSignUp] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -22,13 +24,31 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
 
-  // Redirecionar se já estiver logado - todos vão para /contests
-  // As funcionalidades admin aparecerão no Header
+  // MODIFIQUEI AQUI - Redirecionar baseado em isAdmin: admin vai para /admin, usuário comum para /contests
+  // Aguarda o carregamento completo do profile antes de redirecionar
   useEffect(() => {
-    if (!authLoading && user && !loading) {
-      navigate('/contests', { replace: true })
+    // MODIFIQUEI AQUI - Só redireciona quando:
+    // 1. Não está carregando (authLoading === false) - indica que tentativa de carregar profile foi concluída
+    // 2. Usuário está autenticado (user existe)
+    // 3. Está na página de login
+    // 4. Profile foi processado (pode existir ou não, mas a tentativa de carregar foi concluída)
+    if (!authLoading && user && location.pathname === '/login') {
+      // MODIFIQUEI AQUI - Determinar destino baseado no isAdmin correto (que depende do profile carregado)
+      // Se profile não foi carregado mas user existe, ainda assim redireciona para /contests (usuário comum)
+      const targetPath = isAdmin ? '/admin' : '/contests'
+      
+      console.log('[LoginPage] MODIFIQUEI AQUI - Redirecionando para:', targetPath, { 
+        isAdmin, 
+        user: user.id, 
+        authLoading,
+        hasProfile: !!profile,
+        profileIsAdmin: profile?.is_admin,
+        profileId: profile?.id
+      })
+      
+      navigate(targetPath, { replace: true })
     }
-  }, [user, authLoading, navigate, loading])
+  }, [user, isAdmin, authLoading, navigate, location.pathname, profile])
 
   const handleLogin = async (e: FormEvent) => {
     e.preventDefault()
@@ -49,9 +69,10 @@ export default function LoginPage() {
       }
 
       if (data.user) {
-        // O useEffect vai detectar a mudança de autenticação e navegar automaticamente
-        // Não precisamos navegar aqui, o useEffect cuida disso
+        // CHATGPT: alterei aqui - Resetar loading imediatamente após login bem-sucedido
+        // O useEffect vai detectar a mudança de autenticação via AuthContext e navegar automaticamente
         setLoading(false)
+        console.log('[LoginPage] Login bem-sucedido, aguardando AuthContext atualizar para redirecionamento...')
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro inesperado ao fazer login')

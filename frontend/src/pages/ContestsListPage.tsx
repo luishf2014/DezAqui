@@ -21,10 +21,14 @@ export default function ContestsListPage() {
       try {
         setLoading(true)
         setError(null)
+        console.log('[ContestsListPage] MODIFIQUEI AQUI - Carregando concursos ativos...')
         const data = await listActiveContests()
+        console.log('[ContestsListPage] MODIFIQUEI AQUI - Concursos carregados:', data.length)
         setContests(data)
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Erro ao carregar concursos')
+        console.error('[ContestsListPage] MODIFIQUEI AQUI - Erro ao carregar concursos:', err)
+        const errorMessage = err instanceof Error ? err.message : 'Erro ao carregar concursos'
+        setError(errorMessage)
       } finally {
         setLoading(false)
       }

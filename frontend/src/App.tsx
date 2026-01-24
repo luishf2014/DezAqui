@@ -5,17 +5,24 @@ import ContestsListPage from './pages/ContestsListPage'
 import ContestDetailsPage from './pages/ContestDetailsPage'
 import JoinContestPage from './pages/JoinContestPage'
 import LoginPage from './pages/LoginPage'
-import ProtectedAdminRoute from './components/ProtectedAdminRoute'
+// Importações do guard e páginas admin
+import RequireAdmin from './routes/RequireAdmin'
 import AdminDashboard from './pages/admin/AdminDashboard'
 import AdminContestsList from './pages/admin/AdminContestsList'
 import AdminContestForm from './pages/admin/AdminContestForm'
+import AdminDraws from './pages/admin/AdminDraws'
+import AdminParticipants from './pages/admin/AdminParticipants'
+import AdminActivations from './pages/admin/AdminActivations'
+import AdminFinance from './pages/admin/AdminFinance'
+import AdminReports from './pages/admin/AdminReports'
 
 function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<Navigate to="/login" replace />} />
+          {/* MODIFIQUEI AQUI - Redirecionar para /contests ao abrir o site */}
+          <Route path="/" element={<Navigate to="/contests" replace />} />
           <Route path="/home" element={<Home />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/contests" element={<ContestsListPage />} />
@@ -23,39 +30,18 @@ function App() {
           {/* Rota de participação adicionada */}
           <Route path="/contests/:id/join" element={<JoinContestPage />} />
           
-          {/* Rotas Administrativas */}
-          <Route
-            path="/admin"
-            element={
-              <ProtectedAdminRoute>
-                <AdminDashboard />
-              </ProtectedAdminRoute>
-            }
-          />
-          <Route
-            path="/admin/contests"
-            element={
-              <ProtectedAdminRoute>
-                <AdminContestsList />
-              </ProtectedAdminRoute>
-            }
-          />
-          <Route
-            path="/admin/contests/new"
-            element={
-              <ProtectedAdminRoute>
-                <AdminContestForm />
-              </ProtectedAdminRoute>
-            }
-          />
-          <Route
-            path="/admin/contests/:id"
-            element={
-              <ProtectedAdminRoute>
-                <AdminContestForm />
-              </ProtectedAdminRoute>
-            }
-          />
+          {/* CHATGPT: alterei aqui - Rotas Administrativas protegidas com RequireAdmin usando Outlet */}
+          <Route path="/admin" element={<RequireAdmin />}>
+            <Route index element={<AdminDashboard />} />
+            <Route path="contests" element={<AdminContestsList />} />
+            <Route path="contests/new" element={<AdminContestForm />} />
+            <Route path="contests/:id" element={<AdminContestForm />} />
+            <Route path="draws" element={<AdminDraws />} />
+            <Route path="participants" element={<AdminParticipants />} />
+            <Route path="activations" element={<AdminActivations />} />
+            <Route path="finance" element={<AdminFinance />} />
+            <Route path="reports" element={<AdminReports />} />
+          </Route>
         </Routes>
       </BrowserRouter>
     </AuthProvider>

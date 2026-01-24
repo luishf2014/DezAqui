@@ -5,7 +5,7 @@
  * Exibe informações do concurso e histórico de sorteios
  */
 import { useEffect, useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import { getContestById } from '../services/contestsService'
 import { listDrawsByContestId } from '../services/drawsService'
 import { Contest, Draw } from '../types'
@@ -15,6 +15,7 @@ import Footer from '../components/Footer'
 
 export default function ContestDetailsPage() {
   const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
   const { user } = useAuth()
   const [contest, setContest] = useState<Contest | null>(null)
   const [draws, setDraws] = useState<Draw[]>([])
@@ -140,13 +141,20 @@ export default function ContestDetailsPage() {
                   <p className="text-white/90 text-sm sm:text-base md:text-lg max-w-2xl">{contest.description}</p>
                 )}
               </div>
-              {user && contest.status === 'active' && (
-                <Link
-                  to={`/contests/${id}/join`}
+              {contest.status === 'active' && (
+                <button
+                  onClick={() => {
+                    // MODIFIQUEI AQUI - Redirecionar para login se não autenticado, senão para página de participação
+                    if (!user) {
+                      navigate('/login')
+                    } else {
+                      navigate(`/contests/${id}/join`)
+                    }
+                  }}
                   className="w-full md:w-auto px-6 md:px-8 py-3 md:py-4 bg-white text-[#1E7F43] rounded-xl hover:bg-[#F4C430] hover:text-[#1F1F1F] transition-all font-bold text-base md:text-lg shadow-2xl transform hover:scale-105 text-center"
                 >
                   Participar Agora
-                </Link>
+                </button>
               )}
             </div>
           </div>
