@@ -22,9 +22,9 @@ export default function AdminContestForm() {
   const [formData, setFormData] = useState<CreateContestInput>({
     name: '',
     description: '',
-    min_number: 1,
-    max_number: 60,
-    numbers_per_participation: 6,
+    min_number: 0,
+    max_number: 99,
+    numbers_per_participation: 10,
     start_date: '',
     end_date: '',
     status: 'draft',
@@ -231,7 +231,8 @@ export default function AdminContestForm() {
                   value={formData.min_number}
                   onChange={handleChange}
                   required
-                  min="1"
+                  min="0"
+                  max="98"
                   className="w-full px-4 py-3 border border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43] focus:border-transparent"
                 />
               </div>
@@ -246,7 +247,8 @@ export default function AdminContestForm() {
                   value={formData.max_number}
                   onChange={handleChange}
                   required
-                  min="1"
+                  min="0"
+                  max="99"
                   className="w-full px-4 py-3 border border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43] focus:border-transparent"
                 />
               </div>

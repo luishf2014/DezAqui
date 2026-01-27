@@ -8,6 +8,8 @@ import { useState, FormEvent, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
+import Header from '../components/Header'
+import Footer from '../components/Footer'
 import logodezaqui from '../assets/logodezaqui.png'
 
 export default function LoginPage() {
@@ -15,7 +17,9 @@ export default function LoginPage() {
   const location = useLocation()
   // CHATGPT: alterei aqui - Adicionado isAdmin e profile para redirect baseado em role
   const { user, isAdmin, profile, loading: authLoading } = useAuth()
-  const [isSignUp, setIsSignUp] = useState(false)
+  // MODIFIQUEI AQUI - Verificar se deve abrir em modo cadastro através da query string
+  const searchParams = new URLSearchParams(location.search)
+  const [isSignUp, setIsSignUp] = useState(searchParams.get('signup') === 'true')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
@@ -23,6 +27,12 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+
+  // MODIFIQUEI AQUI - Sincronizar modo sign up com query string
+  useEffect(() => {
+    const searchParams = new URLSearchParams(location.search)
+    setIsSignUp(searchParams.get('signup') === 'true')
+  }, [location.search])
 
   // MODIFIQUEI AQUI - Redirecionar baseado em isAdmin: admin vai para /admin, usuário comum para /contests
   // Aguarda o carregamento completo do profile antes de redirecionar
@@ -103,6 +113,33 @@ export default function LoginPage() {
       }
 
       if (data.user) {
+        // MODIFIQUEI AQUI - Garantir que o perfil tenha o nome salvo corretamente
+        // O trigger pode criar o perfil antes do metadata ser salvo, então atualizamos/inserimos aqui
+        try {
+          // Tentar inserir ou atualizar o perfil com o nome
+          const { error: profileError } = await supabase
+            .from('profiles')
+            .upsert({
+              id: data.user.id,
+              email: data.user.email || email,
+              name: name || '',
+              phone: null,
+              is_admin: false,
+            }, {
+              onConflict: 'id'
+            })
+            .select()
+          
+          if (profileError) {
+            console.warn('[LoginPage] Erro ao criar/atualizar perfil:', profileError)
+          } else {
+            console.log('[LoginPage] Perfil criado/atualizado com sucesso, nome salvo:', name)
+          }
+        } catch (profileErr) {
+          console.warn('[LoginPage] Erro ao criar/atualizar perfil:', profileErr)
+          // Não bloquear o fluxo se falhar
+        }
+        
         setSuccess('Conta criada com sucesso! Você já pode fazer login.')
         setIsSignUp(false)
         setPassword('')
@@ -116,10 +153,12 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F9F9F9] flex items-center justify-center px-4 py-12 sm:px-6 lg:px-8">
-      <div className="relative w-full max-w-md">
-        <div className="absolute inset-0 -z-10 rounded-3xl bg-gradient-to-br from-[#1E7F43] via-[#1E7F43] to-[#3CCB7F] opacity-10 blur-2xl" />
-        <div className="rounded-2xl sm:rounded-3xl border border-[#E5E5E5] bg-white px-4 py-8 sm:px-6 sm:py-10 shadow-xl">
+    <div className="min-h-screen bg-[#F9F9F9] flex flex-col">
+      <Header />
+      <div className="flex-1 flex items-center justify-center px-4 py-12 sm:px-6 lg:px-8">
+        <div className="relative w-full max-w-md">
+          <div className="absolute inset-0 -z-10 rounded-3xl bg-gradient-to-br from-[#1E7F43] via-[#1E7F43] to-[#3CCB7F] opacity-10 blur-2xl" />
+          <div className="rounded-2xl sm:rounded-3xl border border-[#E5E5E5] bg-white px-4 py-8 sm:px-6 sm:py-10 shadow-xl">
           <div className="flex flex-col items-center gap-4">
             <div className="flex flex-col items-center gap-3">
               <div className="flex h-20 w-20 sm:h-24 sm:w-24 items-center justify-center rounded-2xl bg-white">
@@ -267,14 +306,17 @@ export default function LoginPage() {
               >
                 {loading ? (isSignUp ? 'Criando conta...' : 'Entrando...') : (isSignUp ? 'Criar Conta' : 'Entrar')}
               </button>
-            </div><div className="text-center">
+            </div>            <div className="text-center">
               <button
                 type="button"
                 onClick={() => {
-                  setIsSignUp(!isSignUp)
+                  // MODIFIQUEI AQUI - Atualizar URL ao alternar entre login e cadastro
+                  const newSignUp = !isSignUp
+                  setIsSignUp(newSignUp)
                   setError(null)
                   setSuccess(null)
                   setShowPassword(false)
+                  navigate(newSignUp ? '/login?signup=true' : '/login', { replace: true })
                 }}
                 className="text-sm font-semibold text-[#1E7F43] transition hover:text-[#3CCB7F]"
               >
@@ -284,6 +326,8 @@ export default function LoginPage() {
           </form>
         </div>
       </div>
+      </div>
+      <Footer />
     </div>
   )
 }

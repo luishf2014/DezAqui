@@ -53,6 +53,7 @@ export interface Participation {
   numbers: number[]
   status: ParticipationStatus
   current_score: number
+  ticket_code?: string // MODIFIQUEI AQUI - Código único da participação (ex: TKT-20250124-A1B2C3)
   created_at: string
   updated_at: string
 }
@@ -65,6 +66,7 @@ export interface Draw {
   contest_id: string
   numbers: number[]
   draw_date: string
+  code?: string // MODIFIQUEI AQUI - Código único do sorteio (ex: DRW-20250124-A1B2C3)
   created_at: string
 }
 
@@ -83,6 +85,29 @@ export interface Payment {
   external_id?: string
   external_data?: Record<string, unknown>
   paid_at?: string
+  created_at: string
+  updated_at: string
+}
+
+// ============================================
+// Desconto/Promoção
+// ============================================
+export type DiscountType = 'percentage' | 'fixed'
+
+export interface Discount {
+  id: string
+  code: string // Código único do cupom (ex: PROMO2025)
+  name: string
+  description?: string
+  discount_type: DiscountType // 'percentage' ou 'fixed'
+  discount_value: number // Valor do desconto (percentual 0-100 ou valor fixo)
+  contest_id?: string | null // NULL = desconto global
+  start_date: string
+  end_date: string
+  max_uses?: number | null // NULL = ilimitado
+  current_uses: number
+  is_active: boolean
+  created_by: string
   created_at: string
   updated_at: string
 }

@@ -22,13 +22,74 @@ export default function AdminContestsList() {
     loadContests()
   }, [])
 
+  // MODIFIQUEI AQUI - Função auxiliar para mostrar modais de erro com ícones
+  type ErrorIconType = 'warning' | 'error'
+  
+  const showErrorModal = (title: string, message: string, iconType: ErrorIconType = 'warning') => {
+    let iconSvg = ''
+    let iconBgClass = 'bg-orange-500'
+    
+    switch (iconType) {
+      case 'error':
+        iconSvg = `
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        `
+        iconBgClass = 'bg-red-500'
+        break
+      case 'warning':
+      default:
+        iconSvg = `
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
+        `
+        iconBgClass = 'bg-orange-500'
+        break
+    }
+    
+    const modal = document.createElement('div')
+    modal.className = 'fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60] animate-[fadeIn_0.2s_ease-out]'
+    modal.innerHTML = `
+      <div class="bg-white rounded-2xl p-8 max-w-md mx-4 animate-[scaleIn_0.3s_ease-out] shadow-2xl">
+        <div class="text-center">
+          <div class="mx-auto flex items-center justify-center h-16 w-16 rounded-full ${iconBgClass} mb-4">
+            ${iconSvg}
+          </div>
+          <h3 class="text-xl font-bold text-[#1F1F1F] mb-2">${title}</h3>
+          <p class="text-[#1F1F1F]/70 mb-6">${message}</p>
+          <button class="px-6 py-2 bg-[#1E7F43] text-white rounded-lg hover:bg-[#3CCB7F] transition-colors font-semibold">
+            Entendi
+          </button>
+        </div>
+      </div>
+    `
+    document.body.appendChild(modal)
+    
+    const closeBtn = modal.querySelector('button')
+    const closeModal = () => {
+      modal.remove()
+    }
+    closeBtn?.addEventListener('click', closeModal)
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) {
+        closeModal()
+      }
+    })
+  }
+
   const loadContests = async () => {
     try {
       const data = await listAllContests()
       setContests(data)
     } catch (error) {
       console.error('Erro ao carregar concursos:', error)
-      alert('Erro ao carregar concursos. Tente novamente.')
+      showErrorModal(
+        'Erro ao carregar',
+        'Erro ao carregar concursos. Tente novamente.',
+        'error'
+      )
     } finally {
       setLoading(false)
     }
@@ -45,7 +106,12 @@ export default function AdminContestsList() {
       await loadContests()
     } catch (error) {
       console.error('Erro ao deletar concurso:', error)
-      alert('Erro ao deletar concurso. Tente novamente.')
+      setDeletingId(null)
+      showErrorModal(
+        'Erro ao excluir',
+        'Erro ao deletar concurso. Tente novamente.',
+        'error'
+      )
     } finally {
       setDeletingId(null)
     }

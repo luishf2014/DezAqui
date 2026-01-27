@@ -32,7 +32,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
   const isInitializedRef = useRef(false)
 
-  const loadProfile = async (userId: string | undefined): Promise<void> => {
+  const loadProfile = async (userId: string | undefined, retryCount = 0): Promise<void> => {
     if (!userId) {
       console.log('[AuthContext] loadProfile: userId não fornecido')
       setProfile(null)
@@ -52,11 +52,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         email: userProfile?.email,
         is_admin: userProfile?.is_admin,
         tipoIsAdmin: typeof userProfile?.is_admin,
-        fullProfile: userProfile 
+        fullProfile: userProfile,
+        retryCount
       })
       
       if (userProfile === null || userProfile === undefined) {
-        console.error('[AuthContext] ⚠️ ATENÇÃO: Não foi possível carregar o perfil!')
+        // MODIFIQUEI AQUI - Retry para novos usuários (perfil pode estar sendo criado pelo trigger)
+        if (retryCount < 3) {
+          console.log(`[AuthContext] Perfil não encontrado, tentando novamente em ${(retryCount + 1) * 500}ms... (tentativa ${retryCount + 1}/3)`)
+          await new Promise(resolve => setTimeout(resolve, (retryCount + 1) * 500))
+          return loadProfile(userId, retryCount + 1)
+        }
+        
+        console.error('[AuthContext] ⚠️ ATENÇÃO: Não foi possível carregar o perfil após 3 tentativas!')
+        console.error('[AuthContext] Isso pode acontecer se o trigger de criação de perfil ainda não executou.')
         setProfile(null)
         return
       }
@@ -66,6 +75,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       // MODIFIQUEI AQUI - NÃO falhar silenciosamente
       console.error('[AuthContext] Erro ao carregar perfil:', error)
+      
+      // MODIFIQUEI AQUI - Retry em caso de erro também
+      if (retryCount < 2) {
+        console.log(`[AuthContext] Erro ao carregar perfil, tentando novamente em ${(retryCount + 1) * 500}ms... (tentativa ${retryCount + 1}/2)`)
+        await new Promise(resolve => setTimeout(resolve, (retryCount + 1) * 500))
+        return loadProfile(userId, retryCount + 1)
+      }
+      
       setProfile(null)
     }
   }
@@ -125,6 +142,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(true)
       try {
         if (session?.user?.id) {
+          // MODIFIQUEI AQUI - Pequeno delay após SIGNED_IN para dar tempo do trigger criar o perfil
+          if (_event === 'SIGNED_IN') {
+            await new Promise(resolve => setTimeout(resolve, 300))
+          }
           await loadProfile(session.user.id)
         } else {
           setProfile(null)
@@ -150,6 +171,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   // MODIFIQUEI AQUI - Calcular isAdmin exclusivamente como profile?.is_admin === true
+  // Se profile não existe ainda (novo usuário), assume que não é admin
   const isAdmin = profile?.is_admin === true
 
   // MODIFIQUEI AQUI - Função de logout centralizada

@@ -55,7 +55,11 @@ BEGIN
   VALUES (
     NEW.id,                                    -- ID do usuário do auth.users
     NEW.email,                                 -- Email do usuário
-    COALESCE(NEW.raw_user_meta_data->>'name', ''),  -- Nome do metadata ou string vazia
+    COALESCE(
+      NEW.raw_user_meta_data->>'full_name',   -- Nome do metadata (enviado pelo frontend)
+      NEW.raw_user_meta_data->>'name',        -- Fallback para 'name' se 'full_name' não existir
+      ''                                       -- String vazia se nenhum existir
+    ),
     NEW.raw_user_meta_data->>'phone',         -- Telefone do metadata (pode ser NULL)
     FALSE,                                     -- Por padrão, não é administrador
     NOW(),                                     -- Timestamp de criação
@@ -109,8 +113,9 @@ COMMENT ON TRIGGER on_auth_user_created ON auth.users IS
 --    - Não é necessário criar o perfil manualmente no frontend
 --
 -- 2. Dados do Metadata:
---    - O nome é extraído de raw_user_meta_data->>'name'
---    - Se não existir, usa string vazia (campo name é NOT NULL)
+--    - O nome é extraído de raw_user_meta_data->>'full_name' (enviado pelo frontend)
+--    - Se não existir, tenta raw_user_meta_data->>'name'
+--    - Se nenhum existir, usa string vazia (campo name é NOT NULL)
 --    - O telefone é extraído de raw_user_meta_data->>'phone'
 --    - Se não existir, fica NULL (campo phone é opcional)
 --

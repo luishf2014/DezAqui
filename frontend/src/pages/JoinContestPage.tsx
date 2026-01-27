@@ -17,7 +17,7 @@ import Footer from '../components/Footer'
 export default function JoinContestPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const { user } = useAuth()
+  const { user, loading: authLoading } = useAuth()
   const [contest, setContest] = useState<Contest | null>(null)
   const [selectedNumbers, setSelectedNumbers] = useState<number[]>([])
   const [loading, setLoading] = useState(true)
@@ -26,10 +26,21 @@ export default function JoinContestPage() {
   const [success, setSuccess] = useState(false)
 
   useEffect(() => {
+    // MODIFIQUEI AQUI - Redirecionar para login se não autenticado
+    if (!authLoading && !user) {
+      navigate('/login')
+      return
+    }
+
     async function loadContest() {
       if (!id) {
         setError('ID do concurso não fornecido')
         setLoading(false)
+        return
+      }
+
+      // MODIFIQUEI AQUI - Aguardar autenticação antes de carregar concurso
+      if (authLoading || !user) {
         return
       }
 
@@ -57,7 +68,7 @@ export default function JoinContestPage() {
     }
 
     loadContest()
-  }, [id])
+  }, [id, user, authLoading, navigate])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -87,12 +98,17 @@ export default function JoinContestPage() {
       setSubmitting(true)
       setError(null)
 
-      await createParticipation({
+      const participation = await createParticipation({
         contestId: id,
         numbers: selectedNumbers,
       })
 
       setSuccess(true)
+      
+      // MODIFIQUEI AQUI - Mostrar código/ticket se disponível
+      if (participation.ticket_code) {
+        console.log('[JoinContestPage] Código/ticket gerado:', participation.ticket_code)
+      }
       
       // Redirecionar após 2 segundos
       setTimeout(() => {
@@ -105,14 +121,17 @@ export default function JoinContestPage() {
     }
   }
 
-  if (loading) {
+  // MODIFIQUEI AQUI - Mostrar loading apenas enquanto carrega o concurso ou autenticação
+  if (authLoading || loading) {
     return (
       <div className="min-h-screen bg-[#F9F9F9] flex flex-col">
         <Header />
         <div className="flex items-center justify-center flex-1">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#1E7F43] mx-auto"></div>
-            <p className="mt-4 text-[#1F1F1F]/70">Carregando concurso...</p>
+            <p className="mt-4 text-[#1F1F1F]/70">
+              {authLoading ? 'Verificando autenticação...' : 'Carregando concurso...'}
+            </p>
           </div>
         </div>
         <Footer />

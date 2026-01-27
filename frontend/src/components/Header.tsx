@@ -191,6 +191,24 @@ export default function Header() {
               Concursos
             </Link>
             
+            {/* MODIFIQUEI AQUI - Link "Rankings" visível para todos */}
+            <Link
+              to="/rankings"
+              className="px-4 py-2 text-white/90 hover:text-white font-semibold text-sm rounded-lg hover:bg-white/10 transition-all"
+            >
+              Rankings
+            </Link>
+            
+            {/* MODIFIQUEI AQUI - Link "Meus Tickets" visível apenas quando autenticado */}
+            {user && (
+              <Link
+                to="/my-tickets"
+                className="px-4 py-2 text-white/90 hover:text-white font-semibold text-sm rounded-lg hover:bg-white/10 transition-all"
+              >
+                Meus Tickets
+              </Link>
+            )}
+            
             {/* Apenas link "Dashboard" quando admin e autenticado */}
             {user && isAdmin && (
               <Link
@@ -212,7 +230,7 @@ export default function Header() {
                 Login
               </Link>
               <Link
-                to="/login"
+                to="/login?signup=true"
                 className="px-4 py-2 bg-white text-[#1E7F43] font-semibold text-sm rounded-lg hover:bg-white/90 transition-all shadow-lg"
               >
                 Cadastrar
@@ -337,6 +355,19 @@ export default function Header() {
                     </svg>
                     Meu Perfil
                   </button>
+                  
+                  {/* MODIFIQUEI AQUI - Link para Meus Tickets */}
+                  <Link
+                    to="/my-tickets"
+                    onClick={closeProfileMenu}
+                    role="menuitem"
+                    className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold text-[#1F1F1F] hover:bg-[#F9F9F9] transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-[#1E7F43]/20 group"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-[#1F1F1F]/60 group-hover:text-[#1E7F43]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" />
+                    </svg>
+                    Meus Tickets
+                  </Link>
                   
                   <button
                     type="button"
