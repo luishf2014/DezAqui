@@ -111,7 +111,7 @@ export default function LoginPage() {
       }
 
       if (data.user) {
-        // CHATGPT: alterei aqui - Resetar loading imediatamente após login bem-sucedido
+        // Resetar loading imediatamente após login bem-sucedido
         // O useEffect vai detectar a mudança de autenticação via AuthContext e navegar automaticamente
         setLoading(false)
         console.log('[LoginPage] Login bem-sucedido, aguardando AuthContext atualizar para redirecionamento...')
@@ -141,20 +141,38 @@ export default function LoginPage() {
       return
     }
 
+    // MODIFIQUEI AQUI - Validar e-mail obrigatório
+    if (!email.trim()) {
+      setError('Por favor, informe seu e-mail')
+      setLoading(false)
+      return
+    }
+
+    // MODIFIQUEI AQUI - Validar formato de e-mail
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(email.trim())) {
+      setError('Por favor, informe um e-mail válido')
+      setLoading(false)
+      return
+    }
+
     try {
-      // MODIFIQUEI AQUI - Usar e-mail fornecido ou gerar e-mail interno do telefone
-      // Se não fornecer e-mail, gera um e-mail interno baseado no telefone para autenticação
-      const signUpEmail = email.trim() || phoneToEmail(phone)
+      // MODIFIQUEI AQUI - Limpar telefone para formato padrão (apenas números) antes de enviar
+      const cleanPhone = phone.replace(/\D/g, '')
+      
+      // MODIFIQUEI AQUI - Usar e-mail fornecido (agora obrigatório)
+      const signUpEmail = phoneToEmail(cleanPhone)
       
       // MODIFIQUEI AQUI - Criar conta sem confirmação de e-mail
+      // O trigger handle_new_user() criará o perfil automaticamente com os dados do metadata
       const { data, error: signUpError } = await supabase.auth.signUp({
         email: signUpEmail,
         password,
         options: {
           data: {
-            full_name: name,
-            phone: phone, // Armazenar telefone real no metadata
-            email: email.trim() || undefined, // MODIFIQUEI AQUI - Armazenar e-mail real se fornecido (para uso futuro)
+            name: name.trim(), // MODIFIQUEI AQUI - Nome será usado pelo trigger para criar o perfil
+            phone: cleanPhone, // MODIFIQUEI AQUI - Telefone limpo (sem formatação) será usado pelo trigger
+            email: email.trim(), // MODIFIQUEI AQUI - E-mail obrigatório será usado pelo trigger
           },
           // MODIFIQUEI AQUI - Desabilitar confirmação de e-mail
           emailRedirectTo: undefined,
@@ -173,35 +191,12 @@ export default function LoginPage() {
       }
 
       if (data.user) {
-        // MODIFIQUEI AQUI - Garantir que o perfil tenha o nome e telefone salvos corretamente
-        try {
-          // Limpar telefone para formato padrão (apenas números)
-          const cleanPhone = phone.replace(/\D/g, '')
-          
-          // MODIFIQUEI AQUI - Tentar inserir ou atualizar o perfil com o nome, telefone e e-mail
-          // O e-mail será salvo mesmo que não seja usado para login agora (para uso futuro)
-          const { error: profileError } = await supabase
-            .from('profiles')
-            .upsert({
-              id: data.user.id,
-              email: email.trim() || signUpEmail, // MODIFIQUEI AQUI - Salvar e-mail fornecido ou e-mail interno
-              name: name.trim(),
-              phone: cleanPhone, // MODIFIQUEI AQUI - Salvar telefone real (usado para login)
-              is_admin: false,
-            }, {
-              onConflict: 'id'
-            })
-            .select()
-          
-          if (profileError) {
-            console.warn('[LoginPage] Erro ao criar/atualizar perfil:', profileError)
-          } else {
-            console.log('[LoginPage] Perfil criado/atualizado com sucesso:', { name, phone: cleanPhone })
-          }
-        } catch (profileErr) {
-          console.warn('[LoginPage] Erro ao criar/atualizar perfil:', profileErr)
-          // Não bloquear o fluxo se falhar
-        }
+        // MODIFIQUEI AQUI - O trigger handle_new_user() criará o perfil automaticamente
+        // com os dados do metadata: full_name, phone, email e is_admin
+        // Aguardar um pouco para garantir que o trigger execute
+        await new Promise(resolve => setTimeout(resolve, 300))
+        
+        console.log('[LoginPage] Usuário criado com sucesso. Perfil será criado automaticamente pelo trigger.')
         
         setSuccess('Conta criada com sucesso! Você já pode fazer login.')
         setIsSignUp(false)
@@ -209,6 +204,7 @@ export default function LoginPage() {
         setShowPassword(false)
         setPhone('') // MODIFIQUEI AQUI - Limpar telefone após cadastro
         setEmail('') // MODIFIQUEI AQUI - Limpar e-mail após cadastro
+        setName('') // MODIFIQUEI AQUI - Limpar nome após cadastro
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro inesperado ao criar conta')
@@ -262,7 +258,7 @@ export default function LoginPage() {
                 {isSignUp && (
                   <div>
                     <label htmlFor="name" className="text-xs font-semibold uppercase tracking-[0.2em] text-[#1F1F1F]/60">
-                      Nome completo
+                      Nome completo <span className="text-red-500">*</span>
                     </label>
                     <input
                       id="name"
@@ -278,7 +274,7 @@ export default function LoginPage() {
                 )}
                 <div>
                   <label htmlFor="phone" className="text-xs font-semibold uppercase tracking-[0.2em] text-[#1F1F1F]/60">
-                    Telefone
+                    Telefone <span className="text-red-500">*</span>
                   </label>
                   <input
                     id="phone"
@@ -320,26 +316,24 @@ export default function LoginPage() {
                 {isSignUp && (
                   <div>
                     <label htmlFor="email" className="text-xs font-semibold uppercase tracking-[0.2em] text-[#1F1F1F]/60">
-                      E-mail
+                      E-mail <span className="text-red-500">*</span>
                     </label>
                     <input
                       id="email"
                       name="email"
                       type="email"
                       autoComplete="email"
+                      required
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       className="mt-2 block w-full rounded-xl border border-[#E5E5E5] bg-white px-4 py-3 text-sm text-[#1F1F1F] placeholder-[#1F1F1F]/40 shadow-sm focus:border-[#1E7F43] focus:outline-none focus:ring-2 focus:ring-[#3CCB7F]/40"
                       placeholder="seu@email.com"
                     />
-                    {/* <p className="mt-1 text-xs text-[#1F1F1F]/50">
-                      E-mail será salvo para uso futuro (login por e-mail poderá ser implementado depois)
-                    </p> */}
                   </div>
                 )}
                 <div>
                   <label htmlFor="password" className="text-xs font-semibold uppercase tracking-[0.2em] text-[#1F1F1F]/60">
-                    Senha
+                    Senha <span className="text-red-500">*</span>
                   </label>
                   <div className="relative mt-2">
                     <input

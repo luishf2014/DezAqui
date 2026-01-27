@@ -41,7 +41,8 @@ export default function Header() {
   const getUserDisplayName = useCallback(() => {
     // Se tiver telefone no profile, usar telefone formatado
     if (profile?.phone) {
-      return formatPhone(profile.phone)
+      const firstName = profile.name?.trim().split(' ')[0]
+    return firstName || 'Usuário'
     }
     // Se não tiver telefone, usar nome do profile
     if (profile?.name) {
