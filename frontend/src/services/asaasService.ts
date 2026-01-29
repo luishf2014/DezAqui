@@ -2,8 +2,11 @@
  * Serviço de integração com API Asaas
  * FASE 3: Pagamentos e Ativação
  * 
- * Funções para gerar QR Code Pix e gerenciar pagamentos via Asaas
+ * MODIFIQUEI AQUI - Funções para gerar QR Code Pix via Edge Functions do Supabase
+ * A lógica de criação de pagamento foi movida para Edge Function por segurança
  */
+
+import { supabase } from '../lib/supabase'
 
 export interface AsaasPixQRCodeResponse {
   encodedImage: string // Base64 da imagem do QR Code
@@ -30,82 +33,50 @@ export interface CreatePixPaymentResponse {
 }
 
 /**
- * Cria um pagamento Pix via API Asaas e retorna o QR Code
- * MODIFIQUEI AQUI - Função para criar pagamento Pix e gerar QR Code
+ * Cria um pagamento Pix via Edge Function do Supabase
+ * MODIFIQUEI AQUI - Função agora chama Edge Function ao invés de fazer fetch direto no Asaas
  * 
  * @param params Parâmetros do pagamento Pix
  * @returns Dados do pagamento incluindo QR Code
  */
 export async function createPixPayment(params: CreatePixPaymentParams): Promise<CreatePixPaymentResponse> {
-  // MODIFIQUEI AQUI - Obter credenciais do Asaas das variáveis de ambiente
-  const asaasApiKey = import.meta.env.VITE_ASAAS_API_KEY
-  const asaasBaseUrl = import.meta.env.VITE_ASAAS_BASE_URL || 'https://sandbox.asaas.com/api/v3'
-
-  if (!asaasApiKey) {
-    throw new Error('Configuração do Asaas não encontrada. Verifique as variáveis de ambiente.')
-  }
-
-  // MODIFIQUEI AQUI - Criar cliente no Asaas (se necessário) ou usar cliente existente
-  // Por enquanto, vamos criar o pagamento diretamente
-  // Em produção, você pode querer criar/atualizar o cliente primeiro
-
-  const paymentData = {
-    customer: params.customerCpfCnpj || undefined, // CPF/CNPJ do cliente (opcional)
-    billingType: 'PIX',
-    value: params.amount,
-    dueDate: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0], // Vencimento em 24h
-    description: params.description,
-    externalReference: params.ticketCode, // Usar ticket code como referência externa
-    // Campos opcionais do cliente
-    ...(params.customerName && { name: params.customerName }),
-    ...(params.customerEmail && { email: params.customerEmail }),
-    ...(params.customerPhone && { phone: params.customerPhone }),
-  }
-
   try {
-    // MODIFIQUEI AQUI - Criar pagamento no Asaas
-    const createResponse = await fetch(`${asaasBaseUrl}/payments`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'access_token': asaasApiKey,
-      },
-      body: JSON.stringify(paymentData),
-    })
-
-    if (!createResponse.ok) {
-      const errorData = await createResponse.json().catch(() => ({}))
-      throw new Error(
-        errorData.errors?.[0]?.description || 
-        `Erro ao criar pagamento no Asaas: ${createResponse.statusText}`
-      )
-    }
-
-    const payment = await createResponse.json()
-
-    // MODIFIQUEI AQUI - Buscar QR Code do pagamento criado
-    const qrCodeResponse = await fetch(`${asaasBaseUrl}/payments/${payment.id}/pixQrCode`, {
-      method: 'GET',
-      headers: {
-        'access_token': asaasApiKey,
+    // MODIFIQUEI AQUI - Chamar Edge Function do Supabase ao invés de API direta do Asaas
+    const { data, error } = await supabase.functions.invoke('asaas-create-pix', {
+      body: {
+        participationId: params.participationId,
+        ticketCode: params.ticketCode,
+        amount: params.amount,
+        description: params.description,
+        customerName: params.customerName,
+        customerEmail: params.customerEmail,
+        customerPhone: params.customerPhone,
+        customerCpfCnpj: params.customerCpfCnpj,
       },
     })
 
-    if (!qrCodeResponse.ok) {
-      throw new Error('Erro ao gerar QR Code Pix')
+    if (error) {
+      throw new Error(error.message || 'Erro ao criar pagamento Pix')
     }
 
-    const qrCodeData = await qrCodeResponse.json()
+    if (!data) {
+      throw new Error('Resposta vazia da Edge Function')
+    }
+
+    // MODIFIQUEI AQUI - Verificar se há erro na resposta
+    if (data.error) {
+      throw new Error(data.error)
+    }
 
     return {
-      id: payment.id,
+      id: data.id,
       qrCode: {
-        encodedImage: qrCodeData.encodedImage || '',
-        payload: qrCodeData.payload || '',
-        expirationDate: qrCodeData.expirationDate || payment.dueDate,
+        encodedImage: data.qrCode?.encodedImage || '',
+        payload: data.qrCode?.payload || '',
+        expirationDate: data.qrCode?.expirationDate || data.dueDate,
       },
-      status: payment.status,
-      dueDate: payment.dueDate,
+      status: data.status,
+      dueDate: data.dueDate,
     }
   } catch (error) {
     if (error instanceof Error) {
@@ -117,46 +88,25 @@ export async function createPixPayment(params: CreatePixPaymentParams): Promise<
 
 /**
  * Verifica o status de um pagamento no Asaas
- * MODIFIQUEI AQUI - Função para verificar status do pagamento
+ * MODIFIQUEI AQUI - Função desabilitada por segurança (não deve usar ASAAS_API_KEY no frontend)
+ * 
+ * NOTA: Esta função não está sendo usada no fluxo atual. O status do pagamento é verificado
+ * automaticamente via webhook do Asaas. Se necessário no futuro, criar uma Edge Function
+ * equivalente que use ASAAS_API_KEY dos secrets do Supabase.
  * 
  * @param paymentId ID do pagamento no Asaas
  * @returns Status do pagamento
+ * @deprecated Esta função não deve ser usada pois exporia ASAAS_API_KEY no frontend
  */
 export async function checkPaymentStatus(paymentId: string): Promise<{
   status: string
   paid: boolean
   paidDate?: string
 }> {
-  const asaasApiKey = import.meta.env.VITE_ASAAS_API_KEY
-  const asaasBaseUrl = import.meta.env.VITE_ASAAS_BASE_URL || 'https://sandbox.asaas.com/api/v3'
-
-  if (!asaasApiKey) {
-    throw new Error('Configuração do Asaas não encontrada')
-  }
-
-  try {
-    const response = await fetch(`${asaasBaseUrl}/payments/${paymentId}`, {
-      method: 'GET',
-      headers: {
-        'access_token': asaasApiKey,
-      },
-    })
-
-    if (!response.ok) {
-      throw new Error('Erro ao verificar status do pagamento')
-    }
-
-    const payment = await response.json()
-
-    return {
-      status: payment.status,
-      paid: payment.status === 'CONFIRMED' || payment.status === 'RECEIVED',
-      paidDate: payment.paymentDate || undefined,
-    }
-  } catch (error) {
-    if (error instanceof Error) {
-      throw error
-    }
-    throw new Error('Erro desconhecido ao verificar status do pagamento')
-  }
+  // MODIFIQUEI AQUI - Função desabilitada por segurança
+  // Para verificar status, use a tabela payments do Supabase que é atualizada via webhook
+  throw new Error(
+    'checkPaymentStatus não está disponível por segurança. ' +
+    'Use a tabela payments do Supabase que é atualizada automaticamente via webhook.'
+  )
 }

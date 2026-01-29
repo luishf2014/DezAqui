@@ -52,7 +52,7 @@ export default function Footer() {
                 </Link>
               </li>
               <li>
-                <Link to="/home" className="text-white/80 hover:text-white transition-colors text-sm">
+                <Link to="/contests" className="text-white/80 hover:text-white transition-colors text-sm">
                   Página Inicial
                 </Link>
               </li>

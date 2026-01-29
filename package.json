@@ -1,0 +1,26 @@
+{
+  "name": "dezaqui",
+  "version": "1.0.0",
+  "description": "Esta plataforma é um **sistema Web + PWA** para gestão de concursos numéricos participativos, permitindo a criação de concursos totalmente configuráveis, controle de participantes, múltiplos sorteios, ranking em tempo real e rateio automático de valores.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/luishf2014/gestao-numerica.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/luishf2014/gestao-numerica/issues"
+  },
+  "homepage": "https://github.com/luishf2014/gestao-numerica#readme",
+  "devDependencies": {
+    "supabase": "^2.72.9"
+  }
+}
