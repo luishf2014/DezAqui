@@ -11,6 +11,7 @@ import Footer from '../../components/Footer'
 import { listAllContests } from '../../services/contestsService'
 import { listDrawsByContestId } from '../../services/drawsService'
 import { getReportData, ReportData } from '../../services/reportsService'
+import { getDrawPayoutSummary, getPayoutsByDraw } from '../../services/payoutsService'
 import { Contest, Draw } from '../../types'
 import { exportToCSV, exportToExcel, exportToPDF } from '../../utils/exportUtils'
 import { calculateRateio, RateioResult } from '../../utils/rateioCalculator'
@@ -31,6 +32,8 @@ export default function AdminReports() {
   const [endDate, setEndDate] = useState<string>('')
   const [rateioData, setRateioData] = useState<RateioResult | null>(null)
   const [showRateio, setShowRateio] = useState(false)
+  const [payoutSummary, setPayoutSummary] = useState<any>(null)
+  const [payouts, setPayouts] = useState<Record<string, any>>({})
 
   useEffect(() => {
     loadContests()
@@ -155,7 +158,34 @@ export default function AdminReports() {
       const data = await getReportData(selectedContestId, selectedDrawId || undefined)
       setReportData(data)
       
-      // MODIFIQUEI AQUI - Calcular rateio se houver sorteios, usando regras do concurso
+      // MODIFIQUEI AQUI - Buscar payouts reais do sorteio selecionado (seguindo regra do RankingPage)
+      if (data.draws.length > 0) {
+        const drawIdToUse = selectedDrawId || data.draws[0].id
+        try {
+          const [summary, drawPayouts] = await Promise.all([
+            getDrawPayoutSummary(drawIdToUse),
+            getPayoutsByDraw(drawIdToUse),
+          ])
+          
+          setPayoutSummary(summary)
+          
+          // Criar mapa de participação -> payout
+          const payoutsMap: Record<string, any> = {}
+          drawPayouts.forEach((p) => {
+            payoutsMap[p.participation_id] = p
+          })
+          setPayouts(payoutsMap)
+        } catch (err) {
+          console.error('Erro ao carregar payouts:', err)
+          setPayoutSummary(null)
+          setPayouts({})
+        }
+      } else {
+        setPayoutSummary(null)
+        setPayouts({})
+      }
+      
+      // MODIFIQUEI AQUI - Calcular rateio se houver sorteios, usando regras do concurso (para visualização)
       if (data.draws.length > 0 && data.participations.some(p => p.current_score > 0)) {
         // Buscar informações do concurso para usar percentuais configurados
         const contest = contests.find(c => c.id === selectedContestId)
@@ -203,33 +233,31 @@ export default function AdminReports() {
   const handleExportPDF = async () => {
     if (!reportData) return
     
-    // MODIFIQUEI AQUI - Calcular rateio se necessário antes de exportar PDF, usando regras do concurso
-    let rateioToExport = rateioData
-    if (!rateioToExport && reportData.draws.length > 0 && reportData.participations.some(p => p.current_score > 0)) {
-      // Buscar informações do concurso para usar percentuais configurados
-      const contest = contests.find(c => c.id === selectedContestId)
-      const rateioConfig = contest ? {
-        maiorPontuacao: contest.first_place_pct || 65,
-        segundaMaiorPontuacao: contest.second_place_pct || 10,
-        menorPontuacao: contest.lowest_place_pct || 7,
-        taxaAdministrativa: contest.admin_fee_pct || 18,
-      } : undefined
-
-      rateioToExport = calculateRateio(
-        reportData.participations.map(p => ({
-          current_score: p.current_score,
-          user_id: p.user_id,
-          id: p.id,
-          ticket_code: p.ticket_code,
-          user: p.user,
-        })),
-        reportData.totalRevenue,
-        rateioConfig
-      )
+    // MODIFIQUEI AQUI - Passar payouts reais para o PDF (seguindo regra do RankingPage)
+    const drawIdToUse = selectedDrawId || (reportData.draws.length > 0 ? reportData.draws[0].id : null)
+    let payoutsToExport: Record<string, any> = {}
+    let payoutSummaryToExport: any = null
+    
+    if (drawIdToUse) {
+      try {
+        const [summary, drawPayouts] = await Promise.all([
+          getDrawPayoutSummary(drawIdToUse),
+          getPayoutsByDraw(drawIdToUse),
+        ])
+        
+        payoutSummaryToExport = summary
+        
+        // Criar mapa de participação -> payout
+        drawPayouts.forEach((p) => {
+          payoutsToExport[p.participation_id] = p
+        })
+      } catch (err) {
+        console.error('Erro ao carregar payouts para PDF:', err)
+      }
     }
     
-    // MODIFIQUEI AQUI - Passar rateioData para o PDF quando disponível
-    exportToPDF(reportData, rateioToExport || undefined)
+    // MODIFIQUEI AQUI - Passar payouts reais e summary para o PDF
+    exportToPDF(reportData, payoutSummaryToExport, payoutsToExport)
   }
 
   const formatDate = (dateString: string) => {
@@ -560,7 +588,7 @@ export default function AdminReports() {
               </div>
             </div>
 
-            {/* MODIFIQUEI AQUI - Visualização de Rateio */}
+            {/* MODIFIQUEI AQUI - Visualização de Rateio com regra do ranking aplicada */}
             {rateioData && (
               <div className="p-6 border-t border-[#E5E5E5]">
                 <div className="flex items-center justify-between mb-4">
@@ -577,130 +605,145 @@ export default function AdminReports() {
                   )}
                 </div>
                 
-                {/* MODIFIQUEI AQUI - Mensagem explícita quando não houver ganhadores */}
-                {rateioData.ganhadores.length === 0 ? (
-                  <div className="bg-yellow-50 border-2 border-yellow-200 rounded-xl p-6 text-center">
-                    <div className="inline-flex items-center justify-center w-16 h-16 bg-yellow-100 rounded-full mb-4">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                      </svg>
-                    </div>
-                    <h4 className="text-lg font-bold text-yellow-900 mb-2">
-                      Nenhum Ganhador
-                    </h4>
-                    <p className="text-yellow-800 text-sm">
-                      Não há ganhadores neste concurso. Nenhum participante acertou números suficientes para receber prêmios.
-                    </p>
-                  </div>
-                ) : (
-                  <>
-                
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                  <div className="bg-gradient-to-br from-[#1E7F43] to-[#3CCB7F] rounded-xl p-4 text-white">
-                    <p className="text-xs opacity-90 mb-1">Total Arrecadado</p>
-                    <p className="text-2xl font-bold">
-                      R$ {rateioData.totalArrecadado.toFixed(2).replace('.', ',')}
-                    </p>
-                  </div>
-                  <div className="bg-gradient-to-br from-[#F4C430] to-[#FFD700] rounded-xl p-4 text-[#1F1F1F]">
-                    <p className="text-xs opacity-70 mb-1">Valor de Premiação</p>
-                    <p className="text-2xl font-bold">
-                      R$ {rateioData.valorPremiacao.toFixed(2).replace('.', ',')}
-                    </p>
-                  </div>
-                  <div className="bg-[#F9F9F9] rounded-xl p-4 border-2 border-[#E5E5E5]">
-                    <p className="text-xs text-[#1F1F1F]/70 mb-1">Taxa Administrativa</p>
-                    <p className="text-2xl font-bold text-[#1F1F1F]">
-                      R$ {rateioData.taxaAdministrativa.toFixed(2).replace('.', ',')}
-                    </p>
-                    <p className="text-xs text-[#1F1F1F]/60 mt-1">18%</p>
-                  </div>
-                </div>
+                {/* MODIFIQUEI AQUI - Aplicar regra do ranking: filtrar apenas categorias com ganhadores */}
+                {(() => {
+                  // Filtrar distribuições que realmente têm ganhadores (quantidadeGanhadores > 0)
+                  const distribuicoesComGanhadores = rateioData.distribuicao.filter(
+                    (dist: any) => dist.quantidadeGanhadores > 0
+                  )
+                  
+                  // Verificar se há ganhadores após filtrar
+                  const hasGanhadores = distribuicoesComGanhadores.length > 0
+                  
+                  if (!hasGanhadores) {
+                    return (
+                      <div className="bg-yellow-50 border-2 border-yellow-200 rounded-xl p-6 text-center">
+                        <div className="inline-flex items-center justify-center w-16 h-16 bg-yellow-100 rounded-full mb-4">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                          </svg>
+                        </div>
+                        <h4 className="text-lg font-bold text-yellow-900 mb-2">
+                          Nenhum Ganhador
+                        </h4>
+                        <p className="text-yellow-800 text-sm">
+                          Não há ganhadores neste concurso. Nenhum participante acertou números suficientes para receber prêmios.
+                        </p>
+                      </div>
+                    )
+                  }
+                  
+                  return (
+                    <>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                        <div className="bg-gradient-to-br from-[#1E7F43] to-[#3CCB7F] rounded-xl p-4 text-white">
+                          <p className="text-xs opacity-90 mb-1">Total Arrecadado</p>
+                          <p className="text-2xl font-bold">
+                            R$ {rateioData.totalArrecadado.toFixed(2).replace('.', ',')}
+                          </p>
+                        </div>
+                        <div className="bg-gradient-to-br from-[#F4C430] to-[#FFD700] rounded-xl p-4 text-[#1F1F1F]">
+                          <p className="text-xs opacity-70 mb-1">Valor de Premiação</p>
+                          <p className="text-2xl font-bold">
+                            R$ {rateioData.valorPremiacao.toFixed(2).replace('.', ',')}
+                          </p>
+                        </div>
+                        <div className="bg-[#F9F9F9] rounded-xl p-4 border-2 border-[#E5E5E5]">
+                          <p className="text-xs text-[#1F1F1F]/70 mb-1">Taxa Administrativa</p>
+                          <p className="text-2xl font-bold text-[#1F1F1F]">
+                            R$ {rateioData.taxaAdministrativa.toFixed(2).replace('.', ',')}
+                          </p>
+                          <p className="text-xs text-[#1F1F1F]/60 mt-1">18%</p>
+                        </div>
+                      </div>
 
-                {showRateio && (
-                  <div className="space-y-4">
-                    {/* Distribuição por Categoria */}
-                    <div>
-                      <h4 className="font-semibold text-[#1F1F1F] mb-3">Distribuição por Categoria</h4>
-                      <div className="space-y-2">
-                        {rateioData.distribuicao.map((dist, idx) => (
-                          <div key={idx} className="bg-[#F9F9F9] rounded-xl p-4">
-                            <div className="flex items-center justify-between mb-2">
-                              <div>
-                                <p className="font-semibold text-[#1F1F1F]">{dist.categoria}</p>
-                                <p className="text-xs text-[#1F1F1F]/70">
-                                  {dist.quantidadeGanhadores} ganhador(es) com {dist.pontuacao} acerto(s)
-                                </p>
-                              </div>
-                              <div className="text-right">
-                                <p className="text-lg font-bold text-[#1E7F43]">
-                                  R$ {dist.valorTotal.toFixed(2).replace('.', ',')}
-                                </p>
-                                <p className="text-xs text-[#1F1F1F]/60">{dist.percentual}%</p>
-                              </div>
-                            </div>
-                            <div className="mt-2 pt-2 border-t border-[#E5E5E5]">
-                              <p className="text-xs text-[#1F1F1F]/70">
-                                Valor por ganhador: <span className="font-semibold text-[#3CCB7F]">
-                                  R$ {dist.valorPorGanhador.toFixed(2).replace('.', ',')}
-                                </span>
-                              </p>
+                      {showRateio && (
+                        <div className="space-y-4">
+                          {/* MODIFIQUEI AQUI - Distribuição por Categoria: mostrar apenas categorias com ganhadores */}
+                          <div>
+                            <h4 className="font-semibold text-[#1F1F1F] mb-3">Distribuição por Categoria</h4>
+                            <div className="space-y-2">
+                              {distribuicoesComGanhadores.map((dist: any, idx: number) => (
+                                <div key={idx} className="bg-[#F9F9F9] rounded-xl p-4">
+                                  <div className="flex items-center justify-between mb-2">
+                                    <div>
+                                      <p className="font-semibold text-[#1F1F1F]">{dist.categoria}</p>
+                                      <p className="text-xs text-[#1F1F1F]/70">
+                                        {dist.quantidadeGanhadores} ganhador(es) com {dist.pontuacao} acerto(s)
+                                      </p>
+                                    </div>
+                                    <div className="text-right">
+                                      <p className="text-lg font-bold text-[#1E7F43]">
+                                        R$ {dist.valorTotal.toFixed(2).replace('.', ',')}
+                                      </p>
+                                      <p className="text-xs text-[#1F1F1F]/60">{dist.percentual}%</p>
+                                    </div>
+                                  </div>
+                                  <div className="mt-2 pt-2 border-t border-[#E5E5E5]">
+                                    <p className="text-xs text-[#1F1F1F]/70">
+                                      Valor por ganhador: <span className="font-semibold text-[#3CCB7F]">
+                                        R$ {dist.valorPorGanhador.toFixed(2).replace('.', ',')}
+                                      </span>
+                                    </p>
+                                  </div>
+                                </div>
+                              ))}
                             </div>
                           </div>
-                        ))}
-                      </div>
-                    </div>
 
-                    {/* Lista de Ganhadores */}
-                    <div>
-                      <h4 className="font-semibold text-[#1F1F1F] mb-3">Ganhadores</h4>
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="border-b border-[#E5E5E5]">
-                              <th className="text-left py-2 px-3 font-semibold text-[#1F1F1F]">Nome</th>
-                              <th className="text-left py-2 px-3 font-semibold text-[#1F1F1F]">Código/Ticket</th>
-                              <th className="text-left py-2 px-3 font-semibold text-[#1F1F1F]">Pontuação</th>
-                              <th className="text-left py-2 px-3 font-semibold text-[#1F1F1F]">Categoria</th>
-                              <th className="text-left py-2 px-3 font-semibold text-[#1F1F1F]">Prêmio</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {rateioData.ganhadores.map((ganhador, idx) => (
-                              <tr key={idx} className="border-b border-[#E5E5E5]/50 hover:bg-[#F9F9F9]">
-                                <td className="py-2 px-3">{ganhador.userName}</td>
-                                <td className="py-2 px-3">
-                                  {ganhador.ticketCode ? (
-                                    <span className="font-mono text-xs bg-[#1E7F43]/10 text-[#1E7F43] px-2 py-1 rounded">
-                                      {ganhador.ticketCode}
-                                    </span>
-                                  ) : (
-                                    'N/A'
-                                  )}
-                                </td>
-                                <td className="py-2 px-3">
-                                  <span className="font-semibold text-[#1E7F43]">{ganhador.pontuacao}</span>
-                                </td>
-                                <td className="py-2 px-3">
-                                  <span className="px-2 py-1 bg-[#F4C430]/20 text-[#F4C430] rounded text-xs font-semibold">
-                                    {ganhador.categoria}
-                                  </span>
-                                </td>
-                                <td className="py-2 px-3">
-                                  <span className="font-bold text-[#3CCB7F]">
-                                    R$ {ganhador.valorPremio.toFixed(2).replace('.', ',')}
-                                  </span>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  </div>
-                )}
-                  </>
-                )}
+                          {/* MODIFIQUEI AQUI - Lista de Ganhadores: mostrar apenas ganhadores com prêmio > 0 */}
+                          <div>
+                            <h4 className="font-semibold text-[#1F1F1F] mb-3">Ganhadores</h4>
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-sm">
+                                <thead>
+                                  <tr className="border-b border-[#E5E5E5]">
+                                    <th className="text-left py-2 px-3 font-semibold text-[#1F1F1F]">Nome</th>
+                                    <th className="text-left py-2 px-3 font-semibold text-[#1F1F1F]">Código/Ticket</th>
+                                    <th className="text-left py-2 px-3 font-semibold text-[#1F1F1F]">Pontuação</th>
+                                    <th className="text-left py-2 px-3 font-semibold text-[#1F1F1F]">Categoria</th>
+                                    <th className="text-left py-2 px-3 font-semibold text-[#1F1F1F]">Prêmio</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {rateioData.ganhadores
+                                    .filter((ganhador: any) => ganhador.valorPremio > 0)
+                                    .map((ganhador: any, idx: number) => (
+                                      <tr key={idx} className="border-b border-[#E5E5E5]/50 hover:bg-[#F9F9F9]">
+                                        <td className="py-2 px-3">{ganhador.userName}</td>
+                                        <td className="py-2 px-3">
+                                          {ganhador.ticketCode ? (
+                                            <span className="font-mono text-xs bg-[#1E7F43]/10 text-[#1E7F43] px-2 py-1 rounded">
+                                              {ganhador.ticketCode}
+                                            </span>
+                                          ) : (
+                                            'N/A'
+                                          )}
+                                        </td>
+                                        <td className="py-2 px-3">
+                                          <span className="font-semibold text-[#1E7F43]">{ganhador.pontuacao}</span>
+                                        </td>
+                                        <td className="py-2 px-3">
+                                          <span className="px-2 py-1 bg-[#F4C430]/20 text-[#F4C430] rounded text-xs font-semibold">
+                                            {ganhador.categoria}
+                                          </span>
+                                        </td>
+                                        <td className="py-2 px-3">
+                                          <span className="font-bold text-[#3CCB7F]">
+                                            R$ {ganhador.valorPremio.toFixed(2).replace('.', ',')}
+                                          </span>
+                                        </td>
+                                      </tr>
+                                    ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )
+                })()}
               </div>
             )}
 

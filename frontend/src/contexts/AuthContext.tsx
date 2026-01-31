@@ -136,19 +136,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return
       }
       
+      // MODIFIQUEI AQUI - Não resetar user se já está logado e é o mesmo usuário (evita perda de estado)
+      const currentUserId = session?.user?.id
+      const existingUserId = user?.id
+      
+      if (currentUserId === existingUserId && _event === 'TOKEN_REFRESHED') {
+        // Token foi atualizado, mas é o mesmo usuário - não precisa recarregar tudo
+        console.log('[AuthContext] Token atualizado para o mesmo usuário, mantendo estado')
+        return
+      }
+      
       setUser(session?.user ?? null)
       
-      // MODIFIQUEI AQUI - setLoading(true) antes de chamar loadProfile
-      setLoading(true)
+      // MODIFIQUEI AQUI - Só setar loading se realmente houver mudança de usuário ou logout
+      if (currentUserId !== existingUserId) {
+        setLoading(true)
+      }
+      
       try {
         if (session?.user?.id) {
-          // MODIFIQUEI AQUI - Pequeno delay após SIGNED_IN para dar tempo do trigger criar o perfil
-          if (_event === 'SIGNED_IN') {
-            await new Promise(resolve => setTimeout(resolve, 300))
+          // MODIFIQUEI AQUI - Só recarregar perfil se for usuário diferente ou primeiro login
+          if (currentUserId !== existingUserId || !profile) {
+            // MODIFIQUEI AQUI - Pequeno delay após SIGNED_IN para dar tempo do trigger criar o perfil
+            if (_event === 'SIGNED_IN') {
+              await new Promise(resolve => setTimeout(resolve, 300))
+            }
+            await loadProfile(session.user.id)
           }
-          await loadProfile(session.user.id)
         } else {
+          // Logout - limpar estado
           setProfile(null)
+          setLoading(false)
         }
       } catch (error) {
         // MODIFIQUEI AQUI - NÃO falhar silenciosamente
@@ -158,7 +176,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       } finally {
         // MODIFIQUEI AQUI - Garantir que loading finalize sempre após loadProfile terminar
-        if (isMounted) {
+        if (isMounted && currentUserId !== existingUserId) {
           setLoading(false)
         }
       }
