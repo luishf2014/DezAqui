@@ -45,18 +45,55 @@ export function exportToCSV(reportData: ReportData): void {
 }
 
 /**
- * Exporta relatório para Excel (formato CSV com extensão .xlsx)
- * MODIFIQUEI AQUI - Função para exportar Excel (usando CSV por enquanto)
+ * Exporta relatório para Excel (XLSX real)
+ * MODIFIQUEI AQUI - Mantém a assinatura void (pra não quebrar botão),
+ * mas tenta gerar XLSX real via import dinâmico. Se falhar, cai no CSV como antes.
  */
 export function exportToExcel(reportData: ReportData): void {
-  // Por enquanto, usamos CSV com extensão .xlsx
-  // Para implementação completa, seria necessário biblioteca como xlsx
-  exportToCSV(reportData)
+  ;(async () => {
+    try {
+      const XLSX = await import('xlsx')
+
+      const rows = reportData.participations.map((p) => {
+        const numbers = p.numbers.map((n) => n.toString().padStart(2, '0')).join(' ')
+        const value = p.payment ? Number(p.payment.amount) : 0
+        return {
+          Nome: p.user?.name || 'N/A',
+          Email: p.user?.email || 'N/A',
+          'Código/Ticket': p.ticket_code || 'N/A',
+          'Números Escolhidos': numbers,
+          Pontuação: Number(p.current_score || 0),
+          'Valor Pago': value,
+          Status: p.status || 'N/A',
+        }
+      })
+
+      const ws = XLSX.utils.json_to_sheet(rows)
+      ;(ws as any)['!cols'] = [
+        { wch: 22 },
+        { wch: 28 },
+        { wch: 18 },
+        { wch: 44 },
+        { wch: 10 },
+        { wch: 12 },
+        { wch: 12 },
+      ]
+
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, 'Relatório')
+
+      XLSX.writeFile(
+        wb,
+        `relatorio_${reportData.contest.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`
+      )
+    } catch {
+      exportToCSV(reportData)
+    }
+  })()
 }
 
 /**
  * Gera conteúdo HTML para PDF
- * MODIFIQUEI AQUI - Função refatorada para gerar HTML do relatório com novo design
  * Usa payouts reais do banco de dados (seguindo regra do RankingPage)
  */
 export function generateReportHTML(
@@ -109,54 +146,90 @@ export function generateReportHTML(
   }
 
   // ============================
-  // MODIFIQUEI AQUI - Helpers financeiros (declara UMA VEZ só)
+  // MODIFIQUEI AQUI - Helpers financeiros
   // ============================
   const money = (v: number) =>
     Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
-  const totalArrecadado = Number((reportData as any)?.totalRevenue || 0)
-
-  // MODIFIQUEI AQUI - Pega total da categoria (valor "cheio") e valor por ganhador
-  const getCategoryTotals = (key: 'TOP' | 'SECOND' | 'LOWEST') => {
-    const cat = payoutSummary?.categories?.[key]
-
-    const winnersCount = Number(cat?.winnersCount || 0)
-
-    // MODIFIQUEI AQUI - Total da categoria:
-    // Prioriza "totalAmount" se existir; senão usa amountPerWinner * winnersCount (modelo atual do seu summary)
-    const amountPerWinner = Number(cat?.amountPerWinner || 0)
-    const totalFromConfig = Number(cat?.totalAmount || 0)
-
-    const total = totalFromConfig > 0 ? totalFromConfig : amountPerWinner * winnersCount
-
-    // MODIFIQUEI AQUI - Se total existir mas winnersCount ainda não, tenta inferir por payoutSummary (se tiver)
-    // (mantém comportamento seguro sem quebrar)
-    const perWinner = winnersCount > 0 ? total / winnersCount : 0
-
-    return { total, winnersCount, perWinner }
+  const toNumber = (v: any) => {
+    const n = Number(v)
+    return Number.isFinite(n) ? n : 0
   }
 
-  const topTotals = getCategoryTotals('TOP')
-  const secondTotals = getCategoryTotals('SECOND')
-  const lowestTotals = getCategoryTotals('LOWEST')
+  // MODIFIQUEI AQUI - tenta achar percentuais em vários formatos comuns
+  const pickPercent = (obj: any): number => {
+    if (!obj) return 0
+    const candidates = [
+      obj.percent,
+      obj.percentage,
+      obj.percentual,
+      obj.rate,
+      obj.sharePercent,
+      obj.share_percentage,
+    ]
+    const pct = candidates.map(toNumber).find((n) => n > 0) || 0
+    return pct
+  }
 
-  const totalPremiado = topTotals.total + secondTotals.total + lowestTotals.total
+  // MODIFIQUEI AQUI - taxa admin (%) vindo do payoutSummary (vários nomes possíveis)
+  const adminPercent =
+    toNumber(payoutSummary?.adminFeePercent) ||
+    toNumber(payoutSummary?.admin_percent) ||
+    toNumber(payoutSummary?.adminPercent) ||
+    toNumber(payoutSummary?.taxaAdministracaoPercent) ||
+    toNumber(payoutSummary?.feePercent) ||
+    toNumber(payoutSummary?.percentages?.admin) ||
+    toNumber(payoutSummary?.percents?.admin) ||
+    0
 
-  const showTop = topTotals.total > 0
-  const showSecond = secondTotals.total > 0
-  const showLowest = lowestTotals.total > 0
+  const totalArrecadado = toNumber((reportData as any)?.totalRevenue || 0)
 
-  // MODIFIQUEI AQUI - Bloco de resumo financeiro (sem ADMIN) - mostrar total da categoria mesmo sem ganhador
-  return `
+  // MODIFIQUEI AQUI - taxa admin e pool sem admin
+  const adminAmount = adminPercent > 0 ? (totalArrecadado * adminPercent) / 100 : 0
+  const poolSemAdmin = Math.max(totalArrecadado - adminAmount, 0)
+
+  // MODIFIQUEI AQUI - tenta buscar % por categoria em múltiplos formatos
+  const getCategoryPercent = (key: 'TOP' | 'SECOND' | 'LOWEST') => {
+    const cat = payoutSummary?.categories?.[key]
+    const pctFromCat = pickPercent(cat)
+    if (pctFromCat > 0) return pctFromCat
+
+    const lowKey = key === 'TOP' ? 'top' : key === 'SECOND' ? 'second' : 'lowest'
+    const pctFromObj =
+      toNumber(payoutSummary?.percentages?.[lowKey]) ||
+      toNumber(payoutSummary?.percents?.[lowKey]) ||
+      toNumber(payoutSummary?.config?.[`${lowKey}Percent`]) ||
+      toNumber(payoutSummary?.settings?.[`${lowKey}Percent`]) ||
+      0
+
+    return pctFromObj
+  }
+
+  // MODIFIQUEI AQUI - total da categoria SEM ADMIN (valor em R$)
+  const getCategoryTotal = (key: 'TOP' | 'SECOND' | 'LOWEST') => {
+    const pct = getCategoryPercent(key)
+    if (pct > 0) return (poolSemAdmin * pct) / 100
+
+    // fallback antigo se não tiver percent:
+    const cat = payoutSummary?.categories?.[key]
+    const winnersCount = toNumber(cat?.winnersCount || 0)
+    const amountPerWinner = toNumber(cat?.amountPerWinner || 0)
+    const totalFromConfig = toNumber(cat?.totalAmount || 0)
+    return totalFromConfig > 0 ? totalFromConfig : amountPerWinner * winnersCount
+  }
+
+  const totalTop = getCategoryTotal('TOP')
+  const totalSecond = getCategoryTotal('SECOND')
+  const totalLowest = getCategoryTotal('LOWEST')
+
+  // ============================
+  // MODIFIQUEI AQUI - Resumo financeiro: APENAS TOP/2º/MENOR em VALOR (R$)
+  // ============================
+  const financeHtml = `
 <div class="finance-mini">
   <h3>Resumo Financeiro</h3>
 
   <div class="finance-grid">
-    <div class="finance-card">
-      <div class="finance-label">Total Arrecadado</div>
-      <div class="finance-value">R$ ${money(totalArrecadado)}</div>
-    </div>
-
     <div class="finance-card">
       <div class="finance-label">TOP (🥇)</div>
       <div class="finance-value">R$ ${money(totalTop)}</div>
@@ -172,14 +245,8 @@ export function generateReportHTML(
       <div class="finance-value">R$ ${money(totalLowest)}</div>
     </div>
   </div>
-
-  <!-- MODIFIQUEI AQUI - Total premiado (sem ADMIN) -->
-  <div style="margin-top:10px; font-size:11px; color:#666; font-weight:700;">
-    Total premiado (sem ADMIN): <span style="font-size:12px; color:#1F1F1F; font-weight:900;">R$ ${money(totalPremiado)}</span>
-  </div>
 </div>
 `
-
 
   // ============================
   // HTML BASE
@@ -209,7 +276,7 @@ export function generateReportHTML(
           background: #ffffff;
         }
 
-        /* MODIFIQUEI AQUI - Container fixo para o html2pdf capturar corretamente */
+        /* Container fixo */
         #pdf-root {
           width: 190mm;
           margin: 0 auto;
@@ -240,7 +307,7 @@ export function generateReportHTML(
           font-size: 12px;
         }
 
-        /* MODIFIQUEI AQUI - Bloco pequeno de resumo financeiro (sem ADMIN) */
+        /* Resumo financeiro */
         .finance-mini {
           background: #F8F9FA;
           border: 2px solid #1E7F43;
@@ -258,7 +325,7 @@ export function generateReportHTML(
         }
         .finance-grid {
           display: grid;
-          grid-template-columns: 1.2fr 1fr 1fr 1fr;
+          grid-template-columns: 1fr 1fr 1fr 1fr;
           gap: 10px;
         }
         .finance-card {
@@ -297,7 +364,7 @@ export function generateReportHTML(
           margin: 0;
         }
 
-        /* Seção de Resultados */
+        /* Seção Resultados */
         .results-section {
           background: #F8F9FA;
           border: 2px solid #1E7F43;
@@ -336,21 +403,20 @@ export function generateReportHTML(
           font-size: 14px;
         }
 
-        /* MODIFIQUEI AQUI - Centralizar conteúdo dentro dos quadrados (corrigindo "texto subindo") */
+        /* Centralização */
         .result-number,
         .number-item {
           display: inline-flex;
           align-items: center;
           justify-content: center;
           line-height: 1 !important;
-          padding: 0 !important; /* MODIFIQUEI AQUI - remove padding que desloca o texto */
+          padding: 0 !important;
           vertical-align: middle;
         }
-        /* MODIFIQUEI AQUI - Garantir altura consistente */
         .result-number { height: 38px; }
         .number-item { height: 18px; min-width: 24px; }
 
-        /* Tabela de Participações */
+        /* Tabela */
         .table-section {
           margin-bottom: 35px;
         }
@@ -389,7 +455,7 @@ export function generateReportHTML(
         }
         tr:hover { background: #F9F9F9; }
 
-        /* Números em linha única */
+        /* Números inline */
         .numbers-inline {
           display: inline-block;
           white-space: nowrap;
@@ -426,7 +492,6 @@ export function generateReportHTML(
           gap: 6px;
         }
 
-        /* MODIFIQUEI AQUI - Aumentar tamanho da medalha */
         .hits-medal {
           font-size: 20px;
           line-height: 1;
@@ -435,7 +500,7 @@ export function generateReportHTML(
           justify-content: center;
         }
 
-        /* Seção de Prêmios */
+        /* Prêmios */
         .prizes-section {
           background: #F8F9FA;
           border-radius: 10px;
@@ -494,7 +559,6 @@ export function generateReportHTML(
         .winner-separator { color: #999; font-weight: 300; }
         .winner-name { color: #1F1F1F; font-size: 12px; flex: 1; }
 
-        /* Final do Bolão */
         .final-banner {
           background: linear-gradient(135deg, #1E7F43 0%, #3CCB7F 100%);
           color: white;
@@ -515,16 +579,12 @@ export function generateReportHTML(
         @media print {
           .no-print { display: none; }
           body { padding: 20px; }
-          .results-section, .prizes-section {
-            page-break-inside: avoid;
-          }
         }
       </style>
     </head>
     <body>
-      <!-- MODIFIQUEI AQUI - Wrapper principal para capturar o PDF com estilos -->
       <div id="pdf-root">
-      <!-- Cabeçalho -->
+
       <div class="header">
         <h1>${reportData.contest.name}</h1>
         <div class="subtitle">Data de Início: ${formatDate(reportData.contest.start_date)}</div>
@@ -532,82 +592,45 @@ export function generateReportHTML(
       </div>
   `
 
-  // MODIFIQUEI AQUI - Inserir resumo financeiro (sem ADMIN)
+  // resumo financeiro
   html += financeHtml
 
-  // Aviso
+  // aviso
   html += `
-      <!-- Aviso Fixo -->
       <div class="warning-box">
         <p>⚠️ Atenção - O jogo que não estiver pago não terá direito de receber os prêmios.</p>
       </div>
   `
 
-  // Resultados
+  // resultados
   html += `
-      <!-- Resultados no TOPO -->
       <div class="results-section">
         <h2>Resultados / Números Sorteados</h2>
         <div class="results-numbers">
-          ${uniqueDrawnNumbers.length > 0
-      ? uniqueDrawnNumbers
-        .map((n) => `<span class="result-number">${n.toString().padStart(2, '0')}</span>`)
-        .join('')
-      : '<span class="no-results">Resultados: -</span>'
-    }
+          ${
+            uniqueDrawnNumbers.length > 0
+              ? uniqueDrawnNumbers
+                  .map((n) => `<span class="result-number">${n.toString().padStart(2, '0')}</span>`)
+                  .join('')
+              : '<span class="no-results">Resultados: -</span>'
+          }
         </div>
       </div>
   `
 
-  // Resumo/Classificação dos Ganhadores (usando payouts reais)
+  // Resumo final / ganhadores
   const isFinalReport = reportData.reportType === 'final' || reportData.contest.status === 'finished'
   if (isFinalReport && payoutSummary && payoutSummary.maxScore > 0) {
     const hasPremiados =
       payoutSummary.categories.TOP || payoutSummary.categories.SECOND || payoutSummary.categories.LOWEST
 
     if (hasPremiados) {
-      // MODIFIQUEI AQUI - Função fora de template string para evitar erro do esbuild
-      const buildPremiacaoBox = (key: 'TOP' | 'SECOND' | 'LOWEST', label: string) => {
-        const cat = payoutSummary?.categories?.[key]
-        if (!cat) return ''
-
-        const valorPorGanhador = Number(cat.amountPerWinner || 0)
-        const qtd = Number(cat.winnersCount || 0)
-        if (valorPorGanhador <= 0 || qtd <= 0) return ''
-
-        const totalCategoria = valorPorGanhador * qtd
-
-        const valorPorGanhadorFmt = valorPorGanhador.toLocaleString('pt-BR', {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        })
-
-        const totalCategoriaFmt = totalCategoria.toLocaleString('pt-BR', {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        })
-
-        return `
-          <div style="
-            background:#fff;
-            border:1px solid #E5E5E5;
-            border-left:5px solid #1E7F43;
-            border-radius:8px;
-            padding:12px 14px;
-            margin:10px 0;
-            box-shadow:0 2px 4px rgba(0,0,0,0.03);
-          ">
-            <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
-              <div style="font-weight:700; color:#1E7F43; font-size:13px;">${label}</div>
-              <div style="font-weight:800; color:#1F1F1F; font-size:13px;">R$ ${valorPorGanhadorFmt}</div>
-            </div>
-            <div style="margin-top:6px; display:flex; align-items:center; justify-content:space-between; gap:12px;">
-              <div style="color:#666; font-size:11px;">${qtd} ganhador(es)</div>
-              <div style="color:#666; font-size:11px;">Total categoria: <b style="color:#1F1F1F;">R$ ${totalCategoriaFmt}</b></div>
-            </div>
-          </div>
-        `
-      }
+      // (mantém sua lógica de prêmios como estava)
+      const categorias = [
+        { key: 'TOP', data: payoutSummary.categories.TOP },
+        { key: 'SECOND', data: payoutSummary.categories.SECOND },
+        { key: 'LOWEST', data: payoutSummary.categories.LOWEST },
+      ] as const
 
       let htmlGanhadores = `
         <div class="final-banner">
@@ -617,21 +640,6 @@ export function generateReportHTML(
         <div class="prizes-section">
           <h2>Resumo Final do Bolão</h2>
       `
-
-      // MODIFIQUEI AQUI - Quadro de premiações por categoria (sem administrador)
-      htmlGanhadores += `
-        <div style="margin: 10px 0 18px 0;">
-          ${buildPremiacaoBox('TOP', 'Maior Pontuação')}
-          ${buildPremiacaoBox('SECOND', 'Segunda Maior Pontuação')}
-          ${buildPremiacaoBox('LOWEST', 'Menor Pontuação')}
-        </div>
-      `
-
-      const categorias = [
-        { key: 'TOP', data: payoutSummary.categories.TOP },
-        { key: 'SECOND', data: payoutSummary.categories.SECOND },
-        { key: 'LOWEST', data: payoutSummary.categories.LOWEST },
-      ] as const
 
       categorias.forEach((categoria) => {
         if (!categoria.data) return
@@ -661,8 +669,9 @@ export function generateReportHTML(
         const isMenorPontuacao = categoria.key === 'LOWEST'
         const textoResumo = isMenorPontuacao
           ? `${categoriaTexto} - ${categoria.data.winnersCount} ganhadores - Valor para cada premiado que acertou ${categoria.data.score} ponto: R$${valorFormatado}`
-          : `${categoriaTexto} - ${categoria.data.winnersCount} ganhador${categoria.data.winnersCount > 1 ? 'es' : ''
-          } - Valor para cada premiado: R$${valorFormatado}`
+          : `${categoriaTexto} - ${categoria.data.winnersCount} ganhador${
+              categoria.data.winnersCount > 1 ? 'es' : ''
+            } - Valor para cada premiado: R$${valorFormatado}`
 
         htmlGanhadores += `
           <div class="prize-category">
@@ -693,9 +702,8 @@ export function generateReportHTML(
     }
   }
 
-  // Tabela (início)
+  // tabela
   html += `
-      <!-- Tabela de Participações -->
       <div class="table-section">
         <h2>Lista de Participações</h2>
         <table>
@@ -705,36 +713,23 @@ export function generateReportHTML(
               <th style="width: 200px;">Nome</th>
               <th style="width: 180px;">Código/Ticket</th>
               <th>Números Escolhidos</th>
-
-              <!-- MODIFIQUEI AQUI - Novas colunas conforme sequência pedida -->
               <th style="width: 110px; text-align: center;">Acertos</th>
-
-              <!-- MODIFIQUEI AQUI - Remover apenas o título da medalha (deixar coluna sem texto) -->
               <th style="width: 80px; text-align: center;"></th>
             </tr>
           </thead>
           <tbody>
   `
 
-  // Linhas
   reportData.participations.forEach((p, index) => {
     const sequentialId = index + 1
     const hits = getHits(p.numbers)
-
-    // Pegar categoria do payout por participation.id (map é participation_id -> payout)
     const category = (payouts as any)?.[p.id]?.category as string | undefined
     const medal = getMedalByCategory(category)
 
     const numbersHtml = p.numbers
       .map((n) => {
-        const isHitNumber = isHit(n)
-        return (
-          '<span class="number-item ' +
-          (isHitNumber ? 'hit' : '') +
-          '">' +
-          n.toString().padStart(2, '0') +
-          '</span>'
-        )
+        const hit = isHit(n)
+        return `<span class="number-item ${hit ? 'hit' : ''}">${n.toString().padStart(2, '0')}</span>`
       })
       .join('')
 
@@ -742,22 +737,13 @@ export function generateReportHTML(
             <tr>
               <td style="text-align: center; font-weight: 600; color: #666;">${sequentialId}</td>
               <td style="font-weight: 500;">${p.user?.name || 'N/A'}</td>
-              <td style="font-family: 'Courier New', monospace; font-size: 10px; color: #666;">${p.ticket_code || 'N/A'
-      }</td>
-
-              <!-- MODIFIQUEI AQUI - Coluna apenas com números -->
-              <td>
-                <div class="numbers-inline">
-                  ${numbersHtml}
-                </div>
-              </td>
-
-              <!-- MODIFIQUEI AQUI - Coluna "Acertos" separada (mantendo o estilo do badge) -->
+              <td style="font-family: 'Courier New', monospace; font-size: 10px; color: #666;">${
+                p.ticket_code || 'N/A'
+              }</td>
+              <td><div class="numbers-inline">${numbersHtml}</div></td>
               <td style="text-align: center;">
                 ${hits > 0 ? `<span class="hits-count">Acertos: ${hits}</span>` : ''}
               </td>
-
-              <!-- MODIFIQUEI AQUI - Coluna "Medalha" (maior) -->
               <td style="text-align: center;">
                 ${medal ? `<span class="hits-medal">${medal}</span>` : ''}
               </td>
@@ -765,13 +751,11 @@ export function generateReportHTML(
     `
   })
 
-  // Fechamentos
   html += `
           </tbody>
         </table>
       </div>
 
-      <!-- MODIFIQUEI AQUI - Fechar wrapper principal -->
       </div>
     </body>
     </html>
@@ -781,10 +765,8 @@ export function generateReportHTML(
 }
 
 /**
- * Exporta relatório para PDF usando window.print()
- * MODIFIQUEI AQUI - Função para gerar PDF via print
+ * Exporta relatório para PDF usando html2pdf
  */
-// MODIFIQUEI AQUI - Função auxiliar para mostrar modais de erro com ícones
 function showErrorModal(title: string, message: string) {
   const iconSvg = `
     <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -845,7 +827,6 @@ export function exportToPDF(reportData: ReportData, payoutSummary?: any, payouts
     if (iframe.parentNode) document.body.removeChild(iframe)
   }
 
-  // MODIFIQUEI AQUI - Esperar render real antes de capturar
   const waitForPaint = async () => {
     await new Promise<void>((r) => requestAnimationFrame(() => r()))
     await new Promise<void>((r) => requestAnimationFrame(() => r()))
@@ -874,7 +855,6 @@ export function exportToPDF(reportData: ReportData, payoutSummary?: any, payouts
           scrollX: 0,
           scrollY: 0,
           letterRendering: true,
-
           onclone: (clonedDoc: Document) => {
             const styles = iframeDoc.querySelectorAll('style')
             styles.forEach((s) => clonedDoc.head.appendChild(s.cloneNode(true)))
@@ -882,11 +862,10 @@ export function exportToPDF(reportData: ReportData, payoutSummary?: any, payouts
             const cloneBody = clonedDoc.body as HTMLBodyElement
             cloneBody.style.background = '#ffffff'
             cloneBody.style.webkitPrintColorAdjust = 'exact'
-              ; (cloneBody.style as any).printColorAdjust = 'exact'
+            ;(cloneBody.style as any).printColorAdjust = 'exact'
           },
         },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-        pagebreak: { mode: ['css', 'legacy'] },
       }
 
       await html2pdf().set(opt).from(root).save()
