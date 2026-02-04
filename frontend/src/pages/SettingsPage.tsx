@@ -19,6 +19,8 @@ export default function SettingsPage() {
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
+  const [cpf, setCpf] = useState('')
+  const [hasCpfSaved, setHasCpfSaved] = useState(false)
   
   // Estado de alteração de senha
   const [currentPassword, setCurrentPassword] = useState('')
@@ -68,6 +70,40 @@ export default function SettingsPage() {
     return `${cpfValue.slice(0, 3)}.***.***-${cpfValue.slice(9, 11)}`
   }
 
+  // Função para validar CPF
+  const validateCpf = (cpfValue: string): boolean => {
+    const cleanCpf = cpfValue.replace(/\D/g, '')
+    if (cleanCpf.length !== 11) return false
+    if (/^(\d)\1+$/.test(cleanCpf)) return false // CPFs com todos dígitos iguais
+
+    let sum = 0
+    for (let i = 0; i < 9; i++) {
+      sum += parseInt(cleanCpf[i]) * (10 - i)
+    }
+    let remainder = (sum * 10) % 11
+    if (remainder === 10 || remainder === 11) remainder = 0
+    if (remainder !== parseInt(cleanCpf[9])) return false
+
+    sum = 0
+    for (let i = 0; i < 10; i++) {
+      sum += parseInt(cleanCpf[i]) * (11 - i)
+    }
+    remainder = (sum * 10) % 11
+    if (remainder === 10 || remainder === 11) remainder = 0
+    if (remainder !== parseInt(cleanCpf[10])) return false
+
+    return true
+  }
+
+  // Função para formatar CPF enquanto digita
+  const formatCpfInput = (value: string): string => {
+    const cleanValue = value.replace(/\D/g, '').slice(0, 11)
+    if (cleanValue.length <= 3) return cleanValue
+    if (cleanValue.length <= 6) return `${cleanValue.slice(0, 3)}.${cleanValue.slice(3)}`
+    if (cleanValue.length <= 9) return `${cleanValue.slice(0, 3)}.${cleanValue.slice(3, 6)}.${cleanValue.slice(6)}`
+    return `${cleanValue.slice(0, 3)}.${cleanValue.slice(3, 6)}.${cleanValue.slice(6, 9)}-${cleanValue.slice(9)}`
+  }
+
   const loadUserData = async () => {
     try {
       setLoading(true)
@@ -77,6 +113,14 @@ export default function SettingsPage() {
         setName(profile.name || '')
         setPhone(profile.phone || '')
         setEmail(profile.email || '')
+        // CPF: se já existe, marca como salvo (não pode editar)
+        if (profile.cpf) {
+          setCpf(profile.cpf)
+          setHasCpfSaved(true)
+        } else {
+          setCpf('')
+          setHasCpfSaved(false)
+        }
       }
       
       // MODIFIQUEI AQUI - Carregar último acesso (usando updated_at do perfil como aproximação)
@@ -119,20 +163,47 @@ export default function SettingsPage() {
     try {
       setSaving(true)
       setError(null)
-      
+
+      // Preparar dados para atualização
+      const updateData: {
+        name: string
+        phone: string
+        email: string | null
+        updated_at: string
+        cpf?: string
+      } = {
+        name: name.trim(),
+        phone: phone.trim(),
+        email: email.trim() || null,
+        updated_at: new Date().toISOString(),
+      }
+
+      // Se não tem CPF salvo e usuário preencheu, validar e incluir
+      if (!hasCpfSaved && cpf) {
+        const cleanCpf = cpf.replace(/\D/g, '')
+        if (cleanCpf.length > 0) {
+          if (!validateCpf(cleanCpf)) {
+            setError('CPF inválido. Verifique os números digitados.')
+            setSaving(false)
+            return
+          }
+          updateData.cpf = cleanCpf
+        }
+      }
+
       // MODIFIQUEI AQUI - Atualizar perfil no Supabase
       const { error: updateError } = await supabase
         .from('profiles')
-        .update({
-          name: name.trim(),
-          phone: phone.trim(),
-          email: email.trim() || null,
-          updated_at: new Date().toISOString(),
-        })
+        .update(updateData)
         .eq('id', user.id)
 
       if (updateError) {
         throw updateError
+      }
+
+      // Se salvou CPF, marcar como salvo (não pode mais editar)
+      if (updateData.cpf) {
+        setHasCpfSaved(true)
       }
 
       setSuccess('Perfil atualizado com sucesso!')
@@ -407,14 +478,33 @@ export default function SettingsPage() {
 
                   <div>
                     <label className="block text-sm font-semibold text-[#1F1F1F] mb-2">
-                      CPF
+                      CPF {!hasCpfSaved && <span className="text-[#F4C430]">(necessário para Pix)</span>}
                     </label>
-                    <div className="w-full px-4 py-3 border border-[#E5E5E5] rounded-xl bg-[#F9F9F9] text-[#1F1F1F]">
-                      {profile?.cpf ? maskCpf(profile.cpf) : 'Não informado'}
-                    </div>
-                    <p className="mt-1 text-xs text-[#1F1F1F]/50">
-                      CPF não pode ser alterado após o cadastro
-                    </p>
+                    {hasCpfSaved ? (
+                      <>
+                        <div className="w-full px-4 py-3 border border-[#E5E5E5] rounded-xl bg-[#F9F9F9] text-[#1F1F1F]">
+                          {maskCpf(cpf)}
+                        </div>
+                        <p className="mt-1 text-xs text-[#1F1F1F]/50">
+                          CPF não pode ser alterado após o cadastro
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <input
+                          id="cpf"
+                          type="text"
+                          value={formatCpfInput(cpf)}
+                          onChange={(e) => setCpf(e.target.value.replace(/\D/g, ''))}
+                          className="w-full px-4 py-3 border border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43] focus:border-transparent"
+                          placeholder="000.000.000-00"
+                          maxLength={14}
+                        />
+                        <p className="mt-1 text-xs text-[#F4C430]">
+                          Informe seu CPF para realizar pagamentos via Pix. Após salvar, não poderá ser alterado.
+                        </p>
+                      </>
+                    )}
                   </div>
 
                   <div className="pt-4 border-t border-[#E5E5E5]">

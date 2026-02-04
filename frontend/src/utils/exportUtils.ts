@@ -156,71 +156,23 @@ export function generateReportHTML(
     return Number.isFinite(n) ? n : 0
   }
 
-  // MODIFIQUEI AQUI - tenta achar percentuais em vários formatos comuns
-  const pickPercent = (obj: any): number => {
-    if (!obj) return 0
-    const candidates = [
-      obj.percent,
-      obj.percentage,
-      obj.percentual,
-      obj.rate,
-      obj.sharePercent,
-      obj.share_percentage,
-    ]
-    const pct = candidates.map(toNumber).find((n) => n > 0) || 0
-    return pct
-  }
-
-  // MODIFIQUEI AQUI - taxa admin (%) vindo do payoutSummary (vários nomes possíveis)
-  const adminPercent =
-    toNumber(payoutSummary?.adminFeePercent) ||
-    toNumber(payoutSummary?.admin_percent) ||
-    toNumber(payoutSummary?.adminPercent) ||
-    toNumber(payoutSummary?.taxaAdministracaoPercent) ||
-    toNumber(payoutSummary?.feePercent) ||
-    toNumber(payoutSummary?.percentages?.admin) ||
-    toNumber(payoutSummary?.percents?.admin) ||
-    0
+  // MODIFIQUEI AQUI - Buscar percentuais diretamente do concurso (fonte da verdade)
+  const contest = reportData.contest as any
+  const adminPercent = toNumber(contest?.admin_fee_pct) || 18
+  const topPercent = toNumber(contest?.first_place_pct) || 65
+  const secondPercent = toNumber(contest?.second_place_pct) || 10
+  const lowestPercent = toNumber(contest?.lowest_place_pct) || 7
 
   const totalArrecadado = toNumber((reportData as any)?.totalRevenue || 0)
 
-  // MODIFIQUEI AQUI - taxa admin e pool sem admin
-  const adminAmount = adminPercent > 0 ? (totalArrecadado * adminPercent) / 100 : 0
+  // MODIFIQUEI AQUI - Calcular valores: primeiro desconta admin, depois distribui
+  const adminAmount = (totalArrecadado * adminPercent) / 100
   const poolSemAdmin = Math.max(totalArrecadado - adminAmount, 0)
 
-  // MODIFIQUEI AQUI - tenta buscar % por categoria em múltiplos formatos
-  const getCategoryPercent = (key: 'TOP' | 'SECOND' | 'LOWEST') => {
-    const cat = payoutSummary?.categories?.[key]
-    const pctFromCat = pickPercent(cat)
-    if (pctFromCat > 0) return pctFromCat
-
-    const lowKey = key === 'TOP' ? 'top' : key === 'SECOND' ? 'second' : 'lowest'
-    const pctFromObj =
-      toNumber(payoutSummary?.percentages?.[lowKey]) ||
-      toNumber(payoutSummary?.percents?.[lowKey]) ||
-      toNumber(payoutSummary?.config?.[`${lowKey}Percent`]) ||
-      toNumber(payoutSummary?.settings?.[`${lowKey}Percent`]) ||
-      0
-
-    return pctFromObj
-  }
-
-  // MODIFIQUEI AQUI - total da categoria SEM ADMIN (valor em R$)
-  const getCategoryTotal = (key: 'TOP' | 'SECOND' | 'LOWEST') => {
-    const pct = getCategoryPercent(key)
-    if (pct > 0) return (poolSemAdmin * pct) / 100
-
-    // fallback antigo se não tiver percent:
-    const cat = payoutSummary?.categories?.[key]
-    const winnersCount = toNumber(cat?.winnersCount || 0)
-    const amountPerWinner = toNumber(cat?.amountPerWinner || 0)
-    const totalFromConfig = toNumber(cat?.totalAmount || 0)
-    return totalFromConfig > 0 ? totalFromConfig : amountPerWinner * winnersCount
-  }
-
-  const totalTop = getCategoryTotal('TOP')
-  const totalSecond = getCategoryTotal('SECOND')
-  const totalLowest = getCategoryTotal('LOWEST')
+  // MODIFIQUEI AQUI - Valor TOTAL de cada categoria (sem divisão por ganhador)
+  const totalTop = (poolSemAdmin * topPercent) / 100
+  const totalSecond = (poolSemAdmin * secondPercent) / 100
+  const totalLowest = (poolSemAdmin * lowestPercent) / 100
 
   // ============================
   // MODIFIQUEI AQUI - Resumo financeiro: APENAS TOP/2º/MENOR em VALOR (R$)
@@ -576,9 +528,64 @@ export function generateReportHTML(
           letter-spacing: 1px;
         }
 
+        /* MODIFIQUEI AQUI - Controle de quebra de página */
+        .page-break-before {
+          page-break-before: always;
+          break-before: page;
+        }
+
+        .no-break {
+          page-break-inside: avoid;
+          break-inside: avoid;
+        }
+
+        /* Evitar quebra no meio da tabela */
+        tr {
+          page-break-inside: avoid;
+          break-inside: avoid;
+        }
+
+        /* Manter cabeçalho da tabela junto com o corpo */
+        thead {
+          display: table-header-group;
+        }
+
+        /* Evitar órfãos e viúvas */
+        p, h1, h2, h3, h4 {
+          orphans: 3;
+          widows: 3;
+        }
+
+        /* Evitar quebra após títulos */
+        h1, h2, h3, h4 {
+          page-break-after: avoid;
+          break-after: avoid;
+        }
+
+        /* Seções que não devem quebrar */
+        .finance-mini,
+        .warning-box,
+        .results-section,
+        .prize-category,
+        .final-banner {
+          page-break-inside: avoid;
+          break-inside: avoid;
+        }
+
         @media print {
           .no-print { display: none; }
           body { padding: 20px; }
+
+          /* Forçar quebra de página antes da tabela se necessário */
+          .table-section {
+            page-break-before: auto;
+          }
+
+          /* Evitar quebra no meio de cards */
+          .finance-card {
+            page-break-inside: avoid;
+            break-inside: avoid;
+          }
         }
       </style>
     </head>
@@ -702,9 +709,9 @@ export function generateReportHTML(
     }
   }
 
-  // tabela
+  // tabela - MODIFIQUEI AQUI: adicionado page-break-before para evitar corte
   html += `
-      <div class="table-section">
+      <div class="table-section page-break-before">
         <h2>Lista de Participações</h2>
         <table>
           <thead>
