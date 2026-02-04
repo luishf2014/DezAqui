@@ -24,6 +24,7 @@ export default function CartPage() {
   const [pixExpirationDate, setPixExpirationDate] = useState<string>('')
   const [paymentMethod, setPaymentMethod] = useState<'pix' | 'cash' | null>(null)
   const [createdTicketCodes, setCreatedTicketCodes] = useState<string[]>([])
+  const [paidAmount, setPaidAmount] = useState<number>(0) // Valor pago (salvo antes de limpar carrinho)
   const processingRef = useRef(false)
 
   const formatCurrency = (value: number) => {
@@ -91,10 +92,13 @@ export default function CartPage() {
 
       setCreatedTicketCodes(ticketCodes)
 
+      // Salvar valor total ANTES de limpar o carrinho
+      const totalAmount = getTotalPrice()
+      setPaidAmount(totalAmount)
+
       if (paymentMethod === 'pix') {
         // Para Pix, criar um único pagamento com o valor total
         // Usamos a primeira participação como referência
-        const totalAmount = getTotalPrice()
         const firstParticipation = participations[0]
 
         const pixData = await createPixPayment({
@@ -181,7 +185,7 @@ export default function CartPage() {
 
                 <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
                   <p className="text-sm text-blue-800">
-                    <strong>Valor Total:</strong> {formatCurrency(getTotalPrice())}
+                    <strong>Valor Total:</strong> {formatCurrency(paidAmount)}
                   </p>
                   <p className="text-sm text-blue-800 mt-1">
                     <strong>Tickets:</strong> {createdTicketCodes.join(', ')}
