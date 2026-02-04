@@ -65,12 +65,14 @@ export default function AdminDraws() {
     try {
       let drawsData = await listAllDraws(filterContestId !== 'all' ? filterContestId : undefined)
 
-      // Filtrar por concursos em andamento se o filtro estiver ativo
+      // Filtrar por concursos em andamento (ativos ou finalizados, excluindo rascunhos e cancelados)
+      // Nota: o trigger auto_finish_contest_on_first_draw muda o status para 'finished' ao criar o primeiro sorteio,
+      // então concursos com sorteios terão status 'finished', não 'active'
       if (filterOnlyOngoing) {
-        const activeContestIds = contests
-          .filter(c => c.status === 'active')
+        const ongoingContestIds = contests
+          .filter(c => c.status === 'active' || c.status === 'finished')
           .map(c => c.id)
-        drawsData = drawsData.filter(draw => activeContestIds.includes(draw.contest_id))
+        drawsData = drawsData.filter(draw => ongoingContestIds.includes(draw.contest_id))
       }
 
       setDraws(drawsData)
@@ -542,7 +544,7 @@ export default function AdminDraws() {
                   >
                     <option value="all">Todos os Concursos</option>
                     {contests
-                      .filter(contest => !filterOnlyOngoing || contest.status === 'active')
+                      .filter(contest => !filterOnlyOngoing || (contest.status === 'active' || contest.status === 'finished'))
                       .map((contest) => (
                       <option key={contest.id} value={contest.id}>
                         {contest.name}{contest.contest_code ? ` (${contest.contest_code})` : ''}{contest.status !== 'active' ? ` [${contest.status === 'finished' ? 'Finalizado' : contest.status === 'draft' ? 'Rascunho' : contest.status}]` : ''}
@@ -557,10 +559,10 @@ export default function AdminDraws() {
                       checked={filterOnlyOngoing}
                       onChange={(e) => {
                         setFilterOnlyOngoing(e.target.checked)
-                        // Se ativar o filtro e o concurso selecionado não estiver ativo, resetar para "todos"
+                        // Se ativar o filtro e o concurso selecionado for rascunho ou cancelado, resetar para "todos"
                         if (e.target.checked && filterContestId !== 'all') {
                           const selectedContest = contests.find(c => c.id === filterContestId)
-                          if (selectedContest && selectedContest.status !== 'active') {
+                          if (selectedContest && selectedContest.status !== 'active' && selectedContest.status !== 'finished') {
                             setFilterContestId('all')
                           }
                         }
