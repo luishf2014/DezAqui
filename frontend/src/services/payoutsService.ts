@@ -165,12 +165,12 @@ export interface RecentWinner {
  */
 export async function getRecentWinners(limit: number = 10): Promise<RecentWinner[]> {
   // Buscar payouts TOP com valor > 0, ordenados por data de processamento
+  // Nota: Não podemos usar join direto profiles:user_id porque não há FK constraint
   const { data: payouts, error } = await supabase
     .from('draw_payouts')
     .select(`
       *,
-      draws:draw_id (draw_date, contest_id),
-      profiles:user_id (name, phone),
+      draws:draw_id (draw_date),
       contests:contest_id (name)
     `)
     .eq('category', 'TOP')
@@ -183,22 +183,39 @@ export async function getRecentWinners(limit: number = 10): Promise<RecentWinner
     throw new Error(`Erro ao buscar ganhadores: ${error.message}`)
   }
 
+  if (!payouts || payouts.length === 0) {
+    return []
+  }
+
+  // Buscar perfis dos usuários separadamente
+  const userIds = [...new Set(payouts.map(p => p.user_id))]
+  const { data: profiles } = await supabase
+    .from('profiles')
+    .select('id, name, phone')
+    .in('id', userIds)
+
+  // Criar mapa de perfis para lookup rápido
+  const profilesMap = new Map(profiles?.map(p => [p.id, p]) || [])
+
   // Mapear os dados para o formato esperado
-  return (payouts || []).map((p: any) => ({
-    id: p.id,
-    draw_id: p.draw_id,
-    contest_id: p.contest_id,
-    participation_id: p.participation_id,
-    user_id: p.user_id,
-    category: p.category,
-    score: p.score,
-    amount_won: p.amount_won,
-    processed_at: p.processed_at,
-    user_name: p.profiles?.name || 'Usuário',
-    user_phone: p.profiles?.phone || '',
-    contest_name: p.contests?.name || 'Concurso',
-    draw_date: p.draws?.draw_date || '',
-  }))
+  return payouts.map((p: any) => {
+    const profile = profilesMap.get(p.user_id)
+    return {
+      id: p.id,
+      draw_id: p.draw_id,
+      contest_id: p.contest_id,
+      participation_id: p.participation_id,
+      user_id: p.user_id,
+      category: p.category,
+      score: p.score,
+      amount_won: p.amount_won,
+      processed_at: p.processed_at,
+      user_name: profile?.name || 'Usuário',
+      user_phone: profile?.phone || '',
+      contest_name: p.contests?.name || 'Concurso',
+      draw_date: p.draws?.draw_date || '',
+    }
+  })
 }
 
 /**

@@ -31,6 +31,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<ProfileUser | null>(null)
   const [loading, setLoading] = useState(true)
   const isInitializedRef = useRef(false)
+  // Refs para manter valores atuais (evita stale closures no onAuthStateChange)
+  const userRef = useRef<User | null>(null)
+  const profileRef = useRef<ProfileUser | null>(null)
 
   const loadProfile = async (userId: string | undefined, retryCount = 0): Promise<void> => {
     if (!userId) {
@@ -87,9 +90,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  // Manter refs sincronizados com state
+  useEffect(() => {
+    userRef.current = user
+  }, [user])
+
+  useEffect(() => {
+    profileRef.current = profile
+  }, [profile])
+
   useEffect(() => {
     let isMounted = true
-    
+
     // MODIFIQUEI AQUI - Verificar sessão atual e carregar profile
     const initializeAuth = async () => {
       try {
@@ -126,37 +138,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (_event, session) => {
       console.log('[AuthContext] onAuthStateChange:', _event, { userId: session?.user?.id })
-      
+
       if (!isMounted) return
-      
+
       // MODIFIQUEI AQUI - Ignorar evento SIGNED_IN inicial se já foi processado pelo getSession
       // Isso evita carregar o profile duas vezes quando há sessão persistente
       if (_event === 'SIGNED_IN' && !isInitializedRef.current) {
         console.log('[AuthContext] Ignorando SIGNED_IN inicial, já processado por getSession')
         return
       }
-      
-      // MODIFIQUEI AQUI - Não resetar user se já está logado e é o mesmo usuário (evita perda de estado)
+
+      // MODIFIQUEI AQUI - Usar refs para ter valores atuais (evita stale closures)
       const currentUserId = session?.user?.id
-      const existingUserId = user?.id
-      
-      if (currentUserId === existingUserId && _event === 'TOKEN_REFRESHED') {
-        // Token foi atualizado, mas é o mesmo usuário - não precisa recarregar tudo
-        console.log('[AuthContext] Token atualizado para o mesmo usuário, mantendo estado')
-        return
+      const existingUserId = userRef.current?.id
+
+      // Token refresh ou evento para o mesmo usuário - ignorar para evitar reloads
+      if (currentUserId && currentUserId === existingUserId) {
+        if (_event === 'TOKEN_REFRESHED') {
+          console.log('[AuthContext] Token atualizado para o mesmo usuário, mantendo estado')
+          return
+        }
+        if (_event === 'SIGNED_IN' && profileRef.current) {
+          console.log('[AuthContext] SIGNED_IN para usuário já autenticado com perfil, ignorando')
+          return
+        }
       }
-      
+
       setUser(session?.user ?? null)
-      
+
       // MODIFIQUEI AQUI - Só setar loading se realmente houver mudança de usuário ou logout
       if (currentUserId !== existingUserId) {
         setLoading(true)
       }
-      
+
       try {
         if (session?.user?.id) {
           // MODIFIQUEI AQUI - Só recarregar perfil se for usuário diferente ou primeiro login
-          if (currentUserId !== existingUserId || !profile) {
+          if (currentUserId !== existingUserId || !profileRef.current) {
             // MODIFIQUEI AQUI - Pequeno delay após SIGNED_IN para dar tempo do trigger criar o perfil
             if (_event === 'SIGNED_IN') {
               await new Promise(resolve => setTimeout(resolve, 300))
