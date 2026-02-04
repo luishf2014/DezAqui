@@ -56,7 +56,7 @@ export async function reprocessContestAfterDraw(contestId: string): Promise<void
     // 3. Buscar informações do concurso (para percentuais de premiação)
     const { data: contest, error: contestError } = await supabase
       .from('contests')
-      .select('id, first_place_pct, second_place_pct, lowest_place_pct, admin_fee_pct, participation_value')
+      .select('id, first_place_pct, second_place_pct, lowest_place_pct, admin_fee_pct, participation_value, numbers_per_participation')
       .eq('id', contestId)
       .single()
 
@@ -64,9 +64,14 @@ export async function reprocessContestAfterDraw(contestId: string): Promise<void
       console.warn(`[reprocessService] Erro ao buscar concurso, usando valores padrão:`, contestError)
     }
 
-    // 4. Calcular nova pontuação para cada participação
+    // 4. Ordenar sorteios por data ascendente (para cálculo cumulativo correto)
+    const drawsSortedAsc = [...draws].sort((a, b) =>
+      new Date(a.draw_date).getTime() - new Date(b.draw_date).getTime()
+    )
+
+    // 5. Calcular nova pontuação CUMULATIVA para cada participação (soma de todos os sorteios)
     const updates: Array<{ id: string; score: number }> = []
-    
+
     participations.forEach((participation: any) => {
       const newScore = calculateTotalScore(participation.numbers, draws)
       updates.push({
@@ -75,9 +80,9 @@ export async function reprocessContestAfterDraw(contestId: string): Promise<void
       })
     })
 
-    // 5. Atualizar current_score de todas as participações em batch
+    // 6. Atualizar current_score de todas as participações em batch
     console.log(`[reprocessService] Atualizando ${updates.length} participações...`)
-    
+
     await Promise.all(
       updates.map(async (update) => {
         const { error } = await supabase
@@ -96,12 +101,22 @@ export async function reprocessContestAfterDraw(contestId: string): Promise<void
 
     console.log(`[reprocessService] Pontuações atualizadas com sucesso`)
 
-    // 6. MODIFIQUEI AQUI - Processar prêmios para cada sorteio individualmente
-    for (const draw of draws) {
+    // 7. Verificar se algum participante atingiu pontuação máxima
+    const numbersPerParticipation = contest?.numbers_per_participation
+    if (numbersPerParticipation) {
+      const maxScoreReached = updates.some(u => u.score >= numbersPerParticipation)
+      if (maxScoreReached) {
+        console.log(`[reprocessService] *** GANHADOR ENCONTRADO! *** Participante atingiu ${numbersPerParticipation} pontos!`)
+      }
+    }
+
+    // 8. Processar prêmios para cada sorteio com pontuação CUMULATIVA até aquele sorteio
+    for (let i = 0; i < drawsSortedAsc.length; i++) {
+      const drawsUpToNow = drawsSortedAsc.slice(0, i + 1)
       try {
-        await reprocessDrawResults(draw.id)
+        await reprocessDrawResults(drawsSortedAsc[i].id, drawsUpToNow)
       } catch (drawError) {
-        console.error(`[reprocessService] Erro ao processar prêmios do sorteio ${draw.id}:`, drawError)
+        console.error(`[reprocessService] Erro ao processar prêmios do sorteio ${drawsSortedAsc[i].id}:`, drawError)
         // Continuar processando outros sorteios mesmo se um falhar
       }
     }
@@ -201,11 +216,13 @@ export async function reprocessContestAfterDraw(contestId: string): Promise<void
 
 /**
  * Reprocessa um sorteio específico e calcula/salva prêmios por participação
- * MODIFIQUEI AQUI - Função para processar prêmios por draw individual
- * 
+ * Usa pontuação CUMULATIVA (soma de acertos de todos os sorteios até o atual)
+ *
  * @param drawId ID do sorteio a ser processado
+ * @param cumulativeDraws Array de sorteios para cálculo cumulativo (todos os draws até este).
+ *                        Se não fornecido, busca todos os draws do concurso até este.
  */
-export async function reprocessDrawResults(drawId: string): Promise<void> {
+export async function reprocessDrawResults(drawId: string, cumulativeDraws?: Array<{ numbers: number[] }>): Promise<void> {
   console.log(`[reprocessService] Iniciando processamento de prêmios para sorteio ${drawId}...`)
 
   try {
@@ -216,7 +233,6 @@ export async function reprocessDrawResults(drawId: string): Promise<void> {
     }
 
     // 2. Buscar informações do concurso
-    // MODIFIQUEI AQUI - Incluir numbers_per_participation para cálculo correto de categorias
     const { data: contest, error: contestError } = await supabase
       .from('contests')
       .select('id, first_place_pct, second_place_pct, lowest_place_pct, admin_fee_pct, participation_value, numbers_per_participation')
@@ -249,11 +265,25 @@ export async function reprocessDrawResults(drawId: string): Promise<void> {
       return
     }
 
-    // 4. Calcular pontuação de cada participação para este sorteio específico
+    // 4. Determinar draws para cálculo de pontuação CUMULATIVA
+    let drawsForScore: Array<{ numbers: number[] }>
+    if (cumulativeDraws) {
+      drawsForScore = cumulativeDraws
+    } else {
+      // Se não fornecido, buscar todos os draws do concurso até este (inclusive)
+      const allDraws = await listDrawsByContestId(draw.contest_id)
+      const allDrawsSorted = [...allDraws].sort((a, b) =>
+        new Date(a.draw_date).getTime() - new Date(b.draw_date).getTime()
+      )
+      const drawIndex = allDrawsSorted.findIndex(d => d.id === drawId)
+      drawsForScore = allDrawsSorted.slice(0, drawIndex + 1)
+    }
+
+    // 5. Calcular pontuação CUMULATIVA de cada participação (soma de todos os sorteios até este)
     const participationsWithScore = participations.map(p => ({
       id: p.id,
       user_id: p.user_id,
-      current_score: calculateTotalScore(p.numbers, [draw]), // Pontuação apenas deste sorteio
+      current_score: calculateTotalScore(p.numbers, drawsForScore),
     }))
 
     // 5. Buscar total arrecadado

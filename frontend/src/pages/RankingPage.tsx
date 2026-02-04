@@ -112,69 +112,66 @@ export default function RankingPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDrawId])
 
-  // MODIFIQUEI AQUI - Calcular pontuação total baseada em todos os sorteios
+  // Helper: retorna draws ordenados por data ascendente
+  const drawsSortedAsc = useMemo(() => {
+    return [...draws].sort((a, b) =>
+      new Date(a.draw_date).getTime() - new Date(b.draw_date).getTime()
+    )
+  }, [draws])
+
+  // Helper: retorna draws cumulativos até o draw selecionado (inclusive)
+  const getDrawsUpTo = (drawId: string): Draw[] => {
+    const idx = drawsSortedAsc.findIndex(d => d.id === drawId)
+    if (idx === -1) return drawsSortedAsc // fallback: todos
+    return drawsSortedAsc.slice(0, idx + 1)
+  }
+
+  // Calcular pontuação CUMULATIVA baseada em todos os sorteios
   const getTotalScore = (participation: Participation): number => {
     return calculateTotalScore(participation.numbers, draws)
   }
 
-  // MODIFIQUEI AQUI - Calcular pontuação para um sorteio específico
-  const getScoreForDraw = (participation: Participation, drawId: string): number => {
-    const draw = draws.find((d) => d.id === drawId)
-    if (!draw) return 0
-    return calculateTotalScore(participation.numbers, [draw])
+  // Calcular pontuação CUMULATIVA até um sorteio específico (soma de todos até aquele)
+  const getScoreUpToDraw = (participation: Participation, drawId: string): number => {
+    const drawsUpTo = getDrawsUpTo(drawId)
+    return calculateTotalScore(participation.numbers, drawsUpTo)
   }
 
-  // MODIFIQUEI AQUI - Números sorteados para exibição (memoizado) + Set (performance)
+  // Números sorteados para exibição (CUMULATIVO até o draw selecionado)
   const drawnNumbersSorted = useMemo((): number[] => {
-    if (selectedDrawId) {
-      const selectedDraw = draws.find((d) => d.id === selectedDrawId)
-      return selectedDraw ? [...selectedDraw.numbers].sort((a, b) => a - b) : []
-    }
-
-    // Se não há sorteio selecionado, usar todos os sorteios (união)
+    const drawsToUse = selectedDrawId ? getDrawsUpTo(selectedDrawId) : draws
     const allNumbers = new Set<number>()
-    draws.forEach((draw) => {
+    drawsToUse.forEach((draw) => {
       draw.numbers.forEach((num) => allNumbers.add(num))
     })
     return Array.from(allNumbers).sort((a, b) => a - b)
-  }, [draws, selectedDrawId])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draws, selectedDrawId, drawsSortedAsc])
 
   const drawnNumbersSet = useMemo(() => new Set<number>(drawnNumbersSorted), [drawnNumbersSorted])
 
-  // MODIFIQUEI AQUI - Verificar se um número foi sorteado usando Set (O(1))
+  // Verificar se um número foi sorteado usando Set (O(1))
   const isNumberDrawn = (number: number): boolean => {
     return drawnNumbersSet.has(number)
   }
 
-  // MODIFIQUEI AQUI - Obter números acertados de uma participação (considerando draw selecionado)
+  // Obter números acertados de uma participação (CUMULATIVO até draw selecionado)
   const getHitNumbersForParticipation = (participation: Participation): number[] => {
-    if (selectedDrawId) {
-      const selectedDraw = draws.find((d) => d.id === selectedDrawId)
-      return selectedDraw ? getAllHitNumbers(participation.numbers, [selectedDraw]) : []
-    }
-    return getAllHitNumbers(participation.numbers, draws)
+    const drawsToUse = selectedDrawId ? getDrawsUpTo(selectedDrawId) : draws
+    return getAllHitNumbers(participation.numbers, drawsToUse)
   }
 
-  // MODIFIQUEI AQUI - Maior pontuação (blindado e consistente com a tabela)
+  // Maior pontuação CUMULATIVA (consistente com a tabela)
   const maxScoreToDisplay = useMemo(() => {
     if (participations.length === 0) return 0
-    if (selectedDrawId) {
-      let max = 0
-      for (const p of participations) {
-        const s = getScoreForDraw(p, selectedDrawId)
-        if (s > max) max = s
-      }
-      return max
-    } else {
-      let max = 0
-      for (const p of participations) {
-        const s = getTotalScore(p)
-        if (s > max) max = s
-      }
-      return max
+    let max = 0
+    for (const p of participations) {
+      const s = selectedDrawId ? getScoreUpToDraw(p, selectedDrawId) : getTotalScore(p)
+      if (s > max) max = s
     }
+    return max
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [participations, selectedDrawId, draws])
+  }, [participations, selectedDrawId, draws, drawsSortedAsc])
 
   if (loading) {
     return (
@@ -557,8 +554,8 @@ export default function RankingPage() {
                   {(() => {
                     // MODIFIQUEI AQUI - Ordenar por pontuação e usar categorias de premiação
                     const sortedParticipations = [...participations].sort((a, b) => {
-                      const scoreA = selectedDrawId ? getScoreForDraw(a, selectedDrawId) : getTotalScore(a)
-                      const scoreB = selectedDrawId ? getScoreForDraw(b, selectedDrawId) : getTotalScore(b)
+                      const scoreA = selectedDrawId ? getScoreUpToDraw(a, selectedDrawId) : getTotalScore(a)
+                      const scoreB = selectedDrawId ? getScoreUpToDraw(b, selectedDrawId) : getTotalScore(b)
                       if (scoreB !== scoreA) return scoreB - scoreA
                       return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
                     })
@@ -591,7 +588,7 @@ export default function RankingPage() {
                       // MODIFIQUEI AQUI - Removido código duplicado antigo
                       const position = index + 1
                       const hitNumbers = getHitNumbersForParticipation(participation)
-                      const displayScore = selectedDrawId ? getScoreForDraw(participation, selectedDrawId) : getTotalScore(participation)
+                      const displayScore = selectedDrawId ? getScoreUpToDraw(participation, selectedDrawId) : getTotalScore(participation)
                       const payout = payouts[participation.id]
                       const { medal } = getPayoutCategory(payout)
                       const hasMedal = medal !== undefined

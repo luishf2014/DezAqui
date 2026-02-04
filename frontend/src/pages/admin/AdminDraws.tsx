@@ -10,6 +10,7 @@ import Header from '../../components/Header'
 import Footer from '../../components/Footer'
 import { listAllContests } from '../../services/contestsService'
 import { listAllDraws, createDraw, updateDraw, deleteDraw, CreateDrawInput, UpdateDrawInput } from '../../services/drawsService'
+import { supabase } from '../../lib/supabase'
 import { Contest, Draw } from '../../types'
 
 export default function AdminDraws() {
@@ -336,6 +337,28 @@ export default function AdminDraws() {
           'calendar'
         )
         return
+      }
+
+      // Verificar se algum participante já atingiu a pontuação máxima (antes de criar novo sorteio)
+      if (!editingDraw && contest) {
+        const { data: maxScoreData } = await supabase
+          .from('participations')
+          .select('current_score')
+          .eq('contest_id', drawForm.contest_id)
+          .eq('status', 'active')
+          .order('current_score', { ascending: false })
+          .limit(1)
+
+        const maxCurrentScore = maxScoreData?.[0]?.current_score || 0
+        if (maxCurrentScore >= (contest.numbers_per_participation || 10)) {
+          setSavingDraw(false)
+          showErrorModal(
+            'Concurso Finalizado',
+            `Um participante já atingiu a pontuação máxima de <strong>${contest.numbers_per_participation} acertos</strong>.<br /><br />Não é possível criar novos sorteios para este concurso.`,
+            'warning'
+          )
+          return
+        }
       }
 
       const input: CreateDrawInput | UpdateDrawInput = {
