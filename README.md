@@ -189,7 +189,7 @@ A aplicação estará disponível em:
 - http://localhost:3000
 
 ## 📂 Estrutura do Projeto
-
+```
 dezaqui/
 ├── frontend/                 # Aplicação Web (React + Vite)
 │   └── src/
@@ -206,7 +206,7 @@ dezaqui/
 ├── backend/
 │   └── migrations/           # Migrações SQL
 └── README.md
-
+```
 ----
 
 ##📈 Roadmap (Implementado)
@@ -268,4 +268,4 @@ Você pode usar, copiar, modificar e distribuir livremente, mantendo os crédito
 
 <strong>Desenvolvido com foco em qualidade, segurança e produto real.</strong>
 
-</div> ```
+</div>
