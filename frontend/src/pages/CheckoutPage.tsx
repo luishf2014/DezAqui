@@ -19,6 +19,34 @@ interface LocationState {
   selectedNumbers: number[]
 }
 
+
+// MODIFIQUEI AQUI - Última compra (localStorage) - atualiza SOMENTE quando finaliza com sucesso
+const LAST_PURCHASE_KEY = 'dezaqui_last_purchase_v1'
+
+function saveLastPurchase(params: { contestId: string; selections: number[][] }) {
+  const payload = {
+    contestId: String(params.contestId),
+    selections: (params.selections || [])
+      .filter((arr) => Array.isArray(arr))
+      .map((arr) =>
+        arr
+          .map((n) => Number(n))
+          .filter((n) => Number.isInteger(n) && n >= 0)
+          .sort((a, b) => a - b)
+      )
+      .filter((arr) => arr.length > 0),
+    timestamp: Date.now(),
+  }
+
+  try {
+    localStorage.setItem(LAST_PURCHASE_KEY, JSON.stringify(payload))
+  } catch {
+    // ignore
+  }
+
+  return payload
+}
+
 export default function CheckoutPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -225,6 +253,12 @@ export default function CheckoutPage() {
 
       // Pagamento em dinheiro não cria pagamento automaticamente
       // Apenas confirma que a participação foi criada e ficará pendente até o admin ativar
+
+      // MODIFIQUEI AQUI - Salvar última compra SOMENTE após finalizar com sucesso
+      saveLastPurchase({ contestId: contest.id, selections: [selectedNumbers] })
+
+      // MODIFIQUEI AQUI - Salvar última compra SOMENTE após finalizar com sucesso
+      saveLastPurchase({ contestId: contest.id, selections: [selectedNumbers] })
 
       // Limpar sessionStorage após sucesso
       sessionStorage.removeItem('dezaqui_checkout')

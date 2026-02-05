@@ -17,6 +17,75 @@ import Footer from '../components/Footer'
 import { canAcceptParticipations, getContestState } from '../utils/contestHelpers'
 import ContestStatusBadge from '../components/ContestStatusBadge'
 
+// MODIFIQUEI AQUI - Última compra (localStorage)
+const LAST_PURCHASE_KEY = 'dezaqui_last_purchase_v1'
+
+// MODIFIQUEI AQUI - Suporte a 1 ou várias seleções (linhas)
+type LastPurchaseNormalized = {
+  contestId: string
+  selections: number[][]
+  timestamp?: number
+}
+
+function normalizeLastPurchase(raw: any): LastPurchaseNormalized | null {
+  try {
+    if (!raw || !raw.contestId) return null
+
+    // v2 (preferido): selections: number[][]
+    if (Array.isArray(raw.selections) && raw.selections.length > 0) {
+      const selections = raw.selections
+        .filter((arr: any) => Array.isArray(arr))
+        .map((arr: any) =>
+          arr
+            .map((n: any) => Number(n))
+            .filter((n: number) => Number.isInteger(n) && n >= 0)
+            .sort((a: number, b: number) => a - b)
+        )
+        .filter((arr: number[]) => arr.length > 0)
+
+      if (selections.length === 0) return null
+
+      return {
+        contestId: String(raw.contestId),
+        selections,
+        timestamp: raw.timestamp ? Number(raw.timestamp) : undefined,
+      }
+    }
+
+    // v1: selectedNumbers: number[]
+    if (Array.isArray(raw.selectedNumbers) && raw.selectedNumbers.length > 0) {
+      const one = raw.selectedNumbers
+        .map((n: any) => Number(n))
+        .filter((n: number) => Number.isInteger(n) && n >= 0)
+        .sort((a: number, b: number) => a - b)
+
+      if (one.length === 0) return null
+
+      return {
+        contestId: String(raw.contestId),
+        selections: [one],
+        timestamp: raw.timestamp ? Number(raw.timestamp) : undefined,
+      }
+    }
+
+    return null
+  } catch {
+    return null
+  }
+}
+
+function getLastPurchase(): LastPurchaseNormalized | null {
+  try {
+    const raw = localStorage.getItem(LAST_PURCHASE_KEY)
+    if (!raw) return null
+    return normalizeLastPurchase(JSON.parse(raw))
+  } catch {
+    return null
+  }
+}
+
+// MODIFIQUEI AQUI - Salvar/atualizar última compra no localStorage
+
 export default function JoinContestPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -28,6 +97,9 @@ export default function JoinContestPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [addedToCart, setAddedToCart] = useState(false)
+
+  // MODIFIQUEI AQUI - Estado para exibir Última Compra
+  const [lastPurchase, setLastPurchase] = useState<LastPurchaseNormalized | null>(null)
 
   useEffect(() => {
     // MODIFIQUEI AQUI - Redirecionar para login se não autenticado
@@ -73,6 +145,9 @@ export default function JoinContestPage() {
 
         setContest(contestData)
         setDraws(drawsData)
+
+        // MODIFIQUEI AQUI - Carregar última compra após concurso carregar (pra validar tamanhos depois)
+        setLastPurchase(getLastPurchase())
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Erro ao carregar concurso')
       } finally {
@@ -82,6 +157,55 @@ export default function JoinContestPage() {
 
     loadContest()
   }, [id, user, authLoading, navigate])
+
+  // MODIFIQUEI AQUI - Repetir compra anterior
+  const handleRepeatLastPurchase = () => {
+    if (!contest || !id) return
+
+    const last = getLastPurchase()
+    setLastPurchase(last)
+
+    if (!last) {
+      setError('Nenhuma compra anterior encontrada.')
+      return
+    }
+
+    if (last.contestId !== id) {
+      setError('A última compra é de outro concurso.')
+      return
+    }
+
+    // Validar e filtrar seleções compatíveis com o concurso atual
+    const validSelections = last.selections
+      .map((nums) => nums.slice().sort((a, b) => a - b))
+      .filter((nums) => nums.length === contest.numbers_per_participation)
+      .filter((nums) => nums.every((n) => n >= contest.min_number && n <= contest.max_number))
+
+    if (validSelections.length === 0) {
+      setError('A última compra não é compatível com este concurso (quantidade/intervalo de números).')
+      return
+    }
+
+    setError(null)
+
+    // Se for apenas 1 seleção, preenche o NumberPicker
+    if (validSelections.length === 1) {
+      setSelectedNumbers(validSelections[0])
+      return
+    }
+
+    // Se tiver várias seleções, adiciona todas ao carrinho
+    validSelections.forEach((nums) => {
+      addItem(contest, nums)
+    })
+
+    setAddedToCart(true)
+    setSelectedNumbers([])
+
+    setTimeout(() => {
+      setAddedToCart(false)
+    }, 3000)
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -173,7 +297,7 @@ export default function JoinContestPage() {
         <div className="flex items-center justify-center flex-1 px-4">
           <div className="text-center">
             <div className="text-red-600 text-xl mb-2">⚠️ Erro</div>
-            <p className="text-[#1F1F1F]/70 mb-4">{error}</p>
+            <p className="text-[#1F1FF]/70 mb-4">{error}</p>
             <Link
               to="/contests"
               className="text-[#1E7F43] hover:text-[#3CCB7F] underline font-semibold"
@@ -271,6 +395,39 @@ export default function JoinContestPage() {
         </div>
 
         <form onSubmit={handleSubmit} className="rounded-2xl sm:rounded-3xl border border-[#E5E5E5] bg-white p-4 sm:p-6 shadow-xl">
+          {/* MODIFIQUEI AQUI - Box Última Compra (antes de "Escolha seus números") */}
+          {lastPurchase && lastPurchase.contestId === id && lastPurchase.selections.length > 0 && (
+            <div className="mb-6 p-4 rounded-2xl border border-[#E5E5E5] bg-[#F9F9F9]">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div>
+                  <p className="text-sm font-extrabold text-[#1F1F1F] mb-2">Última Compra</p>
+                  <div className="space-y-2">
+                    {lastPurchase.selections.map((nums, idx) => (
+                      <div key={idx} className="flex flex-wrap gap-2">
+                        {nums.map((n) => (
+                          <span
+                            key={`${idx}-${n}`}
+                            className="px-3 py-1 bg-[#1E7F43] text-white rounded-lg font-bold text-sm"
+                          >
+                            {n.toString().padStart(2, '0')}
+                          </span>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleRepeatLastPurchase}
+                  className="w-full sm:w-auto px-6 py-3 bg-[#1E7F43] text-white rounded-xl font-semibold hover:bg-[#3CCB7F] transition-colors"
+                >
+                  Repetir Compra
+                </button>
+              </div>
+            </div>
+          )}
+
           <h2 className="text-xl sm:text-2xl font-extrabold text-[#1F1F1F] mb-4">
             Escolha seus números
           </h2>

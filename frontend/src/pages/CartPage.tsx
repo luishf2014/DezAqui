@@ -12,6 +12,37 @@ import { createPixPayment } from '../services/asaasService'
 import Header from '../components/Header'
 import Footer from '../components/Footer'
 
+// MODIFIQUEI AQUI - Última compra (localStorage)
+const LAST_PURCHASE_KEY = 'dezaqui_last_purchase_v1'
+
+// MODIFIQUEI AQUI - helper para salvar última compra como múltiplas linhas (opção A)
+function saveLastPurchaseFromCart(params: {
+  contestId: string
+  selections: number[][]
+}) {
+  const payload = {
+    contestId: String(params.contestId),
+    selections: (params.selections || [])
+      .filter((arr) => Array.isArray(arr))
+      .map((arr) =>
+        arr
+          .map((n) => Number(n))
+          .filter((n) => Number.isInteger(n) && n >= 0)
+          .sort((a, b) => a - b)
+      )
+      .filter((arr) => arr.length > 0),
+    timestamp: Date.now(),
+  }
+
+  try {
+    localStorage.setItem(LAST_PURCHASE_KEY, JSON.stringify(payload))
+  } catch {
+    // ignore
+  }
+
+  return payload
+}
+
 export default function CartPage() {
   const navigate = useNavigate()
   const { user, profile } = useAuth()
@@ -80,9 +111,16 @@ export default function CartPage() {
       const ticketCodes: string[] = []
 
       for (const item of items) {
+        // MODIFIQUEI AQUI - Garantir amount válido ao criar participação (createParticipation agora valida isso)
+        const amount = Number(item.price)
+        if (!Number.isFinite(amount) || amount <= 0) {
+          throw new Error('Valor inválido para criar participação')
+        }
+
         const participation = await createParticipation({
           contestId: item.contestId,
           numbers: item.selectedNumbers,
+          amount, // MODIFIQUEI AQUI - passa valor da participação
         })
         participations.push(participation)
         if (participation.ticket_code) {
@@ -115,6 +153,17 @@ export default function CartPage() {
         setPixQrCode(pixData.qrCode.encodedImage)
         setPixPayload(pixData.qrCode.payload)
         setPixExpirationDate(pixData.qrCode.expirationDate)
+      }
+
+      // MODIFIQUEI AQUI - Atualizar Última Compra SOMENTE após finalizar a compra com sucesso (opção A)
+      // Se o carrinho tiver itens de múltiplos concursos, salvamos o concurso do último item.
+      const lastItem = items[items.length - 1]
+      if (lastItem?.contestId) {
+        const contestId = lastItem.contestId
+        const selections = items
+          .filter((it) => it.contestId === contestId)
+          .map((it) => it.selectedNumbers)
+        saveLastPurchaseFromCart({ contestId, selections })
       }
 
       // Limpar carrinho após sucesso

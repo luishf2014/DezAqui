@@ -159,18 +159,31 @@ serve(async (req) => {
   // ============================================
   const body = await req.json()
 
-  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    global: { headers: { Authorization: `Bearer ${token}` } },
-  })
+  // MODIFIQUEI AQUI - Novo contrato: NÃO recebe participationId/ticketCode.
+  // Agora o Pix é gerado a partir de um "intent" (pedido pendente), e a participação
+  // (ticket) só será criada quando o webhook confirmar o pagamento.
+  const contestId = trim(body?.contestId)
+  const selectedNumbersRaw = body?.selectedNumbers
+  const amount = Number(body?.amount)
 
-  const { data: participation } = await supabase
-    .from('participations')
-    .select('id, user_id')
-    .eq('id', body.participationId)
-    .single()
+  if (!contestId) {
+    return jsonResponse({ error: 'contestId é obrigatório', debug: { step: 'body_validation' } }, 400)
+  }
 
-  if (!participation || participation.user_id !== user.id) {
-    return jsonResponse({ error: 'Sem permissão para essa participação' }, 403)
+  if (!Array.isArray(selectedNumbersRaw) || selectedNumbersRaw.length === 0) {
+    return jsonResponse({ error: 'selectedNumbers é obrigatório', debug: { step: 'body_validation' } }, 400)
+  }
+
+  const selectedNumbers = selectedNumbersRaw
+    .map((n: any) => Number(n))
+    .filter((n: number) => Number.isInteger(n) && n >= 0)
+
+  if (selectedNumbers.length !== selectedNumbersRaw.length) {
+    return jsonResponse({ error: 'selectedNumbers inválido', debug: { step: 'body_validation' } }, 400)
+  }
+
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return jsonResponse({ error: 'amount inválido', debug: { step: 'body_validation' } }, 400)
   }
 
   // ============================================
@@ -194,12 +207,43 @@ serve(async (req) => {
 
   const dueDate = new Date(Date.now() + 86400000).toISOString().split('T')[0]
 
+  // ============================================
+  // SAVE INTENT (DB)
+  // ============================================
+  const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY)
+
+  // MODIFIQUEI AQUI - cria um "intent" para esse pedido Pix (a participação só será criada após o webhook)
+  const { data: intent, error: intentError } = await admin
+    .from('pix_payment_intents')
+    .insert({
+      user_id: user.id,
+      contest_id: contestId,
+      selected_numbers: selectedNumbers,
+      amount,
+      discount_code: body.discountCode || null,
+      status: 'PENDING',
+    })
+    .select('id')
+    .single()
+
+  if (intentError || !intent?.id) {
+    console.error('[asaas-create-pix] Erro ao criar intent:', intentError)
+    return jsonResponse(
+      { error: 'Erro ao criar pedido Pix', debug: { step: 'create_intent' } },
+      500
+    )
+  }
+
+  // ============================================
+  // CREATE ASAAS PAYMENT
+  // ============================================
   const payment = await createAsaasPayment(ASAAS_API_KEY, ASAAS_BASE_URL, {
     customerId: customer.id,
-    amount: body.amount,
+    amount,
     dueDate,
     description: body.description,
-    externalReference: body.ticketCode,
+    // MODIFIQUEI AQUI - externalReference agora é o intentId (não mais ticketCode)
+    externalReference: intent.id,
   })
 
   const qrCode = await getAsaasPixQrCode(
@@ -208,20 +252,45 @@ serve(async (req) => {
     payment.id
   )
 
-  // ============================================
-  // SAVE DB
-  // ============================================
-  const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY)
+  // MODIFIQUEI AQUI - vincular asaas_payment_id no intent
+  const { error: updateIntentError } = await admin
+    .from('pix_payment_intents')
+    .update({
+      asaas_payment_id: payment.id,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', intent.id)
 
-  await admin.from('payments').insert({
-    participation_id: body.participationId,
-    amount: body.amount,
-    status: 'pending',
-    payment_method: 'pix',
-    external_id: payment.id,
-  })
+  if (updateIntentError) {
+    // Não falha o checkout por isso; loga para correção.
+    console.error('[asaas-create-pix] Erro ao atualizar intent:', updateIntentError)
+  }
+
+  // ============================================
+  // SAVE DB (compat)
+  // ============================================
+  // MODIFIQUEI AQUI - antes salvava em payments com participation_id.
+  // Agora não existe participation antes do pagamento. Se sua tabela payments exigir participation_id,
+  // este insert pode falhar. Mantemos em try/catch para não quebrar o checkout.
+  try {
+    await admin.from('payments').insert({
+      participation_id: null,
+      amount,
+      status: 'pending',
+      payment_method: 'pix',
+      external_id: payment.id,
+      // campos extras (se existirem) ajudam no futuro
+      intent_id: intent.id,
+      contest_id: contestId,
+      user_id: user.id,
+    })
+  } catch (err) {
+    console.error('[asaas-create-pix] Aviso: não foi possível salvar em payments (compat):', err)
+  }
 
   return jsonResponse({
+    // MODIFIQUEI AQUI - retorna intentId para o frontend, para rastreamento
+    intentId: intent.id,
     id: payment.id,
     status: payment.status,
     dueDate: payment.dueDate,
