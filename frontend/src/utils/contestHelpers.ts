@@ -13,10 +13,13 @@ import { Contest } from '../types'
  * - Status deve ser 'active'
  * - Data de início (start_date) deve ter começado
  * - Data de encerramento (end_date) não deve ter passado
- * - Não deve haver sorteios realizados
- * 
+ *
+ * NOTA: Sorteios NÃO bloqueiam mais participações.
+ * Participações são permitidas enquanto status === 'active'.
+ * O concurso só muda para 'finished' quando alguém atinge a pontuação máxima.
+ *
  * @param contest Concurso a verificar
- * @param hasDraws Se há sorteios realizados para este concurso
+ * @param hasDraws Se há sorteios realizados para este concurso (não usado mais para bloqueio)
  * @returns true se o concurso ainda aceita participações
  */
 export function canAcceptParticipations(contest: Contest, hasDraws: boolean = false): boolean {
@@ -25,10 +28,8 @@ export function canAcceptParticipations(contest: Contest, hasDraws: boolean = fa
     return false
   }
 
-  // Se já houver sorteios, não aceita mais participações
-  if (hasDraws) {
-    return false
-  }
+  // REMOVIDO: Sorteios não bloqueiam mais participações
+  // O concurso aceita participações enquanto estiver 'active'
 
   const now = new Date()
   const startDate = new Date(contest.start_date)
@@ -38,7 +39,7 @@ export function canAcceptParticipations(contest: Contest, hasDraws: boolean = fa
   if (now < startDate) {
     return false
   }
-  
+
   // Verificar se a data de encerramento já passou
   if (endDate < now) {
     return false
@@ -50,15 +51,19 @@ export function canAcceptParticipations(contest: Contest, hasDraws: boolean = fa
 /**
  * Obtém o estado atual do concurso para exibição
  * MODIFIQUEI AQUI - Retorna uma descrição do estado atual do concurso
- * PRIORIDADE: Se houver sorteios, o concurso é considerado finalizado independente do status ou data
- * 
+ *
+ * NOTA: Concurso só é "Finalizado" quando status === 'finished'
+ * (quando alguém atinge a pontuação máxima)
+ * Ter sorteios NÃO significa que o concurso está finalizado.
+ *
  * @param contest Concurso a verificar
  * @param hasDraws Se há sorteios realizados para este concurso
  * @returns Objeto com informações sobre o estado do concurso
  */
 export function getContestState(contest: Contest, hasDraws: boolean = false) {
-  // MODIFIQUEI AQUI - Se houver sorteios, o concurso é considerado finalizado (prioridade máxima)
-  if (hasDraws || contest.status === 'finished') {
+  // Só considera finalizado se o STATUS for 'finished'
+  // (não mais baseado em ter sorteios)
+  if (contest.status === 'finished') {
     return {
       phase: 'finished',
       label: 'Finalizado',
@@ -76,7 +81,7 @@ export function getContestState(contest: Contest, hasDraws: boolean = false) {
     }
   }
 
-  // Concurso está ativo e sem sorteios
+  // Concurso está ativo
   const now = new Date()
   const endDate = new Date(contest.end_date)
   const startDate = new Date(contest.start_date)
@@ -101,7 +106,17 @@ export function getContestState(contest: Contest, hasDraws: boolean = false) {
     }
   }
 
-  // Período de participação ativo
+  // Concurso ativo com sorteios em andamento
+  if (hasDraws) {
+    return {
+      phase: 'ongoing',
+      label: 'Em Andamento',
+      acceptsParticipations: true,
+      message: 'Concurso em andamento. Sorteios já iniciados.',
+    }
+  }
+
+  // Período de participação ativo (sem sorteios ainda)
   return {
     phase: 'accepting',
     label: 'Aceitando Participações',
