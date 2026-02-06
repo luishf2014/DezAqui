@@ -7,7 +7,11 @@
       "Bash(npm install)",
       "Bash(npm run type-check:*)",
       "Bash(git commit -m \"$\\(cat <<''EOF''\nMerge remote-tracking branch ''origin/main''\n\nResolve conflict: keep AdminDraws.tsx with local changes\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(git show:*)",
+      "Bash(git checkout:*)",
+      "Bash(git commit:*)",
+      "Bash(ls:*)"
     ]
   }
 }
