@@ -13,9 +13,7 @@ import { getContestRanking, listMyParticipations } from '../services/participati
 import { listDrawsByContestId } from '../services/drawsService'
 import { getDrawPayoutSummary, getPayoutsByDraw } from '../services/payoutsService'
 import { Contest, Participation, Draw } from '../types'
-import { calculateTotalScore, getAllHitNumbers, calculateHits } from '../utils/rankingHelpers'
-// MODIFIQUEI AQUI - Removido payoutCategoryHelpers (agora é por SCORE)
-// import { getPayoutCategory, groupParticipationsByCategory, getCategoryLabel } from '../utils/payoutCategoryHelpers'
+import { calculateRanking, createRankingMap, RankingEntry } from '../utils/rankingCalculator'
 import { useAuth } from '../contexts/AuthContext'
 import ContestStatusBadge from '../components/ContestStatusBadge'
 import Header from '../components/Header'
@@ -201,101 +199,62 @@ export default function RankingsPage() {
     })
   }
 
-  // MODIFIQUEI AQUI - Obter números acertados de uma participação (todos os sorteios)
-  const getHitNumbersForParticipation = (participation: Participation, draws: Draw[]): number[] => {
-    return getAllHitNumbers(participation.numbers, draws)
-  }
+  // FONTE ÚNICA DE VERDADE: Calcula ranking completo usando calculateRanking
+  const rankingResult = useMemo(() => {
+    if (!selectedContest || ranking.length === 0) {
+      return {
+        entries: [],
+        summary: {
+          topWinnersCount: 0,
+          secondWinnersCount: 0,
+          lowestWinnersCount: 0,
+          maxScore: 0,
+          lowestWinningScore: null,
+          hasAnyWinner: false,
+        },
+      }
+    }
 
-  // MODIFIQUEI AQUI - Calcular pontuação total baseada em todos os sorteios (anti-fraude)
-  const getTotalScore = (participation: Participation, draws: Draw[]): number => {
-    return calculateTotalScore(participation.numbers, draws, participation.created_at)
-  }
+    // Calcular total arrecadado
+    const totalCollected = ranking.length * (selectedContest.ticket_price || 0)
 
-  // MODIFIQUEI AQUI - draws em ordem ASC para calcular score "até o sorteio" corretamente
-  const drawsSortedAsc = useMemo(() => {
-    return [...draws].sort((a, b) => new Date(a.draw_date).getTime() - new Date(b.draw_date).getTime())
-  }, [draws])
+    return calculateRanking({
+      contest: selectedContest,
+      participations: ranking,
+      draws,
+      selectedDrawId: selectedDrawId || undefined,
+      totalCollected,
+    })
+  }, [selectedContest, ranking, draws, selectedDrawId])
 
-  // MODIFIQUEI AQUI - pegar sorteios até o selecionado (inclusive)
-  const getDrawsUpTo = (drawId: string): Draw[] => {
-    const idx = drawsSortedAsc.findIndex((d) => d.id === drawId)
-    if (idx === -1) return drawsSortedAsc
-    return drawsSortedAsc.slice(0, idx + 1)
-  }
+  // Map para lookup rápido por participationId
+  const rankingMap = useMemo(() => {
+    return createRankingMap(rankingResult.entries)
+  }, [rankingResult.entries])
 
-  // MODIFIQUEI AQUI - score até o sorteio selecionado (anti-fraude)
-  const getScoreUpToDraw = (participation: Participation, drawId: string): number => {
-    const drawsUpTo = getDrawsUpTo(drawId)
-    return calculateTotalScore(participation.numbers, drawsUpTo, participation.created_at)
-  }
-
-  // MODIFIQUEI AQUI - score exibido baseado no sorteio selecionado
-  const getDisplayScore = (p: Participation): number => {
-    if (selectedDrawId) return getScoreUpToDraw(p, selectedDrawId)
-    return getTotalScore(p, draws)
-  }
-
-  // MODIFIQUEI AQUI - TOP/SECOND agora é por acertos em UM ÚNICO SORTEIO (não cumulativo)
-  // TOP = acertou TODOS os números em algum sorteio
-  // SECOND = acertou N-1 em algum sorteio (e não é TOP)
-  // LOWEST = menor pontuação CUMULATIVA positiva (excluindo TOP e SECOND)
+  // Objeto de compatibilidade para Top 3 cards (mantém estrutura antiga para UI)
   const drawWinnersByScore = useMemo(() => {
     const N = Number(selectedContest?.numbers_per_participation || 0)
+    const { summary } = rankingResult
 
-    // Função para obter sorteios válidos para uma participação (anti-fraude)
-    const getValidDrawsFor = (p: ParticipationWithUser) => {
-      const drawsToUse = selectedDrawId ? getDrawsUpTo(selectedDrawId) : draws
-      const participationDate = new Date(p.created_at)
-      return drawsToUse.filter(d => new Date(d.draw_date) >= participationDate)
-    }
-
-    // TOP: quem acertou TODOS os números em algum sorteio válido
-    const topWinners = ranking.filter(p => {
-      const validDraws = getValidDrawsFor(p)
-      return validDraws.some(draw => calculateHits(draw.numbers, p.numbers) === p.numbers.length)
-    })
-    const topWinnerIds = new Set(topWinners.map(t => t.id))
-
-    // SECOND: quem acertou N-1 em algum sorteio válido (e NÃO é TOP)
-    const secondWinners = ranking.filter(p => {
-      if (topWinnerIds.has(p.id)) return false
-      const validDraws = getValidDrawsFor(p)
-      const targetHits = p.numbers.length - 1
-      return validDraws.some(draw => calculateHits(draw.numbers, p.numbers) === targetHits)
-    })
-    const secondWinnerIds = new Set(secondWinners.map(s => s.id))
-
-    // LOWEST: menor pontuação CUMULATIVA positiva (excluindo TOP e SECOND)
-    const scoreOf = (p: ParticipationWithUser) => getDisplayScore(p)
-
-    const othersWithScore = ranking.filter(
-      p => !topWinnerIds.has(p.id) && !secondWinnerIds.has(p.id) && scoreOf(p) > 0
+    // Criar Sets de IDs para cada categoria
+    const topWinnerIds = new Set(
+      rankingResult.entries.filter((e) => e.category === 'TOP').map((e) => e.participationId)
     )
-    const lowestPositiveScore = othersWithScore.length > 0
-      ? Math.min(...othersWithScore.map(p => scoreOf(p)))
-      : null
-
-    const lowestWinners = lowestPositiveScore !== null
-      ? othersWithScore.filter(p => scoreOf(p) === lowestPositiveScore)
-      : []
-
-    const hasAnyWinner = topWinners.length > 0 || secondWinners.length > 0 || lowestWinners.length > 0
+    const secondWinnerIds = new Set(
+      rankingResult.entries.filter((e) => e.category === 'SECOND').map((e) => e.participationId)
+    )
+    const lowestWinnerIds = new Set(
+      rankingResult.entries.filter((e) => e.category === 'LOWEST').map((e) => e.participationId)
+    )
 
     return {
-      TOP: { score: N, winnersCount: topWinners.length, winnerIds: topWinnerIds },
-      SECOND: { score: N - 1, winnersCount: secondWinners.length, winnerIds: secondWinnerIds },
-      LOWEST: { score: lowestPositiveScore, winnersCount: lowestWinners.length, winnerIds: new Set(lowestWinners.map(l => l.id)) },
-      hasAnyWinner,
+      TOP: { score: N, winnersCount: summary.topWinnersCount, winnerIds: topWinnerIds },
+      SECOND: { score: N - 1, winnersCount: summary.secondWinnersCount, winnerIds: secondWinnerIds },
+      LOWEST: { score: summary.lowestWinningScore, winnersCount: summary.lowestWinnersCount, winnerIds: lowestWinnerIds },
+      hasAnyWinner: summary.hasAnyWinner,
     }
-  }, [selectedContest, ranking, selectedDrawId, draws, drawsSortedAsc])
-
-  // MODIFIQUEI AQUI - função para obter medalha baseada no ID da participação
-  const getMedalForParticipation = (participationId: string) => {
-    if (drawWinnersByScore.TOP.winnerIds.has(participationId)) return '🥇'
-    if (drawWinnersByScore.SECOND.winnerIds.has(participationId)) return '🥈'
-    if (drawWinnersByScore.LOWEST.winnerIds.has(participationId)) return '🥉'
-    return undefined
-  }
+  }, [selectedContest, rankingResult])
 
   if (authLoading || loading) {
     return (
@@ -579,12 +538,10 @@ export default function RankingsPage() {
                 (() => {
                   const isFinished = selectedContest.status === 'finished'
 
-                  // MODIFIQUEI AQUI - winners usando drawWinnersByScore (por sorteio individual)
-                  const scoreOf = (p: ParticipationWithUser) => getDisplayScore(p)
-
-                  const topWinners = ranking.filter(p => drawWinnersByScore.TOP.winnerIds.has(p.id))
-                  const secondWinners = ranking.filter(p => drawWinnersByScore.SECOND.winnerIds.has(p.id))
-                  const lowestWinners = ranking.filter(p => drawWinnersByScore.LOWEST.winnerIds.has(p.id))
+                  // FONTE ÚNICA DE VERDADE: Usar entries do rankingResult
+                  const topWinners = rankingResult.entries.filter((e) => e.category === 'TOP')
+                  const secondWinners = rankingResult.entries.filter((e) => e.category === 'SECOND')
+                  const lowestWinners = rankingResult.entries.filter((e) => e.category === 'LOWEST')
 
                   // MODIFIQUEI AQUI - mensagem neutra baseada em existência de premiados
                   const hasPremiados = drawWinnersByScore.hasAnyWinner
@@ -648,20 +605,17 @@ export default function RankingsPage() {
                           <div className="order-2 sm:order-1 rounded-lg sm:rounded-xl border-2 border-[#E5E5E5] bg-gradient-to-br from-gray-50 to-white p-3 sm:p-4 text-center">
                             <div className="text-2xl sm:text-3xl mb-2">🥈</div>
                             <div className="text-xs sm:text-sm font-semibold text-[#1F1F1F]/60 mb-1">SEGUNDA MAIOR</div>
-                            {secondWinners.map((participation, idx) => {
-                              const score = scoreOf(participation)
-                              return (
-                                <div
-                                  key={participation.id}
-                                  className={idx > 0 ? 'mt-2 pt-2 border-t border-[#E5E5E5]' : ''}
-                                >
-                                  <div className="text-sm sm:text-base font-bold text-[#1F1F1F] mb-1 truncate">
-                                    {participation.user?.name || 'Anônimo'}
-                                  </div>
-                                  <div className="text-lg sm:text-xl font-extrabold text-[#1F1F1F]">{score} pts</div>
+                            {secondWinners.map((entry, idx) => (
+                              <div
+                                key={entry.participationId}
+                                className={idx > 0 ? 'mt-2 pt-2 border-t border-[#E5E5E5]' : ''}
+                              >
+                                <div className="text-sm sm:text-base font-bold text-[#1F1F1F] mb-1 truncate">
+                                  {entry.userName}
                                 </div>
-                              )
-                            })}
+                                <div className="text-lg sm:text-xl font-extrabold text-[#1F1F1F]">{entry.score} pts</div>
+                              </div>
+                            ))}
                           </div>
                         )}
 
@@ -670,20 +624,17 @@ export default function RankingsPage() {
                           <div className="order-1 sm:order-2 rounded-lg sm:rounded-xl border-2 border-[#F4C430] bg-gradient-to-br from-[#F4C430]/20 to-[#FFD700]/20 p-3 sm:p-4 text-center transform sm:-translate-y-2">
                             <div className="text-3xl sm:text-4xl mb-2">🥇</div>
                             <div className="text-xs sm:text-sm font-semibold text-[#1F1F1F]/60 mb-1">MAIOR PONTUAÇÃO</div>
-                            {topWinners.map((participation, idx) => {
-                              const score = scoreOf(participation)
-                              return (
-                                <div
-                                  key={participation.id}
-                                  className={idx > 0 ? 'mt-2 pt-2 border-t border-[#E5E5E5]' : ''}
-                                >
-                                  <div className="text-base sm:text-lg font-bold text-[#1F1F1F] mb-1 truncate">
-                                    {participation.user?.name || 'Anônimo'}
-                                  </div>
-                                  <div className="text-xl sm:text-2xl font-extrabold text-[#1F1F1F]">{score} pts</div>
+                            {topWinners.map((entry, idx) => (
+                              <div
+                                key={entry.participationId}
+                                className={idx > 0 ? 'mt-2 pt-2 border-t border-[#E5E5E5]' : ''}
+                              >
+                                <div className="text-base sm:text-lg font-bold text-[#1F1F1F] mb-1 truncate">
+                                  {entry.userName}
                                 </div>
-                              )
-                            })}
+                                <div className="text-xl sm:text-2xl font-extrabold text-[#1F1F1F]">{entry.score} pts</div>
+                              </div>
+                            ))}
                           </div>
                         )}
 
@@ -692,20 +643,17 @@ export default function RankingsPage() {
                           <div className="order-3 rounded-lg sm:rounded-xl border-2 border-[#E5E5E5] bg-gradient-to-br from-orange-50 to-white p-3 sm:p-4 text-center">
                             <div className="text-2xl sm:text-3xl mb-2">🥉</div>
                             <div className="text-xs sm:text-sm font-semibold text-[#1F1F1F]/60 mb-1">MENOR PONTUAÇÃO</div>
-                            {lowestWinners.map((participation, idx) => {
-                              const score = scoreOf(participation)
-                              return (
-                                <div
-                                  key={participation.id}
-                                  className={idx > 0 ? 'mt-2 pt-2 border-t border-[#E5E5E5]' : ''}
-                                >
-                                  <div className="text-sm sm:text-base font-bold text-[#1F1F1F] mb-1 truncate">
-                                    {participation.user?.name || 'Anônimo'}
-                                  </div>
-                                  <div className="text-lg sm:text-xl font-extrabold text-[#1F1F1F]">{score} pts</div>
+                            {lowestWinners.map((entry, idx) => (
+                              <div
+                                key={entry.participationId}
+                                className={idx > 0 ? 'mt-2 pt-2 border-t border-[#E5E5E5]' : ''}
+                              >
+                                <div className="text-sm sm:text-base font-bold text-[#1F1F1F] mb-1 truncate">
+                                  {entry.userName}
                                 </div>
-                              )
-                            })}
+                                <div className="text-lg sm:text-xl font-extrabold text-[#1F1F1F]">{entry.score} pts</div>
+                              </div>
+                            ))}
                           </div>
                         )}
                       </div>
@@ -737,76 +685,56 @@ export default function RankingsPage() {
                   </div>
 
                   <div className="space-y-2">
-                    {(() => {
-                      // MODIFIQUEI AQUI - Ordenar por pontuação com base no sorteio selecionado (ou total)
-                      const sortedRanking = [...ranking].sort((a, b) => {
-                        const scoreA = getDisplayScore(a)
-                        const scoreB = getDisplayScore(b)
-                        if (scoreB !== scoreA) return scoreB - scoreA
-                        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-                      })
+                    {/* FONTE ÚNICA DE VERDADE: Usar entries já ordenados do rankingResult */}
+                    {rankingResult.entries.slice(0, 10).map((entry) => (
+                      <div
+                        key={entry.participationId}
+                        className={`flex items-center justify-between p-3 rounded-lg border transition-colors ${
+                          entry.highlightRow
+                            ? 'bg-gradient-to-r from-yellow-50 to-yellow-100 border-[#F4C430]'
+                            : 'bg-white border-[#E5E5E5] hover:border-[#1E7F43]'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3 flex-1 min-w-0">
+                          <div className="flex-shrink-0">
+                            {entry.medal ? (
+                              <span className="text-xl sm:text-2xl">{entry.medal}</span>
+                            ) : (
+                              <span className="text-sm sm:text-base font-bold text-[#1F1F1F]/60">#{entry.position}</span>
+                            )}
+                          </div>
 
-                      return sortedRanking.slice(0, 10).map((participation, index) => {
-                        const position = index + 1
-                        const drawsToUse = selectedDrawId ? getDrawsUpTo(selectedDrawId) : draws
-                        const hitNumbers = getHitNumbersForParticipation(participation, drawsToUse)
-                        const totalScore = getDisplayScore(participation)
+                          <div className="flex-1 min-w-0">
+                            <div className="font-semibold text-[#1F1F1F] truncate">{entry.userName}</div>
+                            {entry.userEmail && (
+                              <div className="text-xs text-[#1F1F1F]/60 truncate">{entry.userEmail}</div>
+                            )}
+                          </div>
 
-                        // MODIFIQUEI AQUI - medalha/faixa amarela usando winnerIds (por sorteio individual)
-                        const medal = getMedalForParticipation(participation.id)
-                        const hasMedal = medal !== undefined
+                          {entry.hitNumbers.length > 0 && (
+                            <div className="hidden sm:flex gap-1 flex-wrap pr-2">
+                              {entry.hitNumbers.map((num) => (
+                                <span key={num} className="px-2 py-1 bg-[#1E7F43] text-white rounded text-xs font-bold">
+                                  {num.toString().padStart(2, '0')}✓
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
 
-                        return (
-                          <div
-                            key={participation.id}
-                            className={`flex items-center justify-between p-3 rounded-lg border transition-colors ${
-                              hasMedal
-                                ? 'bg-gradient-to-r from-yellow-50 to-yellow-100 border-[#F4C430]'
-                                : 'bg-white border-[#E5E5E5] hover:border-[#1E7F43]'
+                        <div className="flex items-center gap-3 flex-shrink-0">
+                          <span
+                            className={`px-3 py-1 rounded-lg font-bold text-sm sm:text-base ${
+                              entry.score > 0
+                                ? 'bg-gradient-to-r from-[#1E7F43] to-[#3CCB7F] text-white'
+                                : 'bg-[#E5E5E5] text-[#1F1F1F]'
                             }`}
                           >
-                            <div className="flex items-center gap-3 flex-1 min-w-0">
-                              <div className="flex-shrink-0">
-                                {medal ? (
-                                  <span className="text-xl sm:text-2xl">{medal}</span>
-                                ) : (
-                                  <span className="text-sm sm:text-base font-bold text-[#1F1F1F]/60">#{position}</span>
-                                )}
-                              </div>
-
-                              <div className="flex-1 min-w-0">
-                                <div className="font-semibold text-[#1F1F1F] truncate">{participation.user?.name || 'Usuário Anônimo'}</div>
-                                {participation.user?.email && (
-                                  <div className="text-xs text-[#1F1F1F]/60 truncate">{participation.user.email}</div>
-                                )}
-                              </div>
-
-                              {hitNumbers.length > 0 && (
-                                <div className="hidden sm:flex gap-1 flex-wrap pr-2">
-                                  {hitNumbers.map((num) => (
-                                    <span key={num} className="px-2 py-1 bg-[#1E7F43] text-white rounded text-xs font-bold">
-                                      {num.toString().padStart(2, '0')}✓
-                                    </span>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-
-                            <div className="flex items-center gap-3 flex-shrink-0">
-                              <span
-                                className={`px-3 py-1 rounded-lg font-bold text-sm sm:text-base ${
-                                  totalScore > 0
-                                    ? 'bg-gradient-to-r from-[#1E7F43] to-[#3CCB7F] text-white'
-                                    : 'bg-[#E5E5E5] text-[#1F1F1F]'
-                                }`}
-                              >
-                                {totalScore}
-                              </span>
-                            </div>
-                          </div>
-                        )
-                      })
-                    })()}
+                            {entry.score}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
 
                     {ranking.length > 10 && (
                       <div className="text-center pt-2">

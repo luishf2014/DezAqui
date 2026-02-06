@@ -11,9 +11,7 @@ import { getContestRanking } from '../services/participationsService'
 import { listDrawsByContestId } from '../services/drawsService'
 import { getDrawPayoutSummary, getPayoutsByDraw } from '../services/payoutsService'
 import { Contest, Participation, Draw } from '../types'
-import { calculateTotalScore, getAllHitNumbers, calculateHits } from '../utils/rankingHelpers'
-// MODIFIQUEI AQUI - Não usar getPayoutCategory para medalha/categoria/prêmio (agora é por SCORE)
-// import { getPayoutCategory } from '../utils/payoutCategoryHelpers'
+import { calculateRanking, createRankingMap, RankingEntry } from '../utils/rankingCalculator'
 import { getContestState } from '../utils/contestHelpers'
 import Header from '../components/Header'
 import Footer from '../components/Footer'
@@ -110,66 +108,12 @@ export default function RankingPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDrawId])
 
-  const drawsSortedAsc = useMemo(() => {
-    return [...draws].sort((a, b) =>
-      new Date(a.draw_date).getTime() - new Date(b.draw_date).getTime()
-    )
-  }, [draws])
+  // =========================================================================
+  // FONTE UNICA DE VERDADE: calculateRanking
+  // Todas as colunas da UI usam rankingResult.entries
+  // =========================================================================
 
-  const getDrawsUpTo = (drawId: string): Draw[] => {
-    const idx = drawsSortedAsc.findIndex(d => d.id === drawId)
-    if (idx === -1) return drawsSortedAsc
-    return drawsSortedAsc.slice(0, idx + 1)
-  }
-
-  // MODIFIQUEI AQUI - Anti-fraude: só conta sorteios após a participação
-  const getTotalScore = (participation: Participation): number => {
-    return calculateTotalScore(participation.numbers, draws, participation.created_at)
-  }
-
-  // MODIFIQUEI AQUI - Anti-fraude: só conta sorteios após a participação
-  const getScoreUpToDraw = (participation: Participation, drawId: string): number => {
-    const drawsUpTo = getDrawsUpTo(drawId)
-    return calculateTotalScore(participation.numbers, drawsUpTo, participation.created_at)
-  }
-
-  const drawnNumbersSorted = useMemo((): number[] => {
-    const drawsToUse = selectedDrawId ? getDrawsUpTo(selectedDrawId) : draws
-    const allNumbers = new Set<number>()
-
-    drawsToUse.forEach((draw) => {
-      draw.numbers.forEach((num) => allNumbers.add(num))
-    })
-
-    return Array.from(allNumbers).sort((a, b) => a - b)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draws, selectedDrawId, drawsSortedAsc])
-
-  const drawnNumbersSet = useMemo(() => new Set<number>(drawnNumbersSorted), [drawnNumbersSorted])
-
-  const isNumberDrawn = (number: number): boolean => {
-    return drawnNumbersSet.has(number)
-  }
-
-  // MODIFIQUEI AQUI - Anti-fraude: só conta sorteios após a participação
-  const getHitNumbersForParticipation = (participation: Participation): number[] => {
-    const drawsToUse = selectedDrawId ? getDrawsUpTo(selectedDrawId) : draws
-    return getAllHitNumbers(participation.numbers, drawsToUse, participation.created_at)
-  }
-
-  const maxScoreToDisplay = useMemo(() => {
-    if (participations.length === 0) return 0
-
-    let max = 0
-    for (const p of participations) {
-      const s = selectedDrawId ? getScoreUpToDraw(p, selectedDrawId) : getTotalScore(p)
-      if (s > max) max = s
-    }
-    return max
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [participations, selectedDrawId, draws, drawsSortedAsc])
-
-  // MODIFIQUEI AQUI - total arrecadado (summary se existir, senão fallback)
+  // Total arrecadado (summary se existir, senao fallback)
   const getTotalCollected = () => {
     const fromSummary =
       payoutSummary?.totalCollected ??
@@ -183,86 +127,98 @@ export default function RankingPage() {
       if (Number.isFinite(n) && n > 0) return n
     }
 
-    // fallback: qtd participações * valor da participação
+    // fallback: qtd participacoes * valor da participacao
     const value = Number((contest as any)?.participation_value || 0)
     return Number.isFinite(value) ? participations.length * value : 0
   }
 
-  // MODIFIQUEI AQUI - ler % do concurso (campos reais do schema)
-  const getCategoryPercent = (category: 'TOP' | 'SECOND' | 'LOWEST') => {
-    if (category === 'TOP') return Number((contest as any)?.first_place_pct ?? 0)
-    if (category === 'SECOND') return Number((contest as any)?.second_place_pct ?? 0)
-    if (category === 'LOWEST') return Number((contest as any)?.lowest_place_pct ?? 0)
-    return 0
-  }
-
-  const calcAmountPerWinner = (
-    category: 'TOP' | 'SECOND' | 'LOWEST',
-    winnersCount: number
-  ) => {
-    if (winnersCount === 0) return 0
+  // Calculo centralizado do ranking
+  const rankingResult = useMemo(() => {
+    if (!contest || participations.length === 0) {
+      return {
+        entries: [] as RankingEntry[],
+        summary: {
+          topWinnersCount: 0,
+          secondWinnersCount: 0,
+          lowestWinnersCount: 0,
+          maxScore: 0,
+          lowestWinningScore: null as number | null,
+          hasAnyWinner: false,
+        },
+      }
+    }
 
     const totalCollected = getTotalCollected()
-    const percent = getCategoryPercent(category)
 
-    const categoryTotal = totalCollected * (percent / 100)
-    return categoryTotal / winnersCount
+    return calculateRanking({
+      contest,
+      participations,
+      draws,
+      selectedDrawId: selectedDrawId || undefined,
+      totalCollected,
+    })
+  }, [contest, participations, draws, selectedDrawId, payoutSummary])
+
+  // Map para lookup rapido por participationId
+  const rankingMap = useMemo(() => {
+    return createRankingMap(rankingResult.entries)
+  }, [rankingResult.entries])
+
+  // Numeros sorteados ate o sorteio selecionado
+  const drawnNumbersSorted = useMemo((): number[] => {
+    const drawsSortedAsc = [...draws].sort((a, b) =>
+      new Date(a.draw_date).getTime() - new Date(b.draw_date).getTime()
+    )
+    const getDrawsUpTo = (drawId: string): Draw[] => {
+      const idx = drawsSortedAsc.findIndex(d => d.id === drawId)
+      if (idx === -1) return drawsSortedAsc
+      return drawsSortedAsc.slice(0, idx + 1)
+    }
+    const drawsToUse = selectedDrawId ? getDrawsUpTo(selectedDrawId) : draws
+    const allNumbers = new Set<number>()
+    drawsToUse.forEach((draw) => {
+      draw.numbers.forEach((num) => allNumbers.add(num))
+    })
+    return Array.from(allNumbers).sort((a, b) => a - b)
+  }, [draws, selectedDrawId])
+
+  const drawnNumbersSet = useMemo(() => new Set<number>(drawnNumbersSorted), [drawnNumbersSorted])
+
+  const isNumberDrawn = (number: number): boolean => {
+    return drawnNumbersSet.has(number)
   }
 
-  // MODIFIQUEI AQUI - TOP/SECOND agora é por acertos em UM ÚNICO SORTEIO (não cumulativo)
-  // TOP = acertou TODOS os números em algum sorteio
-  // SECOND = acertou N-1 em algum sorteio (e não é TOP)
-  // LOWEST = menor pontuação CUMULATIVA positiva (excluindo TOP e SECOND)
-  const drawWinnersByScore = useMemo(() => {
-    const N = Number(contest?.numbers_per_participation || 0)
+  // Aliases para compatibilidade com codigo existente
+  const maxScoreToDisplay = rankingResult.summary.maxScore
+  const drawWinnersByScore = {
+    TOP: {
+      score: contest?.numbers_per_participation || 0,
+      winnersCount: rankingResult.summary.topWinnersCount,
+      winnerIds: new Set(rankingResult.entries.filter(e => e.category === 'TOP').map(e => e.participationId)),
+    },
+    SECOND: {
+      score: (contest?.numbers_per_participation || 1) - 1,
+      winnersCount: rankingResult.summary.secondWinnersCount,
+      winnerIds: new Set(rankingResult.entries.filter(e => e.category === 'SECOND').map(e => e.participationId)),
+    },
+    LOWEST: {
+      score: rankingResult.summary.lowestWinningScore,
+      winnersCount: rankingResult.summary.lowestWinnersCount,
+      winnerIds: new Set(rankingResult.entries.filter(e => e.category === 'LOWEST').map(e => e.participationId)),
+    },
+    hasAnyWinner: rankingResult.summary.hasAnyWinner,
+  }
 
-    // Função para obter sorteios válidos para uma participação (anti-fraude)
-    const getValidDrawsFor = (p: ParticipationWithUser) => {
-      const drawsToUse = selectedDrawId ? getDrawsUpTo(selectedDrawId) : draws
-      const participationDate = new Date(p.created_at)
-      return drawsToUse.filter(d => new Date(d.draw_date) >= participationDate)
-    }
-
-    // TOP: quem acertou TODOS os números em algum sorteio válido
-    const topWinners = participations.filter(p => {
-      const validDraws = getValidDrawsFor(p)
-      return validDraws.some(draw => calculateHits(draw.numbers, p.numbers) === p.numbers.length)
-    })
-    const topWinnerIds = new Set(topWinners.map(t => t.id))
-
-    // SECOND: quem acertou N-1 em algum sorteio válido (e NÃO é TOP)
-    const secondWinners = participations.filter(p => {
-      if (topWinnerIds.has(p.id)) return false
-      const validDraws = getValidDrawsFor(p)
-      const targetHits = p.numbers.length - 1
-      return validDraws.some(draw => calculateHits(draw.numbers, p.numbers) === targetHits)
-    })
-    const secondWinnerIds = new Set(secondWinners.map(s => s.id))
-
-    // LOWEST: menor pontuação CUMULATIVA positiva (excluindo TOP e SECOND)
-    const scoreOf = (p: ParticipationWithUser) =>
-      selectedDrawId ? getScoreUpToDraw(p, selectedDrawId) : getTotalScore(p)
-
-    const othersWithScore = participations.filter(
-      p => !topWinnerIds.has(p.id) && !secondWinnerIds.has(p.id) && scoreOf(p) > 0
-    )
-    const lowestPositiveScore = othersWithScore.length > 0
-      ? Math.min(...othersWithScore.map(p => scoreOf(p)))
-      : null
-
-    const lowestWinners = lowestPositiveScore !== null
-      ? othersWithScore.filter(p => scoreOf(p) === lowestPositiveScore)
-      : []
-
-    const hasAnyWinner = topWinners.length > 0 || secondWinners.length > 0 || lowestWinners.length > 0
-
-    return {
-      TOP: { score: N, winnersCount: topWinners.length, winnerIds: topWinnerIds },
-      SECOND: { score: N - 1, winnersCount: secondWinners.length, winnerIds: secondWinnerIds },
-      LOWEST: { score: lowestPositiveScore, winnersCount: lowestWinners.length, winnerIds: new Set(lowestWinners.map(l => l.id)) },
-      hasAnyWinner,
-    }
-  }, [contest, participations, selectedDrawId, draws, drawsSortedAsc])
+  // Funcao para calcular premio por categoria (para exibicao nos cards)
+  const calcAmountPerWinner = (category: 'TOP' | 'SECOND' | 'LOWEST', winnersCount: number) => {
+    if (winnersCount === 0) return 0
+    const totalCollected = getTotalCollected()
+    const topPct = contest?.first_place_pct || 65
+    const secondPct = contest?.second_place_pct || 10
+    const lowestPct = contest?.lowest_place_pct || 7
+    const percent = category === 'TOP' ? topPct : category === 'SECOND' ? secondPct : lowestPct
+    return (totalCollected * percent) / 100 / winnersCount
+  }
 
   if (loading) {
     return (
@@ -637,115 +593,41 @@ export default function RankingPage() {
                 </thead>
                 <tbody>
                   {(() => {
-                    const sortedParticipations = [...participations].sort((a, b) => {
-                      const scoreA = selectedDrawId ? getScoreUpToDraw(a, selectedDrawId) : getTotalScore(a)
-                      const scoreB = selectedDrawId ? getScoreUpToDraw(b, selectedDrawId) : getTotalScore(b)
-                      if (scoreB !== scoreA) return scoreB - scoreA
-                      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-                    })
-
-                    const positionById = new Map<string, number>()
-                    sortedParticipations.forEach((p, idx) => positionById.set(p.id, idx + 1))
-
-                    type ScoreCategory = 'TOP' | 'SECOND' | 'LOWEST' | 'NONE'
-
-                    // MODIFIQUEI AQUI - Categoria agora é por winnerIds (TOP/SECOND por sorteio, não score cumulativo)
-                    const getCategoryByParticipation = (p: ParticipationWithUser): ScoreCategory => {
-                      if (drawWinnersByScore.TOP.winnerIds.has(p.id)) return 'TOP'
-                      if (drawWinnersByScore.SECOND.winnerIds.has(p.id)) return 'SECOND'
-                      if (drawWinnersByScore.LOWEST.winnerIds.has(p.id)) return 'LOWEST'
-                      return 'NONE'
-                    }
-
-                    const getMedalByCategory = (cat: ScoreCategory) => {
-                      if (cat === 'TOP') return '🥇'
-                      if (cat === 'SECOND') return '🥈'
-                      if (cat === 'LOWEST') return '🥉'
-                      return undefined
-                    }
-
-                    const getPrizeByScoreCategory = (cat: ScoreCategory) => {
-                      if (!payoutSummary?.categories) return null
-                      if (cat === 'TOP') return payoutSummary.categories.TOP || null
-                      if (cat === 'SECOND') return payoutSummary.categories.SECOND || null
-                      if (cat === 'LOWEST') return payoutSummary.categories.LOWEST || null
-                      return null
-                    }
-
-                    // MODIFIQUEI AQUI - Prêmio esperado usando winnerIds
-                    const getExpectedPrize = (participation: ParticipationWithUser) => {
-                      if (!selectedDrawId) return { isWinner: false, category: 'NONE' as ScoreCategory, amount: 0 }
-
-                      const cat = getCategoryByParticipation(participation)
-                      if (cat === 'NONE') return { isWinner: false, category: cat, amount: 0 }
-
-                      const winnersCount =
-                        cat === 'TOP' ? drawWinnersByScore.TOP.winnersCount
-                        : cat === 'SECOND' ? drawWinnersByScore.SECOND.winnersCount
-                        : drawWinnersByScore.LOWEST.winnersCount
-
-                      // MODIFIQUEI AQUI - valor calculado pela % do concurso (fonte principal)
-                      const amountFromPercent =
-                        winnersCount > 0
-                          ? Number(calcAmountPerWinner(cat as 'TOP' | 'SECOND' | 'LOWEST', winnersCount) || 0)
-                          : 0
-
-                      // MODIFIQUEI AQUI - fallback: caso backend tenha vindo com amountPerWinner
-                      const prize = getPrizeByScoreCategory(cat)
-                      const amountFromSummary = Number(prize?.amountPerWinner || 0)
-
-                      const amount = amountFromPercent > 0 ? amountFromPercent : amountFromSummary
-                      return { isWinner: amount > 0, category: cat, amount }
-                    }
-
-                    const filteredParticipations = sortedParticipations.filter((participation) => {
+                    // FONTE UNICA: usar rankingResult.entries (ja ordenado)
+                    const filteredEntries = rankingResult.entries.filter((entry) => {
                       if (!selectedDrawId) return true
-
-                      const expected = getExpectedPrize(participation)
 
                       switch (filter) {
                         case 'all':
                           return true
                         case 'premiados':
-                          return expected.isWinner
+                          return entry.isWinner
                         case 'TOP':
-                          return expected.category === 'TOP'
+                          return entry.category === 'TOP'
                         case 'SECOND':
-                          return expected.category === 'SECOND'
+                          return entry.category === 'SECOND'
                         case 'LOWEST':
-                          return expected.category === 'LOWEST'
+                          return entry.category === 'LOWEST'
                         case 'nao_premiados':
-                          return !expected.isWinner
+                          return !entry.isWinner
                         default:
                           return true
                       }
                     })
 
-                    return filteredParticipations.map((participation, index) => {
-                      const position = positionById.get(participation.id) || (index + 1)
-                      const hitNumbers = getHitNumbersForParticipation(participation)
-
-                      const displayScore = selectedDrawId
-                        ? getScoreUpToDraw(participation, selectedDrawId)
-                        : getTotalScore(participation)
-
-                      // MODIFIQUEI AQUI - Categoria agora é por participação (TOP/SECOND por sorteio)
-                      const scoreCategory = selectedDrawId ? getCategoryByParticipation(participation) : 'NONE'
-                      const medal = getMedalByCategory(scoreCategory)
-                      const hasMedal = medal !== undefined
-                      const positionLabel = hasMedal ? medal : `#${position}`
-
-                      const expectedPrize = getExpectedPrize(participation)
+                    return filteredEntries.map((entry) => {
+                      // Todos os dados vem do entry (fonte unica)
+                      const positionLabel = entry.medal || `#${entry.position}`
 
                       return (
                         <tr
-                          key={participation.id}
-                          className={`border-b border-[#E5E5E5] transition-colors hover:bg-[#F9F9F9] ${hasMedal ? 'bg-gradient-to-r from-yellow-50 to-yellow-100' : ''
+                          key={entry.participationId}
+                          className={`border-b border-[#E5E5E5] transition-colors hover:bg-[#F9F9F9] ${entry.highlightRow ? 'bg-gradient-to-r from-yellow-50 to-yellow-100' : ''
                             }`}
                         >
                           <td className="py-4 px-6">
                             <div className="flex items-center gap-3">
-                              <span className={`${hasMedal ? 'text-2xl' : 'text-xl'} font-bold text-[#1F1F1F]/60`}>
+                              <span className={`${entry.medal ? 'text-2xl' : 'text-xl'} font-bold text-[#1F1F1F]/60`}>
                                 {positionLabel}
                               </span>
                             </div>
@@ -753,15 +635,16 @@ export default function RankingPage() {
 
                           <td className="py-4 px-6">
                             <div>
-                              <div className="font-semibold text-[#1F1F1F]">{participation.user?.name || 'Usuário Anônimo'}</div>
-                              {participation.user?.email && <div className="text-sm text-[#1F1F1F]/60">{participation.user.email}</div>}
+                              <div className="font-semibold text-[#1F1F1F]">{entry.userName}</div>
+                              {entry.userEmail && <div className="text-sm text-[#1F1F1F]/60">{entry.userEmail}</div>}
                             </div>
                           </td>
 
                           <td className="py-4 px-6">
                             <div className="flex flex-wrap gap-2">
-                              {[...participation.numbers].sort((a, b) => a - b).map((num) => {
-                                const isHit = hitNumbers.includes(num)
+                              {[...entry.numbers].sort((a, b) => a - b).map((num) => {
+                                // hitNumbers vem do entry (fonte unica)
+                                const isHit = entry.hitNumbers.includes(num)
                                 const isDrawn = isNumberDrawn(num)
 
                                 return (
@@ -785,20 +668,20 @@ export default function RankingPage() {
 
                           <td className="py-4 px-6 text-center">
                             <span
-                              className={`inline-block px-4 py-2 rounded-lg font-bold text-lg ${displayScore > 0
+                              className={`inline-block px-4 py-2 rounded-lg font-bold text-lg ${entry.score > 0
                                 ? 'bg-gradient-to-r from-[#1E7F43] to-[#3CCB7F] text-white'
                                 : 'bg-[#E5E5E5] text-[#1F1F1F]'
                                 }`}
                             >
-                              {displayScore}
+                              {entry.score}
                             </span>
                           </td>
 
                           <td className="py-4 px-6">
-                            <span className="text-sm font-mono text-[#1F1F1F]/70">{participation.ticket_code || 'N/A'}</span>
+                            <span className="text-sm font-mono text-[#1F1F1F]/70">{entry.ticketCode || 'N/A'}</span>
                           </td>
 
-                          {/* MODIFIQUEI AQUI - Prêmio agora mostra o VALOR calculado pela %; senão, “Não premiado” */}
+                          {/* Premio vem do entry (fonte unica) */}
                           <td className="py-4 px-6 text-center">
                             {(() => {
                               if (draws.length === 0) {
@@ -808,14 +691,14 @@ export default function RankingPage() {
                                 return <span className="text-sm text-[#1F1F1F]/40">—</span>
                               }
 
-                              if (expectedPrize.category !== 'NONE') {
+                              if (entry.isWinner) {
                                 return (
                                   <div className="flex flex-col items-center gap-1">
                                     <span className="px-3 py-1 bg-gradient-to-r from-[#F4C430] to-[#FFD700] text-[#1F1F1F] rounded-lg font-bold text-sm">
                                       🏆 Premiado
                                     </span>
                                     <span className="text-lg font-extrabold text-[#1E7F43]">
-                                      R$ {Number(expectedPrize.amount || 0).toFixed(2).replace('.', ',')}
+                                      R$ {Number(entry.prizeValue || 0).toFixed(2).replace('.', ',')}
                                     </span>
                                   </div>
                                 )
