@@ -72,16 +72,9 @@ export async function createParticipation(params: {
     throw new Error('O prazo para participação neste concurso já encerrou')
   }
 
-  // MODIFIQUEI AQUI - Verificar se já existe sorteio para este concurso (backup adicional)
-  const { data: draws, error: drawsError } = await supabase
-    .from('draws')
-    .select('id')
-    .eq('contest_id', params.contestId)
-    .limit(1)
-
-  if (!drawsError && draws && draws.length > 0) {
-    throw new Error('Este concurso já possui sorteios realizados e não aceita novas participações')
-  }
+  // REMOVIDO: Verificação que bloqueava participações se já existisse sorteio
+  // Comportamento correto: participações são permitidas enquanto concurso estiver "active"
+  // O concurso só muda para "finished" quando alguém atinge numbers_per_participation pontos
 
   // MODIFIQUEI AQUI - Garantir que os números são válidos (inteiros não-negativos)
   // Normalizar e validar números
