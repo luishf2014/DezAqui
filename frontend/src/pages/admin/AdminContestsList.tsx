@@ -1,0 +1,377 @@
+/**
+ * Lista de Concursos - Painel Administrativo
+ * FASE 1: CRUD de concursos
+ * 
+ * Página para listar, visualizar e gerenciar todos os concursos
+ */
+import { Link, useNavigate } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import Header from '../../components/Header'
+import Footer from '../../components/Footer'
+import { listAllContests, deleteContest } from '../../services/contestsService'
+import { Contest } from '../../types'
+
+export default function AdminContestsList() {
+  const navigate = useNavigate()
+  const [contests, setContests] = useState<Contest[]>([])
+  const [loading, setLoading] = useState(true)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [filterStatus, setFilterStatus] = useState<string>('all')
+
+  useEffect(() => {
+    loadContests()
+  }, [])
+
+  // MODIFIQUEI AQUI - Função auxiliar para mostrar modais de erro com ícones
+  type ErrorIconType = 'warning' | 'error'
+  
+  const showErrorModal = (title: string, message: string, iconType: ErrorIconType = 'warning') => {
+    let iconSvg = ''
+    let iconBgClass = 'bg-orange-500'
+    
+    switch (iconType) {
+      case 'error':
+        iconSvg = `
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        `
+        iconBgClass = 'bg-red-500'
+        break
+      case 'warning':
+      default:
+        iconSvg = `
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
+        `
+        iconBgClass = 'bg-orange-500'
+        break
+    }
+    
+    const modal = document.createElement('div')
+    modal.className = 'fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60] animate-[fadeIn_0.2s_ease-out]'
+    modal.innerHTML = `
+      <div class="bg-white rounded-2xl p-8 max-w-md mx-4 animate-[scaleIn_0.3s_ease-out] shadow-2xl">
+        <div class="text-center">
+          <div class="mx-auto flex items-center justify-center h-16 w-16 rounded-full ${iconBgClass} mb-4">
+            ${iconSvg}
+          </div>
+          <h3 class="text-xl font-bold text-[#1F1F1F] mb-2">${title}</h3>
+          <p class="text-[#1F1F1F]/70 mb-6">${message}</p>
+          <button class="px-6 py-2 bg-[#1E7F43] text-white rounded-lg hover:bg-[#3CCB7F] transition-colors font-semibold">
+            Entendi
+          </button>
+        </div>
+      </div>
+    `
+    document.body.appendChild(modal)
+    
+    const closeBtn = modal.querySelector('button')
+    const closeModal = () => {
+      modal.remove()
+    }
+    closeBtn?.addEventListener('click', closeModal)
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) {
+        closeModal()
+      }
+    })
+  }
+
+  // MODIFIQUEI AQUI - Função para mostrar modal de confirmação de deleção
+  const showConfirmDeleteModal = (contestName: string): Promise<boolean> => {
+    return new Promise((resolve) => {
+      const modal = document.createElement('div')
+      modal.className = 'fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60] animate-[fadeIn_0.2s_ease-out]'
+      modal.innerHTML = `
+        <div class="bg-white rounded-2xl p-8 max-w-md mx-4 animate-[scaleIn_0.3s_ease-out] shadow-2xl">
+          <div class="text-center">
+            <div class="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-red-500 mb-4">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </div>
+            <h3 class="text-xl font-bold text-[#1F1F1F] mb-2">Confirmar Exclusão</h3>
+            <p class="text-[#1F1F1F]/70 mb-6">
+              Tem certeza que deseja deletar o concurso <strong>"${contestName}"</strong>?<br />
+              <span class="text-red-600 font-semibold">Esta ação é irreversível!</span>
+            </p>
+            <div class="flex gap-3 justify-center">
+              <button class="cancel-btn px-6 py-2 bg-gray-100 text-[#1F1F1F] rounded-lg hover:bg-gray-200 transition-colors font-semibold">
+                Cancelar
+              </button>
+              <button class="confirm-btn px-6 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors font-semibold">
+                Deletar
+              </button>
+            </div>
+          </div>
+        </div>
+      `
+      document.body.appendChild(modal)
+      
+      const cancelBtn = modal.querySelector('.cancel-btn')
+      const confirmBtn = modal.querySelector('.confirm-btn')
+      
+      const closeModal = (result: boolean) => {
+        modal.remove()
+        resolve(result)
+      }
+      
+      cancelBtn?.addEventListener('click', () => closeModal(false))
+      confirmBtn?.addEventListener('click', () => closeModal(true))
+      
+      modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+          closeModal(false)
+        }
+      })
+    })
+  }
+
+  const loadContests = async () => {
+    try {
+      const data = await listAllContests()
+      setContests(data)
+    } catch (error) {
+      console.error('Erro ao carregar concursos:', error)
+      showErrorModal(
+        'Erro ao carregar',
+        'Erro ao carregar concursos. Tente novamente.',
+        'error'
+      )
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleDelete = async (id: string, name: string) => {
+    // MODIFIQUEI AQUI - Usar modal de confirmação ao invés de confirm()
+    const confirmed = await showConfirmDeleteModal(name)
+    if (!confirmed) {
+      return
+    }
+
+    setDeletingId(id)
+    try {
+      await deleteContest(id)
+      await loadContests()
+    } catch (error) {
+      console.error('Erro ao deletar concurso:', error)
+      setDeletingId(null)
+      showErrorModal(
+        'Erro ao excluir',
+        'Erro ao deletar concurso. Tente novamente.',
+        'error'
+      )
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
+  const filteredContests = filterStatus === 'all'
+    ? contests
+    : contests.filter(c => c.status === filterStatus)
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    })
+  }
+
+  return (
+    <div className="min-h-screen bg-[#F9F9F9] flex flex-col">
+      <Header />
+      
+      <main className="flex-1 container mx-auto px-4 sm:px-6 lg:px-8 py-8 max-w-7xl">
+        {/* Cabeçalho */}
+        <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <button
+            onClick={() => navigate('/admin')}
+            className="text-[#1E7F43] hover:text-[#3CCB7F] font-semibold mb-4 flex items-center gap-2"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            Voltar ao Dashboard
+          </button>
+          <div>
+            <h1 className="text-3xl sm:text-4xl font-extrabold text-[#1F1F1F] mb-2">
+              Gerenciar Concursos
+            </h1>
+            <p className="text-[#1F1F1F]/70">
+              Crie, edite e gerencie todos os concursos do sistema
+            </p>
+          </div>
+          <Link
+            to="/admin/contests/new"
+            className="px-6 py-3 bg-gradient-to-r from-[#1E7F43] to-[#3CCB7F] text-white rounded-xl font-semibold hover:shadow-lg transition-all flex items-center justify-center gap-2 whitespace-nowrap"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            Novo Concurso
+          </Link>
+        </div>
+
+        {/* Filtros */}
+        <div className="mb-6 flex flex-wrap gap-2 justify-center">
+          <button
+            onClick={() => setFilterStatus('all')}
+            className={`px-4 py-2 rounded-xl font-semibold text-sm transition-all ${
+              filterStatus === 'all'
+                ? 'bg-[#1E7F43] text-white'
+                : 'bg-white text-[#1F1F1F] border border-[#E5E5E5] hover:border-[#1E7F43]'
+            }`}
+          >
+            Todos ({contests.length})
+          </button>
+          <button
+            onClick={() => setFilterStatus('active')}
+            className={`px-4 py-2 rounded-xl font-semibold text-sm transition-all ${
+              filterStatus === 'active'
+                ? 'bg-[#3CCB7F] text-white'
+                : 'bg-white text-[#1F1F1F] border border-[#E5E5E5] hover:border-[#3CCB7F]'
+            }`}
+          >
+            Ativos ({contests.filter(c => c.status === 'active').length})
+          </button>
+          <button
+            onClick={() => setFilterStatus('draft')}
+            className={`px-4 py-2 rounded-xl font-semibold text-sm transition-all ${
+              filterStatus === 'draft'
+                ? 'bg-[#F4C430] text-white'
+                : 'bg-white text-[#1F1F1F] border border-[#E5E5E5] hover:border-[#F4C430]'
+            }`}
+          >
+            Rascunhos ({contests.filter(c => c.status === 'draft').length})
+          </button>
+          <button
+            onClick={() => setFilterStatus('finished')}
+            className={`px-4 py-2 rounded-xl font-semibold text-sm transition-all ${
+              filterStatus === 'finished'
+                ? 'bg-[#1F1F1F] text-white'
+                : 'bg-white text-[#1F1F1F] border border-[#E5E5E5] hover:border-[#1F1F1F]'
+            }`}
+          >
+            Finalizados ({contests.filter(c => c.status === 'finished').length})
+          </button>
+        </div>
+
+        {/* Lista de Concursos */}
+        {loading ? (
+          <div className="bg-white rounded-2xl border border-[#E5E5E5] p-12 text-center">
+            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-[#1E7F43]"></div>
+          </div>
+        ) : filteredContests.length === 0 ? (
+          <div className="bg-white rounded-2xl border border-[#E5E5E5] p-12 text-center">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 text-[#1F1F1F]/30 mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <p className="text-[#1F1F1F]/70 mb-4">
+              {filterStatus === 'all' 
+                ? 'Nenhum concurso criado ainda.'
+                : `Nenhum concurso com status "${filterStatus}".`}
+            </p>
+            {filterStatus === 'all' && (
+              <Link
+                to="/admin/contests/new"
+                className="inline-block px-6 py-2 bg-[#1E7F43] text-white rounded-xl font-semibold hover:bg-[#3CCB7F] transition-colors"
+              >
+                Criar Primeiro Concurso
+              </Link>
+            )}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {filteredContests.map((contest) => (
+              <div
+                key={contest.id}
+                className="bg-white rounded-2xl border border-[#E5E5E5] p-6 shadow-sm hover:shadow-md transition-all"
+              >
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex-1">
+                    <h3 className="text-xl font-bold text-[#1F1F1F] mb-2">{contest.name}</h3>
+                    {/* MODIFIQUEI AQUI - Exibir código do concurso */}
+                    {contest.contest_code && (
+                      <div className="mb-2">
+                        <span className="px-2 py-1 bg-[#1E7F43] text-white rounded-full text-xs font-mono font-semibold">
+                          Código do Concurso: {contest.contest_code}
+                        </span>
+                      </div>
+                    )}
+                    {contest.description && (
+                      <p className="text-sm text-[#1F1F1F]/70 line-clamp-2 mb-3">
+                        {contest.description}
+                      </p>
+                    )}
+                  </div>
+                  <span className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap ml-4 ${
+                    contest.status === 'active' ? 'bg-[#3CCB7F]/20 text-[#3CCB7F]' :
+                    contest.status === 'draft' ? 'bg-[#F4C430]/20 text-[#F4C430]' :
+                    contest.status === 'finished' ? 'bg-[#1F1F1F]/10 text-[#1F1F1F]/70' :
+                    'bg-red-100 text-red-600'
+                  }`}>
+                    {contest.status === 'active' ? 'Ativo' :
+                     contest.status === 'draft' ? 'Rascunho' :
+                     contest.status === 'finished' ? 'Finalizado' :
+                     'Cancelado'}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 mb-4 text-sm">
+                  <div>
+                    <p className="text-[#1F1F1F]/70 mb-1">Números</p>
+                    <p className="font-semibold text-[#1F1F1F]">
+                      {contest.min_number} - {contest.max_number}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[#1F1F1F]/70 mb-1">Por Participação</p>
+                    <p className="font-semibold text-[#1F1F1F]">
+                      {contest.numbers_per_participation} números
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[#1F1F1F]/70 mb-1">Início</p>
+                    <p className="font-semibold text-[#1F1F1F]">{formatDate(contest.start_date)}</p>
+                  </div>
+                  <div>
+                    <p className="text-[#1F1F1F]/70 mb-1">Fim</p>
+                    <p className="font-semibold text-[#1F1F1F]">{formatDate(contest.end_date)}</p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2 pt-4 border-t border-[#E5E5E5]">
+                  <Link
+                    to={`/admin/contests/${contest.id}`}
+                    className="flex-1 px-4 py-2 bg-[#1E7F43] text-white rounded-xl font-semibold hover:bg-[#3CCB7F] transition-colors text-center text-sm"
+                  >
+                    Editar
+                  </Link>
+                  <Link
+                    to={`/contests/${contest.id}`}
+                    className="px-4 py-2 bg-white border border-[#E5E5E5] text-[#1F1F1F] rounded-xl font-semibold hover:border-[#1E7F43] transition-colors text-sm"
+                  >
+                    Ver
+                  </Link>
+                  <button
+                    onClick={() => handleDelete(contest.id, contest.name)}
+                    disabled={deletingId === contest.id}
+                    className="px-4 py-2 bg-red-50 text-red-600 rounded-xl font-semibold hover:bg-red-100 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {deletingId === contest.id ? 'Deletando...' : 'Deletar'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </main>
+
+      <Footer />
+    </div>
+  )
+}
