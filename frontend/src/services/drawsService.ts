@@ -7,7 +7,6 @@
 import { supabase } from '../lib/supabase'
 import { Draw } from '../types'
 import { generateDrawCode } from '../utils/drawCodeGenerator'
-import { updateContest } from './contestsService'
 import { reprocessContestAfterDraw, reprocessDrawResults } from './reprocessService'
 
 /**
@@ -135,10 +134,6 @@ export async function createDraw(input: CreateDrawInput): Promise<Draw> {
     throw new Error('É necessário informar a data do sorteio')
   }
 
-  // MODIFIQUEI AQUI - Verificar se é o primeiro sorteio ANTES de inserir
-  const existingDraws = await listDrawsByContestId(input.contest_id)
-  const isFirstDraw = existingDraws.length === 0
-
   // Gerar código se não fornecido
   const code = input.code || generateDrawCode()
 
@@ -195,30 +190,8 @@ export async function createDraw(input: CreateDrawInput): Promise<Draw> {
     throw new Error(`Erro ao criar sorteio: ${error.message}`)
   }
 
-  // MODIFIQUEI AQUI - Se este é o primeiro sorteio, atualizar status do concurso para 'finished'
-  if (isFirstDraw && data) {
-    try {
-      console.log(`[drawsService] Primeiro sorteio detectado para concurso ${input.contest_id}. Atualizando status...`)
-      const updatedContest = await updateContest(input.contest_id, { status: 'finished' })
-      console.log(`[drawsService] Status do concurso ${input.contest_id} atualizado para 'finished' após primeiro sorteio. Status atual:`, updatedContest.status)
-      
-      // MODIFIQUEI AQUI - Aguardar um pouco para garantir propagação
-      await new Promise(resolve => setTimeout(resolve, 300))
-    } catch (statusUpdateError) {
-      // Log do erro mas não falhar a criação do sorteio
-      console.error('[drawsService] Erro ao atualizar status do concurso:', statusUpdateError)
-      // Tentar novamente após um delay
-      try {
-        await new Promise(resolve => setTimeout(resolve, 500))
-        await updateContest(input.contest_id, { status: 'finished' })
-        console.log(`[drawsService] Status atualizado na segunda tentativa para concurso ${input.contest_id}`)
-      } catch (retryError) {
-        console.error('[drawsService] Erro na segunda tentativa de atualizar status:', retryError)
-      }
-    }
-  }
-
-  // MODIFIQUEI AQUI - Reprocessar concurso após criar sorteio (recalcular acertos, pontuações e rateio)
+  // Reprocessar concurso após criar sorteio (recalcular acertos, pontuações e rateio)
+  // O encerramento do concurso é feito pelo reprocessService quando alguém atinge pontuação máxima
   if (data) {
     try {
       console.log(`[drawsService] Iniciando reprocessamento do concurso ${input.contest_id} após criar sorteio...`)

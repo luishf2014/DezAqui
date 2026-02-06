@@ -774,7 +774,9 @@ export default function AdminDraws() {
                           disabled={!!editingDraw}
                         >
                           <option value="">Selecione um concurso</option>
-                          {contests.map((contest) => (
+                          {contests
+                            .filter(contest => editingDraw || contest.status === 'active') // Só mostra ativos para novos sorteios
+                            .map((contest) => (
                             <option key={contest.id} value={contest.id}>
                               {contest.name} ({contest.numbers_per_participation} números){contest.contest_code ? ` - ${contest.contest_code}` : ''}
                             </option>

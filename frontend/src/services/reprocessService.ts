@@ -101,12 +101,25 @@ export async function reprocessContestAfterDraw(contestId: string): Promise<void
 
     console.log(`[reprocessService] Pontuações atualizadas com sucesso`)
 
-    // 7. Verificar se algum participante atingiu pontuação máxima
+    // 7. Verificar se algum participante atingiu pontuação máxima e encerrar concurso
     const numbersPerParticipation = contest?.numbers_per_participation
     if (numbersPerParticipation) {
       const maxScoreReached = updates.some(u => u.score >= numbersPerParticipation)
       if (maxScoreReached) {
-        console.log(`[reprocessService] *** GANHADOR ENCONTRADO! *** Participante atingiu ${numbersPerParticipation} pontos!`)
+        console.log(`[reprocessService] *** GANHADOR ENCONTRADO! *** Participante atingiu ${numbersPerParticipation} pontos! Encerrando concurso...`)
+
+        // Atualizar status do concurso para 'finished'
+        const { error: updateError } = await supabase
+          .from('contests')
+          .update({ status: 'finished', updated_at: new Date().toISOString() })
+          .eq('id', contestId)
+          .eq('status', 'active') // Só atualiza se ainda estiver ativo
+
+        if (updateError) {
+          console.error(`[reprocessService] Erro ao encerrar concurso:`, updateError)
+        } else {
+          console.log(`[reprocessService] Concurso ${contestId} encerrado com sucesso!`)
+        }
       }
     }
 
