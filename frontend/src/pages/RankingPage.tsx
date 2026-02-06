@@ -11,7 +11,7 @@ import { getContestRanking } from '../services/participationsService'
 import { listDrawsByContestId } from '../services/drawsService'
 import { getDrawPayoutSummary, getPayoutsByDraw } from '../services/payoutsService'
 import { Contest, Participation, Draw } from '../types'
-import { calculateTotalScore, getAllHitNumbers } from '../utils/rankingHelpers'
+import { calculateTotalScore, getAllHitNumbers, calculateHits } from '../utils/rankingHelpers'
 // MODIFIQUEI AQUI - Não usar getPayoutCategory para medalha/categoria/prêmio (agora é por SCORE)
 // import { getPayoutCategory } from '../utils/payoutCategoryHelpers'
 import { getContestState } from '../utils/contestHelpers'
@@ -122,13 +122,15 @@ export default function RankingPage() {
     return drawsSortedAsc.slice(0, idx + 1)
   }
 
+  // MODIFIQUEI AQUI - Anti-fraude: só conta sorteios após a participação
   const getTotalScore = (participation: Participation): number => {
-    return calculateTotalScore(participation.numbers, draws)
+    return calculateTotalScore(participation.numbers, draws, participation.created_at)
   }
 
+  // MODIFIQUEI AQUI - Anti-fraude: só conta sorteios após a participação
   const getScoreUpToDraw = (participation: Participation, drawId: string): number => {
     const drawsUpTo = getDrawsUpTo(drawId)
-    return calculateTotalScore(participation.numbers, drawsUpTo)
+    return calculateTotalScore(participation.numbers, drawsUpTo, participation.created_at)
   }
 
   const drawnNumbersSorted = useMemo((): number[] => {
@@ -149,9 +151,10 @@ export default function RankingPage() {
     return drawnNumbersSet.has(number)
   }
 
+  // MODIFIQUEI AQUI - Anti-fraude: só conta sorteios após a participação
   const getHitNumbersForParticipation = (participation: Participation): number[] => {
     const drawsToUse = selectedDrawId ? getDrawsUpTo(selectedDrawId) : draws
-    return getAllHitNumbers(participation.numbers, drawsToUse)
+    return getAllHitNumbers(participation.numbers, drawsToUse, participation.created_at)
   }
 
   const maxScoreToDisplay = useMemo(() => {
@@ -206,41 +209,60 @@ export default function RankingPage() {
     return categoryTotal / winnersCount
   }
 
-  // MODIFIQUEI AQUI - calcular ganhadores por SCORE (sempre definido)
+  // MODIFIQUEI AQUI - TOP/SECOND agora é por acertos em UM ÚNICO SORTEIO (não cumulativo)
+  // TOP = acertou TODOS os números em algum sorteio
+  // SECOND = acertou N-1 em algum sorteio (e não é TOP)
+  // LOWEST = menor pontuação CUMULATIVA positiva (excluindo TOP e SECOND)
   const drawWinnersByScore = useMemo(() => {
     const N = Number(contest?.numbers_per_participation || 0)
-    const topScore = Number.isFinite(N) ? N : null
-    const secondScore = Number.isFinite(N) ? (N - 1) : null
 
+    // Função para obter sorteios válidos para uma participação (anti-fraude)
+    const getValidDrawsFor = (p: ParticipationWithUser) => {
+      const drawsToUse = selectedDrawId ? getDrawsUpTo(selectedDrawId) : draws
+      const participationDate = new Date(p.created_at)
+      return drawsToUse.filter(d => new Date(d.draw_date) > participationDate)
+    }
+
+    // TOP: quem acertou TODOS os números em algum sorteio válido
+    const topWinners = participations.filter(p => {
+      const validDraws = getValidDrawsFor(p)
+      return validDraws.some(draw => calculateHits(draw.numbers, p.numbers) === p.numbers.length)
+    })
+    const topWinnerIds = new Set(topWinners.map(t => t.id))
+
+    // SECOND: quem acertou N-1 em algum sorteio válido (e NÃO é TOP)
+    const secondWinners = participations.filter(p => {
+      if (topWinnerIds.has(p.id)) return false
+      const validDraws = getValidDrawsFor(p)
+      const targetHits = p.numbers.length - 1
+      return validDraws.some(draw => calculateHits(draw.numbers, p.numbers) === targetHits)
+    })
+    const secondWinnerIds = new Set(secondWinners.map(s => s.id))
+
+    // LOWEST: menor pontuação CUMULATIVA positiva (excluindo TOP e SECOND)
     const scoreOf = (p: ParticipationWithUser) =>
       selectedDrawId ? getScoreUpToDraw(p, selectedDrawId) : getTotalScore(p)
 
-    const allScores = participations.map((p) => scoreOf(p))
-
-    const topWinnersCount =
-      topScore !== null ? participations.filter((p) => scoreOf(p) === topScore).length : 0
-
-    const secondWinnersCount =
-      secondScore !== null ? participations.filter((p) => scoreOf(p) === secondScore).length : 0
-
-    // LOWEST = menor pontuação positiva (>0) diferente de TOP e SECOND
-    const positiveScores = allScores.filter(
-      (s) => s > 0 && (topScore === null || s !== topScore) && (secondScore === null || s !== secondScore)
+    const othersWithScore = participations.filter(
+      p => !topWinnerIds.has(p.id) && !secondWinnerIds.has(p.id) && scoreOf(p) > 0
     )
-    const lowestPositiveScore = positiveScores.length > 0 ? Math.min(...positiveScores) : null
+    const lowestPositiveScore = othersWithScore.length > 0
+      ? Math.min(...othersWithScore.map(p => scoreOf(p)))
+      : null
 
-    const lowestWinnersCount =
-      lowestPositiveScore !== null ? participations.filter((p) => scoreOf(p) === lowestPositiveScore).length : 0
+    const lowestWinners = lowestPositiveScore !== null
+      ? othersWithScore.filter(p => scoreOf(p) === lowestPositiveScore)
+      : []
 
-    const hasAnyWinner = topWinnersCount > 0 || secondWinnersCount > 0 || lowestWinnersCount > 0
+    const hasAnyWinner = topWinners.length > 0 || secondWinners.length > 0 || lowestWinners.length > 0
 
     return {
-      TOP: { score: topScore, winnersCount: topWinnersCount },
-      SECOND: { score: secondScore, winnersCount: secondWinnersCount },
-      LOWEST: { score: lowestPositiveScore, winnersCount: lowestWinnersCount },
+      TOP: { score: N, winnersCount: topWinners.length, winnerIds: topWinnerIds },
+      SECOND: { score: N - 1, winnersCount: secondWinners.length, winnerIds: secondWinnerIds },
+      LOWEST: { score: lowestPositiveScore, winnersCount: lowestWinners.length, winnerIds: new Set(lowestWinners.map(l => l.id)) },
       hasAnyWinner,
     }
-  }, [contest, participations, selectedDrawId, draws]) // draws entra por causa do score  
+  }, [contest, participations, selectedDrawId, draws, drawsSortedAsc])
 
   if (loading) {
     return (
@@ -283,18 +305,19 @@ export default function RankingPage() {
     })
   }
 
+  // MODIFIQUEI AQUI - Labels atualizados para refletir nova lógica
   const categoryLabels = {
     TOP: {
-      title: 'MAIOR PONTUAÇÃO',
-      subtitle: `(${contest?.numbers_per_participation || 'N'} acertos)`,
+      title: 'ACERTOU TODOS',
+      subtitle: `(${contest?.numbers_per_participation || 'N'} em um sorteio)`,
     },
     SECOND: {
-      title: 'SEGUNDA MAIOR',
-      subtitle: `(${contest && contest.numbers_per_participation ? contest.numbers_per_participation - 1 : 'N-1'} acertos)`,
+      title: 'QUASE TODOS',
+      subtitle: `(${contest && contest.numbers_per_participation ? contest.numbers_per_participation - 1 : 'N-1'} em um sorteio)`,
     },
     LOWEST: {
       title: 'MENOR PONTUAÇÃO',
-      subtitle: '(menor pontuação positiva)',
+      subtitle: '(menor cumulativa positiva)',
     },
   }
 
@@ -624,23 +647,13 @@ export default function RankingPage() {
                     const positionById = new Map<string, number>()
                     sortedParticipations.forEach((p, idx) => positionById.set(p.id, idx + 1))
 
-                    const allScores = sortedParticipations.map(p =>
-                      selectedDrawId ? getScoreUpToDraw(p, selectedDrawId) : getTotalScore(p)
-                    )
-
-                    const N = Number(contest?.numbers_per_participation || 0)
-                    const topScore = Number.isFinite(N) ? N : null
-                    const secondScore = Number.isFinite(N) ? (N - 1) : null
-
-                    const positiveScores = allScores.filter(s => s > 0 && s !== topScore && s !== secondScore)
-                    const lowestPositiveScore = positiveScores.length > 0 ? Math.min(...positiveScores) : null
-
                     type ScoreCategory = 'TOP' | 'SECOND' | 'LOWEST' | 'NONE'
 
-                    const getCategoryByScore = (score: number): ScoreCategory => {
-                      if (topScore !== null && score === topScore) return 'TOP'
-                      if (secondScore !== null && score === secondScore) return 'SECOND'
-                      if (lowestPositiveScore !== null && score === lowestPositiveScore) return 'LOWEST'
+                    // MODIFIQUEI AQUI - Categoria agora é por winnerIds (TOP/SECOND por sorteio, não score cumulativo)
+                    const getCategoryByParticipation = (p: ParticipationWithUser): ScoreCategory => {
+                      if (drawWinnersByScore.TOP.winnerIds.has(p.id)) return 'TOP'
+                      if (drawWinnersByScore.SECOND.winnerIds.has(p.id)) return 'SECOND'
+                      if (drawWinnersByScore.LOWEST.winnerIds.has(p.id)) return 'LOWEST'
                       return 'NONE'
                     }
 
@@ -659,27 +672,17 @@ export default function RankingPage() {
                       return null
                     }
 
-                    // MODIFIQUEI AQUI - winners por SCORE (para dividir corretamente pelo nº de ganhadores)
-                    const winnersCountByCategory = () => {
-                      const topCount = topScore !== null ? allScores.filter(s => s === topScore).length : 0
-                      const secondCount = secondScore !== null ? allScores.filter(s => s === secondScore).length : 0
-                      const lowestCount = lowestPositiveScore !== null ? allScores.filter(s => s === lowestPositiveScore).length : 0
-                      return { TOP: topCount, SECOND: secondCount, LOWEST: lowestCount }
-                    }
-
-                    // MODIFIQUEI AQUI - Prêmio esperado: prioridade % do concurso; fallback summary
+                    // MODIFIQUEI AQUI - Prêmio esperado usando winnerIds
                     const getExpectedPrize = (participation: ParticipationWithUser) => {
                       if (!selectedDrawId) return { isWinner: false, category: 'NONE' as ScoreCategory, amount: 0 }
 
-                      const score = selectedDrawId ? getScoreUpToDraw(participation, selectedDrawId) : getTotalScore(participation)
-                      const cat = getCategoryByScore(score)
+                      const cat = getCategoryByParticipation(participation)
                       if (cat === 'NONE') return { isWinner: false, category: cat, amount: 0 }
 
-                      if (cat === 'LOWEST' && score <= 0) return { isWinner: false, category: 'NONE' as ScoreCategory, amount: 0 }
-
-                      const wc = winnersCountByCategory()
                       const winnersCount =
-                        cat === 'TOP' ? wc.TOP : cat === 'SECOND' ? wc.SECOND : wc.LOWEST
+                        cat === 'TOP' ? drawWinnersByScore.TOP.winnersCount
+                        : cat === 'SECOND' ? drawWinnersByScore.SECOND.winnersCount
+                        : drawWinnersByScore.LOWEST.winnersCount
 
                       // MODIFIQUEI AQUI - valor calculado pela % do concurso (fonte principal)
                       const amountFromPercent =
@@ -726,7 +729,8 @@ export default function RankingPage() {
                         ? getScoreUpToDraw(participation, selectedDrawId)
                         : getTotalScore(participation)
 
-                      const scoreCategory = selectedDrawId ? getCategoryByScore(displayScore) : 'NONE'
+                      // MODIFIQUEI AQUI - Categoria agora é por participação (TOP/SECOND por sorteio)
+                      const scoreCategory = selectedDrawId ? getCategoryByParticipation(participation) : 'NONE'
                       const medal = getMedalByCategory(scoreCategory)
                       const hasMedal = medal !== undefined
                       const positionLabel = hasMedal ? medal : `#${position}`

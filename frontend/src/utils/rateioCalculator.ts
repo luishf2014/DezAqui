@@ -226,29 +226,33 @@ export function calculateRateio(
 /**
  * Calcula prêmios por draw seguindo regras específicas: TOP, SECOND, LOWEST
  * MODIFIQUEI AQUI - Função para calcular prêmios por sorteio com categorias específicas
- * 
+ *
  * Regras CORRETAS:
- * - TOP: somente participações com score == numbers_per_participation (ex: 10/10)
- * - SECOND: somente participações com score == numbers_per_participation - 1 (ex: 9/10)
- * - LOWEST: menor pontuação POSITIVA (>0) entre todas as participações
+ * - TOP: acertou TODOS os números em UM ÚNICO SORTEIO (não cumulativo)
+ * - SECOND: acertou N-1 números em UM ÚNICO SORTEIO (não cumulativo)
+ * - LOWEST: menor pontuação CUMULATIVA positiva (>0) entre todas as participações
  * - NONE: não premiado
  * - Se categoria não tiver ganhadores, NÃO redistribui o valor
- * - maxScore == 0 significa "Não houve ganhadores nesse sorteio"
- * 
- * @param participations Participações com pontuação calculada
+ * - ANTI-FRAUDE: só conta sorteios que aconteceram DEPOIS da participação ser criada
+ *
+ * @param participations Participações com números, data de criação e pontuação
  * @param totalRevenue Total arrecadado (pool)
  * @param config Configuração de percentuais
  * @param numbersPerParticipation Quantidade de números por participação (ex: 10)
+ * @param draws Array de sorteios com números e data
  */
 export function calculateDrawPayouts(
-  participations: Array<{ 
+  participations: Array<{
     id: string
     user_id: string
+    numbers: number[]
+    created_at: string
     current_score: number
   }>,
   totalRevenue: number,
   config: RateioConfig,
-  numbersPerParticipation: number
+  numbersPerParticipation: number,
+  draws: Array<{ numbers: number[]; draw_date: string }>
 ): DrawPayoutResult {
   // Validar que soma dos percentuais seja 100%
   const totalPercent = config.maiorPontuacao + config.segundaMaiorPontuacao + config.menorPontuacao + config.taxaAdministrativa
@@ -256,15 +260,32 @@ export function calculateDrawPayouts(
     throw new Error(`A soma dos percentuais deve ser 100%. Atual: ${totalPercent}%`)
   }
 
-  // MODIFIQUEI AQUI - NÃO descontar taxa admin antes.
-  // Admin é apenas mais uma fatia do total (18%), e TOP/SECOND/LOWEST são calculados sobre o TOTAL.
-  const taxaAdministrativa = (totalRevenue * config.taxaAdministrativa) / 100
+  // Helper para calcular acertos
+  const calculateHits = (drawNumbers: number[], participationNumbers: number[]): number => {
+    const drawSet = new Set(drawNumbers)
+    return participationNumbers.filter(num => drawSet.has(num)).length
+  }
 
-  // MODIFIQUEI AQUI - prizePool aqui representa apenas a soma potencial das categorias premiáveis (TOP+SECOND+LOWEST) sobre o TOTAL
-  // (isso é útil para exibir no relatório), mas os cálculos por categoria abaixo já usam totalRevenue diretamente.
-  const prizePool = (totalRevenue * (config.maiorPontuacao + config.segundaMaiorPontuacao + config.menorPontuacao)) / 100
+  // Helper para filtrar sorteios válidos (anti-fraude)
+  const getValidDraws = (participationCreatedAt: string) => {
+    const participationDate = new Date(participationCreatedAt)
+    return draws.filter(d => new Date(d.draw_date) > participationDate)
+  }
 
-  // MODIFIQUEI AQUI - Obter todas as pontuações positivas ordenadas
+  // Helper para verificar se atingiu TOP (acertou TODOS em algum sorteio)
+  const isTop = (p: { numbers: number[]; created_at: string }): boolean => {
+    const validDraws = getValidDraws(p.created_at)
+    return validDraws.some(draw => calculateHits(draw.numbers, p.numbers) === p.numbers.length)
+  }
+
+  // Helper para verificar se atingiu SECOND (acertou N-1 em algum sorteio)
+  const isSecond = (p: { numbers: number[]; created_at: string }): boolean => {
+    const validDraws = getValidDraws(p.created_at)
+    const targetHits = p.numbers.length - 1
+    return validDraws.some(draw => calculateHits(draw.numbers, p.numbers) === targetHits)
+  }
+
+  // MODIFIQUEI AQUI - Obter todas as pontuações cumulativas positivas ordenadas
   const scores = participations
     .map(p => p.current_score)
     .filter(score => score > 0)
@@ -291,66 +312,68 @@ export function calculateDrawPayouts(
     }
   }
 
-  // MODIFIQUEI AQUI - Determinar pontuações por categoria usando numbers_per_participation
-  const topScore = numbersPerParticipation // Ex: 10/10
-  const secondScore = numbersPerParticipation - 1 // Ex: 9/10
-  const lowestScore = scores[scores.length - 1] // Menor pontuação positiva
+  // MODIFIQUEI AQUI - TOP: quem acertou TODOS os números em algum sorteio válido
+  const topWinners = participations.filter(p => isTop(p))
 
-  // MODIFIQUEI AQUI - Filtrar ganhadores baseado em pontuação exata
-  const topWinners = participations.filter(p => p.current_score === topScore)
-  const secondWinners = participations.filter(p => p.current_score === secondScore)
-  // MODIFIQUEI AQUI - LOWEST só premia se pontuação for menor que SECOND
-  const lowestWinners = lowestScore > 0 && lowestScore < secondScore
-    ? participations.filter(p => p.current_score === lowestScore)
-    : []
+  // MODIFIQUEI AQUI - SECOND: quem acertou N-1 em algum sorteio válido (e NÃO é TOP)
+  const topWinnerIds = new Set(topWinners.map(t => t.id))
+  const secondWinners = participations.filter(p => !topWinnerIds.has(p.id) && isSecond(p))
+
+  // MODIFIQUEI AQUI - LOWEST: menor pontuação CUMULATIVA positiva (excluindo TOP e SECOND)
+  const secondWinnerIds = new Set(secondWinners.map(s => s.id))
+  const othersWithScore = participations.filter(
+    p => !topWinnerIds.has(p.id) && !secondWinnerIds.has(p.id) && p.current_score > 0
+  )
+  const lowestScore = othersWithScore.length > 0
+    ? Math.min(...othersWithScore.map(p => p.current_score))
+    : 0
+  const lowestWinners = othersWithScore.filter(p => p.current_score === lowestScore)
 
   // MODIFIQUEI AQUI - Calcular prêmios (NÃO redistribui se não houver ganhadores)
-  // Agora calculado sobre o TOTAL (totalRevenue), e não sobre totalRevenue - taxa.
-  const prizeTop = topWinners.length > 0 
-    ? (totalRevenue * config.maiorPontuacao) / 100 
+  const prizeTop = topWinners.length > 0
+    ? (totalRevenue * config.maiorPontuacao) / 100
     : 0
   const prizeSecond = secondWinners.length > 0
-    ? (totalRevenue * config.segundaMaiorPontuacao) / 100 
+    ? (totalRevenue * config.segundaMaiorPontuacao) / 100
     : 0
-  // MODIFIQUEI AQUI - LOWEST só calcula prêmio se houver ganhadores E pontuação < secondScore
-  const prizeLowest = lowestWinners.length > 0 && lowestScore > 0 && lowestScore < secondScore
-    ? (totalRevenue * config.menorPontuacao) / 100 
+  const prizeLowest = lowestWinners.length > 0
+    ? (totalRevenue * config.menorPontuacao) / 100
     : 0
 
   // MODIFIQUEI AQUI - Montar resultado das categorias
   const categories = {
     TOP: topWinners.length > 0 ? {
-      score: topScore,
+      score: numbersPerParticipation, // TOP = N acertos em um sorteio
       winnersCount: topWinners.length,
       amountPerWinner: prizeTop / topWinners.length,
       totalAmount: prizeTop,
     } : null,
     SECOND: secondWinners.length > 0 ? {
-      score: secondScore,
+      score: numbersPerParticipation - 1, // SECOND = N-1 acertos em um sorteio
       winnersCount: secondWinners.length,
       amountPerWinner: prizeSecond / secondWinners.length,
       totalAmount: prizeSecond,
     } : null,
-    LOWEST: lowestWinners.length > 0 && lowestScore > 0 && lowestScore < secondScore ? {
-      score: lowestScore,
+    LOWEST: lowestWinners.length > 0 ? {
+      score: lowestScore, // LOWEST = menor pontuação cumulativa
       winnersCount: lowestWinners.length,
       amountPerWinner: prizeLowest / lowestWinners.length,
       totalAmount: prizeLowest,
     } : null,
   }
 
-  // MODIFIQUEI AQUI - Montar payouts por participação usando pontuações exatas
+  // MODIFIQUEI AQUI - Montar payouts por participação
   const payouts = participations.map(p => {
     let category: 'TOP' | 'SECOND' | 'LOWEST' | 'NONE' = 'NONE'
     let amountWon = 0
 
-    if (p.current_score === topScore && topWinners.length > 0) {
+    if (topWinnerIds.has(p.id)) {
       category = 'TOP'
       amountWon = prizeTop / topWinners.length
-    } else if (p.current_score === secondScore && secondWinners.length > 0) {
+    } else if (secondWinnerIds.has(p.id)) {
       category = 'SECOND'
       amountWon = prizeSecond / secondWinners.length
-    } else if (lowestScore > 0 && lowestScore < secondScore && p.current_score === lowestScore && lowestWinners.length > 0) {
+    } else if (lowestWinners.some(l => l.id === p.id)) {
       category = 'LOWEST'
       amountWon = prizeLowest / lowestWinners.length
     }

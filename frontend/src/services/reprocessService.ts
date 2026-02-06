@@ -21,9 +21,10 @@ export async function reprocessContestAfterDraw(contestId: string): Promise<void
 
   try {
     // 1. Buscar todas as participações ativas do concurso
+    // MODIFIQUEI AQUI - Incluir created_at para anti-fraude
     const { data: participations, error: participationsError } = await supabase
       .from('participations')
-      .select('id, numbers, current_score, user_id, ticket_code, profiles:user_id(name)')
+      .select('id, numbers, current_score, user_id, ticket_code, created_at, profiles:user_id(name)')
       .eq('contest_id', contestId)
       .eq('status', 'active') // Apenas participações ativas
 
@@ -70,10 +71,11 @@ export async function reprocessContestAfterDraw(contestId: string): Promise<void
     )
 
     // 5. Calcular nova pontuação CUMULATIVA para cada participação (soma de todos os sorteios)
+    // MODIFIQUEI AQUI - Passar created_at para anti-fraude
     const updates: Array<{ id: string; score: number }> = []
 
     participations.forEach((participation: any) => {
-      const newScore = calculateTotalScore(participation.numbers, draws)
+      const newScore = calculateTotalScore(participation.numbers, draws, participation.created_at)
       updates.push({
         id: participation.id,
         score: newScore,
@@ -101,12 +103,25 @@ export async function reprocessContestAfterDraw(contestId: string): Promise<void
 
     console.log(`[reprocessService] Pontuações atualizadas com sucesso`)
 
-    // 7. Verificar se algum participante atingiu pontuação máxima e encerrar concurso
+    // 7. Verificar se algum participante atingiu TOP (acertou TODOS em UM sorteio) e encerrar concurso
+    // MODIFIQUEI AQUI - TOP agora é acertar todos em um único sorteio, não pontuação cumulativa
     const numbersPerParticipation = contest?.numbers_per_participation
     if (numbersPerParticipation) {
-      const maxScoreReached = updates.some(u => u.score >= numbersPerParticipation)
-      if (maxScoreReached) {
-        console.log(`[reprocessService] *** GANHADOR ENCONTRADO! *** Participante atingiu ${numbersPerParticipation} pontos! Encerrando concurso...`)
+      // Verificar se alguém acertou TODOS os números em algum sorteio válido
+      const hasTopWinner = participations.some((p: any) => {
+        const participationDate = new Date(p.created_at)
+        // Filtrar sorteios válidos (após a participação - anti-fraude)
+        const validDraws = draws.filter(d => new Date(d.draw_date) > participationDate)
+        // Verificar se acertou todos em algum sorteio
+        return validDraws.some(draw => {
+          const drawSet = new Set(draw.numbers)
+          const hits = p.numbers.filter((num: number) => drawSet.has(num)).length
+          return hits === p.numbers.length
+        })
+      })
+
+      if (hasTopWinner) {
+        console.log(`[reprocessService] *** GANHADOR TOP ENCONTRADO! *** Alguém acertou todos os números em um sorteio! Encerrando concurso...`)
 
         // Atualizar status do concurso para 'finished'
         const { error: updateError } = await supabase
@@ -261,9 +276,10 @@ export async function reprocessDrawResults(drawId: string, cumulativeDraws?: Arr
     }
 
     // 3. Buscar todas as participações ativas do concurso
+    // MODIFIQUEI AQUI - Incluir created_at para anti-fraude
     const { data: participations, error: participationsError } = await supabase
       .from('participations')
-      .select('id, numbers, current_score, user_id, ticket_code')
+      .select('id, numbers, current_score, user_id, ticket_code, created_at')
       .eq('contest_id', draw.contest_id)
       .eq('status', 'active')
 
@@ -279,11 +295,12 @@ export async function reprocessDrawResults(drawId: string, cumulativeDraws?: Arr
     }
 
     // 4. Determinar draws para cálculo de pontuação CUMULATIVA
-    let drawsForScore: Array<{ numbers: number[] }>
-    if (cumulativeDraws) {
-      drawsForScore = cumulativeDraws
+    // MODIFIQUEI AQUI - Incluir draw_date para anti-fraude e cálculo de TOP/SECOND
+    let drawsForScore: Array<{ numbers: number[]; draw_date: string }>
+    if (cumulativeDraws && cumulativeDraws.length > 0 && 'draw_date' in cumulativeDraws[0]) {
+      drawsForScore = cumulativeDraws as Array<{ numbers: number[]; draw_date: string }>
     } else {
-      // Se não fornecido, buscar todos os draws do concurso até este (inclusive)
+      // Se não fornecido ou sem draw_date, buscar todos os draws do concurso até este (inclusive)
       const allDraws = await listDrawsByContestId(draw.contest_id)
       const allDrawsSorted = [...allDraws].sort((a, b) =>
         new Date(a.draw_date).getTime() - new Date(b.draw_date).getTime()
@@ -293,10 +310,13 @@ export async function reprocessDrawResults(drawId: string, cumulativeDraws?: Arr
     }
 
     // 5. Calcular pontuação CUMULATIVA de cada participação (soma de todos os sorteios até este)
+    // MODIFIQUEI AQUI - Incluir numbers e created_at para cálculo de TOP/SECOND e anti-fraude
     const participationsWithScore = participations.map(p => ({
       id: p.id,
       user_id: p.user_id,
-      current_score: calculateTotalScore(p.numbers, drawsForScore),
+      numbers: p.numbers,
+      created_at: p.created_at,
+      current_score: calculateTotalScore(p.numbers, drawsForScore, p.created_at),
     }))
 
     // 5. Buscar total arrecadado
@@ -322,12 +342,13 @@ export async function reprocessDrawResults(drawId: string, cumulativeDraws?: Arr
       taxaAdministrativa: contest.admin_fee_pct || 18,
     }
 
-    // MODIFIQUEI AQUI - Passar numbers_per_participation para cálculo correto
+    // MODIFIQUEI AQUI - Passar numbers_per_participation e draws para cálculo correto de TOP/SECOND
     const payoutResult = calculateDrawPayouts(
       participationsWithScore,
       totalArrecadado,
       rateioConfig,
-      contest.numbers_per_participation
+      contest.numbers_per_participation,
+      drawsForScore
     )
 
     // 7. MODIFIQUEI AQUI - Deletar payouts existentes deste draw (idempotência)
