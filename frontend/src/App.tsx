@@ -14,7 +14,7 @@ import RankingsPage from './pages/RankingsPage'
 import SettingsPage from './pages/SettingsPage'
 import ComoFuncionaPage from './pages/ComoFuncionaPage'
 import RegulamentoPage from './pages/RegulamentoPage'
-import CentralDeAjudaPage from './pages/CentralDeAjudaPage'
+import CentralDeAjudaPage from './pages/CentraldeAjudaPage'
 import TermosDeUsoPage from './pages/TermosDeUsoPage'
 
 // Importações do guard e páginas admin
