@@ -140,9 +140,6 @@ export function calculateRanking(config: RankingConfig): RankingResult {
     // TOP = acumulou TODOS os N numeros unicos
     const isTop = hitNumbers.length === p.numbers.length
 
-    // SECOND = acumulou N-1 numeros unicos
-    const isSecond = hitNumbers.length === p.numbers.length - 1
-
     return {
       participationId: p.id,
       userId: p.user_id,
@@ -155,7 +152,6 @@ export function calculateRanking(config: RankingConfig): RankingResult {
       hitsCount: hitNumbers.length,
       score,
       isTop,
-      isSecond,
     }
   })
 
@@ -163,10 +159,18 @@ export function calculateRanking(config: RankingConfig): RankingResult {
   const topWinnerIds = new Set(
     entriesBase.filter((e) => e.isTop).map((e) => e.participationId)
   )
+
+  // SECOND = maior score entre nao-TOP com score > 0 (cascata: se nao tem N-1, vai pra N-2, N-3, etc.)
+  const nonTopWithScore = entriesBase.filter(
+    (e) => !topWinnerIds.has(e.participationId) && e.score > 0
+  )
+  const secondScore = nonTopWithScore.length > 0
+    ? Math.max(...nonTopWithScore.map((e) => e.score))
+    : null
   const secondWinnerIds = new Set(
-    entriesBase
-      .filter((e) => !topWinnerIds.has(e.participationId) && e.isSecond)
-      .map((e) => e.participationId)
+    secondScore !== null
+      ? nonTopWithScore.filter((e) => e.score === secondScore).map((e) => e.participationId)
+      : []
   )
 
   // LOWEST: menor score (>=0) excluindo TOP e SECOND

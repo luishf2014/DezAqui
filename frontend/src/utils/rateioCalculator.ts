@@ -265,12 +265,7 @@ export function calculateDrawPayouts(
     return p.current_score === p.numbers.length
   }
 
-  // SECOND = acumulou N-1 numeros unicos
-  const isSecond = (p: { numbers: number[]; current_score: number }): boolean => {
-    return p.current_score === p.numbers.length - 1
-  }
-
-  // MODIFIQUEI AQUI - Obter todas as pontuações cumulativas positivas ordenadas
+  // Obter todas as pontuações cumulativas positivas ordenadas
   const scores = participations
     .map(p => p.current_score)
     .filter(score => score > 0)
@@ -299,10 +294,12 @@ export function calculateDrawPayouts(
 
   // TOP: quem acumulou TODOS os numeros unicos
   const topWinners = participations.filter(p => isTop(p))
-
-  // SECOND: quem acumulou N-1 numeros unicos (e NAO e TOP)
   const topWinnerIds = new Set(topWinners.map(t => t.id))
-  const secondWinners = participations.filter(p => !topWinnerIds.has(p.id) && isSecond(p))
+
+  // SECOND: maior score entre nao-TOP com score > 0 (cascata: se nao tem N-1, vai pra N-2, etc.)
+  const nonTop = participations.filter(p => !topWinnerIds.has(p.id) && p.current_score > 0)
+  const secondScore = nonTop.length > 0 ? Math.max(...nonTop.map(p => p.current_score)) : 0
+  const secondWinners = secondScore > 0 ? nonTop.filter(p => p.current_score === secondScore) : []
 
   // LOWEST: menor pontuacao acumulativa positiva (excluindo TOP e SECOND)
   const secondWinnerIds = new Set(secondWinners.map(s => s.id))
@@ -334,7 +331,7 @@ export function calculateDrawPayouts(
       totalAmount: prizeTop,
     } : null,
     SECOND: secondWinners.length > 0 ? {
-      score: numbersPerParticipation - 1, // SECOND = N-1 numeros unicos acumulados
+      score: secondScore, // SECOND = maior score entre nao-TOP (cascata)
       winnersCount: secondWinners.length,
       amountPerWinner: prizeSecond / secondWinners.length,
       totalAmount: prizeSecond,

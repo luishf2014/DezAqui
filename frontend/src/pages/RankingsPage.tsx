@@ -311,9 +311,13 @@ export default function RankingsPage() {
       rankingResult.entries.filter((e) => e.category === 'LOWEST').map((e) => e.participationId)
     )
 
+    // SECOND score dinamico (cascata): pegar do primeiro entry SECOND
+    const secondEntry = rankingResult.entries.find((e) => e.category === 'SECOND')
+    const secondActualScore = secondEntry ? secondEntry.score : null
+
     return {
       TOP: { score: N, winnersCount: summary.topWinnersCount, winnerIds: topWinnerIds },
-      SECOND: { score: N - 1, winnersCount: summary.secondWinnersCount, winnerIds: secondWinnerIds },
+      SECOND: { score: secondActualScore, winnersCount: summary.secondWinnersCount, winnerIds: secondWinnerIds },
       LOWEST: { score: summary.lowestWinningScore, winnersCount: summary.lowestWinnersCount, winnerIds: lowestWinnerIds },
       hasAnyWinner: summary.hasAnyWinner,
     }
@@ -580,7 +584,47 @@ export default function RankingsPage() {
                 </div>
               )}
 
-              {/* MODIFIQUEI AQUI - Mensagem correta quando ainda não houve sorteio */}
+              {/* Resultado do Sorteio - Números sorteados */}
+              {draws.length > 0 && (() => {
+                const drawsToShow = getDrawsUpToSelected()
+                const allDrawnNums = Array.from(
+                  new Set(drawsToShow.flatMap(d => d.numbers))
+                ).sort((a, b) => a - b)
+
+                return (
+                  <div className="mb-4">
+                    <div className="rounded-xl border border-[#E5E5E5] bg-white p-4">
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="p-1.5 bg-[#F4C430]/20 rounded-lg">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-[#F4C430]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                          </svg>
+                        </div>
+                        <h4 className="text-sm font-semibold text-[#1F1F1F]/60 uppercase tracking-wide">
+                          {selectedDrawId ? 'Resultado do Sorteio' : `Resultado Acumulado (${drawsToShow.length} sorteio${drawsToShow.length !== 1 ? 's' : ''})`}
+                        </h4>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {allDrawnNums.map(num => (
+                          <span
+                            key={num}
+                            className="inline-flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-[#F4C430] text-[#1F1F1F] font-bold text-sm sm:text-base shadow-sm"
+                          >
+                            {num.toString().padStart(2, '0')}
+                          </span>
+                        ))}
+                      </div>
+                      {!selectedDrawId && drawsToShow.length > 1 && (
+                        <p className="text-xs text-[#1F1F1F]/50 mt-2">
+                          {allDrawnNums.length} numero{allDrawnNums.length !== 1 ? 's' : ''} unico{allDrawnNums.length !== 1 ? 's' : ''} sorteado{allDrawnNums.length !== 1 ? 's' : ''} no total
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )
+              })()}
+
+              {/* Mensagem correta quando ainda não houve sorteio */}
               {ranking.length > 0 && draws.length === 0 && (
                 <div className="rounded-xl sm:rounded-2xl border border-blue-200 bg-blue-50 p-4 sm:p-6 mb-4">
                   <div className="text-center">

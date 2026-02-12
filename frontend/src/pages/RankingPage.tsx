@@ -274,13 +274,12 @@ export default function RankingPage() {
   const drawWinnersByScore = useMemo(() => {
     const N = Number(contest?.numbers_per_participation || 0)
     const topScore = Number.isFinite(N) ? N : null
-    const secondScore = Number.isFinite(N) ? (N - 1) : null
 
-    // MODIFIQUEI AQUI - Calcular cutoffDate para identificar participações válidas
+    // Calcular cutoffDate para identificar participações válidas
     const drawsSortedAsc = [...draws].sort(
       (a, b) => new Date(a.draw_date).getTime() - new Date(b.draw_date).getTime()
     )
-    
+
     let cutoffDate: Date | null = null
     if (selectedDrawId) {
       const selectedDraw = draws.find(d => d.id === selectedDrawId)
@@ -289,7 +288,7 @@ export default function RankingPage() {
       cutoffDate = new Date(drawsSortedAsc[drawsSortedAsc.length - 1].draw_date)
     }
 
-    // MODIFIQUEI AQUI - Filtrar apenas participações válidas (criadas antes do sorteio)
+    // Filtrar apenas participações válidas (criadas antes do sorteio)
     const validParticipations = cutoffDate
       ? participations.filter((p) => {
           const participationDate = new Date(p.created_at)
@@ -300,42 +299,30 @@ export default function RankingPage() {
     const scoreOf = (p: ParticipationWithUser) =>
       selectedDrawId ? getScoreUpToDraw(p, selectedDrawId) : getTotalScore(p)
 
-    // MODIFIQUEI AQUI - Usar apenas scores das participações válidas
-    const validScores = validParticipations.map((p) => scoreOf(p))
-
     const topWinnersCount =
       topScore !== null ? validParticipations.filter((p) => scoreOf(p) === topScore).length : 0
+
+    // SECOND = maior score entre nao-TOP com score > 0 (cascata: se nao tem N-1, vai pra N-2, etc.)
+    const nonTopScores = validParticipations
+      .map((p) => scoreOf(p))
+      .filter((s) => s > 0 && (topScore === null || s !== topScore))
+    const secondScore = nonTopScores.length > 0 ? Math.max(...nonTopScores) : null
 
     const secondWinnersCount =
       secondScore !== null ? validParticipations.filter((p) => scoreOf(p) === secondScore).length : 0
 
-    // LOWEST = menor pontuação (>=0) diferente de TOP e SECOND
-    // MODIFIQUEI AQUI - Usar validScores em vez de allScores
-    const positiveScores = validScores.filter(
-      (s) => s >= 0 && (topScore === null || s !== topScore) && (secondScore === null || s !== secondScore)
-    )
+    // LOWEST = menor pontuação (>0) diferente de TOP e SECOND
+    const positiveScores = validParticipations
+      .map((p) => scoreOf(p))
+      .filter(
+        (s) => s > 0 && (topScore === null || s !== topScore) && (secondScore === null || s !== secondScore)
+      )
     const lowestPositiveScore = positiveScores.length > 0 ? Math.min(...positiveScores) : null
 
     const lowestWinnersCount =
       lowestPositiveScore !== null ? validParticipations.filter((p) => scoreOf(p) === lowestPositiveScore).length : 0
 
     const hasAnyWinner = topWinnersCount > 0 || secondWinnersCount > 0 || lowestWinnersCount > 0
-
-    console.log('MODIFIQUEI AQUI [RankingPage] drawWinnersByScore=', {
-      selectedDrawId,
-      N,
-      topScore,
-      secondScore,
-      lowestPositiveScore,
-      topWinnersCount,
-      secondWinnersCount,
-      lowestWinnersCount,
-      hasAnyWinner,
-      validScoresPreview: validScores.slice(0, 10),
-      totalParticipations: participations.length,
-      validParticipations: validParticipations.length,
-      invalidParticipations: participations.length - validParticipations.length,
-    })
 
     return {
       TOP: { score: topScore, winnersCount: topWinnersCount },
@@ -393,7 +380,9 @@ export default function RankingPage() {
     },
     SECOND: {
       title: 'SEGUNDA MAIOR',
-      subtitle: `(${contest && contest.numbers_per_participation ? contest.numbers_per_participation - 1 : 'N-1'} acertos)`,
+      subtitle: drawWinnersByScore.SECOND.score !== null
+        ? `(${drawWinnersByScore.SECOND.score} acertos)`
+        : '(sem ganhadores)',
     },
     LOWEST: {
       title: 'MENOR PONTUAÇÃO',
@@ -472,6 +461,34 @@ export default function RankingPage() {
                 </select>
               )}
             </div>
+
+            {/* Números Premiados */}
+            {(() => {
+              const drawsSortedAscLocal = [...draws].sort(
+                (a, b) => new Date(a.draw_date).getTime() - new Date(b.draw_date).getTime()
+              )
+              const idx = selectedDrawId ? drawsSortedAscLocal.findIndex(d => d.id === selectedDrawId) : -1
+              const drawsUpTo = idx === -1 ? drawsSortedAscLocal : drawsSortedAscLocal.slice(0, idx + 1)
+              const drawnNums = Array.from(
+                new Set(drawsUpTo.flatMap(d => d.numbers))
+              ).sort((a, b) => a - b)
+
+              return drawnNums.length > 0 ? (
+                <div className="mb-4">
+                  <h3 className="text-sm font-semibold text-[#1F1F1F]/60 uppercase tracking-wide mb-2">Números Premiados</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {drawnNums.map(num => (
+                      <span
+                        key={num}
+                        className="inline-flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-[#F4C430] text-[#1F1F1F] font-bold text-sm sm:text-base shadow-sm"
+                      >
+                        {num.toString().padStart(2, '0')}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ) : null
+            })()}
 
             {payoutSummary && !drawWinnersByScore.hasAnyWinner ? (
               <div className="bg-yellow-50 border-2 border-yellow-200 rounded-xl p-6 text-center">
