@@ -2,9 +2,13 @@
  * Calculadora de Ranking Centralizada
  * FONTE UNICA DE VERDADE para todas as colunas do ranking
  *
+ * MODELO ACUMULATIVO: Score = numeros UNICOS do bilhete acertados em QUALQUER sorteio.
+ * Numeros nao repetem entre sorteios. Score nunca diminui.
+ * TOP = acumulou TODOS os N numeros. SECOND = acumulou N-1.
+ *
  * Todas as UI devem usar este resultado:
- * - hitNumbers: numeros acertados
- * - score: pontuacao cumulativa
+ * - hitNumbers: numeros acertados (unicos de todos os sorteios)
+ * - score: quantidade de numeros unicos acertados
  * - category: TOP/SECOND/LOWEST/NONE
  * - isWinner: se eh premiado
  * - prizeValue: valor do premio
@@ -13,7 +17,7 @@
  */
 
 import { Participation, Draw, Contest } from '../types'
-import { calculateHits, getAllHitNumbers, getMaxHitsInSingleDraw } from './rankingHelpers'
+import { getAllHitNumbers } from './rankingHelpers'
 
 export interface RankingEntry {
   participationId: string
@@ -69,7 +73,6 @@ export interface RankingResult {
  */
 export function calculateRanking(config: RankingConfig): RankingResult {
   const { contest, participations, draws, selectedDrawId, totalCollected } = config
-  const N = contest.numbers_per_participation || 0
 
   // Se nao ha participacoes, retornar vazio
   if (participations.length === 0) {
@@ -131,19 +134,14 @@ export function calculateRanking(config: RankingConfig): RankingResult {
     const validDraws = getValidDrawsFor(p.created_at)
     const hitNumbers = getAllHitNumbers(p.numbers, validDraws, p.created_at)
     
-    // MODIFIQUEI AQUI - Score é o MAIOR número de acertos em UM único sorteio (não cumulativo)
-    // Cada sorteio é verificado individualmente, não soma nada entre sorteios
-    const score = getMaxHitsInSingleDraw(p.numbers, validDraws, p.created_at)
+    // Score = contagem de numeros UNICOS do bilhete acertados em QUALQUER sorteio (acumulativo)
+    const score = hitNumbers.length
 
-    // Verificar se atingiu TOP (todos em um sorteio)
-    const isTop = validDraws.some(
-      (draw) => calculateHits(draw.numbers, p.numbers) === p.numbers.length
-    )
+    // TOP = acumulou TODOS os N numeros unicos
+    const isTop = hitNumbers.length === p.numbers.length
 
-    // Verificar se atingiu SECOND (N-1 em um sorteio)
-    const isSecond = validDraws.some(
-      (draw) => calculateHits(draw.numbers, p.numbers) === p.numbers.length - 1
-    )
+    // SECOND = acumulou N-1 numeros unicos
+    const isSecond = hitNumbers.length === p.numbers.length - 1
 
     return {
       participationId: p.id,

@@ -14,6 +14,7 @@ import { listDrawsByContestId } from '../services/drawsService'
 import { getDrawPayoutSummary, getPayoutsByDraw } from '../services/payoutsService'
 import { Contest, Participation, Draw } from '../types'
 import { calculateRanking, createRankingMap, RankingEntry } from '../utils/rankingCalculator'
+import { getAllHitNumbers } from '../utils/rankingHelpers'
 import { useAuth } from '../contexts/AuthContext'
 import ContestStatusBadge from '../components/ContestStatusBadge'
 import Header from '../components/Header'
@@ -229,28 +230,27 @@ export default function RankingsPage() {
     return result
   }, [ranking, draws, selectedDrawId])
 
-  // MODIFIQUEI AQUI - Funções auxiliares para verificar números sorteados e acertos (igual ao RankingPage)
+  // Funcoes auxiliares com logica ACUMULATIVA (numeros de todos os sorteios ATE o selecionado)
+  const drawsSortedAsc = useMemo(() => {
+    return [...draws].sort((a, b) => new Date(a.draw_date).getTime() - new Date(b.draw_date).getTime())
+  }, [draws])
+
+  const getDrawsUpToSelected = (): Draw[] => {
+    if (!selectedDrawId) return draws
+    const idx = drawsSortedAsc.findIndex(d => d.id === selectedDrawId)
+    return idx === -1 ? drawsSortedAsc : drawsSortedAsc.slice(0, idx + 1)
+  }
+
   const isNumberDrawn = (number: number): boolean => {
     if (draws.length === 0) return false
-    if (selectedDrawId) {
-      const selectedDraw = draws.find(d => d.id === selectedDrawId)
-      return selectedDraw ? selectedDraw.numbers.includes(number) : false
-    }
-    // Se não há sorteio selecionado, verificar em todos os sorteios
-    return draws.some(d => d.numbers.includes(number))
+    const drawsToUse = getDrawsUpToSelected()
+    return drawsToUse.some(d => d.numbers.includes(number))
   }
 
   const getHitNumbersForParticipation = (participation: Participation): number[] => {
     if (draws.length === 0) return []
-    if (selectedDrawId) {
-      const selectedDraw = draws.find(d => d.id === selectedDrawId)
-      if (!selectedDraw) return []
-      return participation.numbers.filter(num => selectedDraw.numbers.includes(num))
-    }
-    // Se não há sorteio selecionado, verificar em todos os sorteios
-    const allDrawnNumbers = new Set<number>()
-    draws.forEach(d => d.numbers.forEach(n => allDrawnNumbers.add(n)))
-    return participation.numbers.filter(num => allDrawnNumbers.has(num))
+    const drawsToUse = getDrawsUpToSelected()
+    return getAllHitNumbers(participation.numbers, drawsToUse, participation.created_at)
   }
 
   // MODIFIQUEI AQUI - Criar mapa de participações para lookup rápido
@@ -280,13 +280,11 @@ export default function RankingsPage() {
     // Calcular total arrecadado
     const totalCollected = ranking.length * (selectedContest.ticket_price || 0)
 
-    // MODIFIQUEI AQUI - quando houver sorteio selecionado, calcular ranking usando SOMENTE esse sorteio
-    const drawsForRanking = selectedDrawId ? draws.filter(d => d.id === selectedDrawId) : draws
-
+    // Passar TODOS os draws - calculateRanking usa selectedDrawId para filtrar "ate" o selecionado
     return calculateRanking({
       contest: selectedContest,
       participations: ranking,
-      draws: drawsForRanking,
+      draws,
       selectedDrawId: selectedDrawId || undefined,
       totalCollected,
     })

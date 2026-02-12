@@ -224,22 +224,21 @@ export function calculateRateio(
 }
 
 /**
- * Calcula prêmios por draw seguindo regras específicas: TOP, SECOND, LOWEST
- * MODIFIQUEI AQUI - Função para calcular prêmios por sorteio com categorias específicas
+ * Calcula premios por draw seguindo regras de scoring ACUMULATIVO
  *
- * Regras CORRETAS:
- * - TOP: acertou TODOS os números em UM ÚNICO SORTEIO (não cumulativo)
- * - SECOND: acertou N-1 números em UM ÚNICO SORTEIO (não cumulativo)
- * - LOWEST: menor pontuação CUMULATIVA positiva (>0) entre todas as participações
- * - NONE: não premiado
- * - Se categoria não tiver ganhadores, NÃO redistribui o valor
- * - ANTI-FRAUDE: só conta sorteios que aconteceram DEPOIS da participação ser criada
+ * MODELO ACUMULATIVO:
+ * - TOP: acumulou TODOS os N numeros unicos em qualquer combinacao de sorteios
+ * - SECOND: acumulou N-1 numeros unicos
+ * - LOWEST: menor pontuacao acumulativa positiva (>0)
+ * - NONE: nao premiado
+ * - Se categoria nao tiver ganhadores, NAO redistribui o valor
+ * - current_score ja vem calculado como numeros unicos acertados
  *
- * @param participations Participações com números, data de criação e pontuação
+ * @param participations Participacoes com numeros, data de criacao e pontuacao acumulada
  * @param totalRevenue Total arrecadado (pool)
- * @param config Configuração de percentuais
- * @param numbersPerParticipation Quantidade de números por participação (ex: 10)
- * @param draws Array de sorteios com números e data
+ * @param config Configuracao de percentuais
+ * @param numbersPerParticipation Quantidade de numeros por participacao (ex: 10)
+ * @param draws Array de sorteios com numeros e data
  */
 export function calculateDrawPayouts(
   participations: Array<{
@@ -252,7 +251,7 @@ export function calculateDrawPayouts(
   totalRevenue: number,
   config: RateioConfig,
   numbersPerParticipation: number,
-  draws: Array<{ numbers: number[]; draw_date: string }>
+  _draws: Array<{ numbers: number[]; draw_date: string }>
 ): DrawPayoutResult {
   // Validar que soma dos percentuais seja 100%
   const totalPercent = config.maiorPontuacao + config.segundaMaiorPontuacao + config.menorPontuacao + config.taxaAdministrativa
@@ -260,29 +259,15 @@ export function calculateDrawPayouts(
     throw new Error(`A soma dos percentuais deve ser 100%. Atual: ${totalPercent}%`)
   }
 
-  // Helper para calcular acertos
-  const calculateHits = (drawNumbers: number[], participationNumbers: number[]): number => {
-    const drawSet = new Set(drawNumbers)
-    return participationNumbers.filter(num => drawSet.has(num)).length
+  // TOP = acumulou TODOS os numeros unicos (current_score === N)
+  // current_score agora e a contagem de numeros unicos acertados (acumulativo)
+  const isTop = (p: { numbers: number[]; current_score: number }): boolean => {
+    return p.current_score === p.numbers.length
   }
 
-  // Helper para filtrar sorteios válidos (anti-fraude)
-  const getValidDraws = (participationCreatedAt: string) => {
-    const participationDate = new Date(participationCreatedAt)
-    return draws.filter(d => new Date(d.draw_date) >= participationDate)
-  }
-
-  // Helper para verificar se atingiu TOP (acertou TODOS em algum sorteio)
-  const isTop = (p: { numbers: number[]; created_at: string }): boolean => {
-    const validDraws = getValidDraws(p.created_at)
-    return validDraws.some(draw => calculateHits(draw.numbers, p.numbers) === p.numbers.length)
-  }
-
-  // Helper para verificar se atingiu SECOND (acertou N-1 em algum sorteio)
-  const isSecond = (p: { numbers: number[]; created_at: string }): boolean => {
-    const validDraws = getValidDraws(p.created_at)
-    const targetHits = p.numbers.length - 1
-    return validDraws.some(draw => calculateHits(draw.numbers, p.numbers) === targetHits)
+  // SECOND = acumulou N-1 numeros unicos
+  const isSecond = (p: { numbers: number[]; current_score: number }): boolean => {
+    return p.current_score === p.numbers.length - 1
   }
 
   // MODIFIQUEI AQUI - Obter todas as pontuações cumulativas positivas ordenadas
@@ -312,14 +297,14 @@ export function calculateDrawPayouts(
     }
   }
 
-  // MODIFIQUEI AQUI - TOP: quem acertou TODOS os números em algum sorteio válido
+  // TOP: quem acumulou TODOS os numeros unicos
   const topWinners = participations.filter(p => isTop(p))
 
-  // MODIFIQUEI AQUI - SECOND: quem acertou N-1 em algum sorteio válido (e NÃO é TOP)
+  // SECOND: quem acumulou N-1 numeros unicos (e NAO e TOP)
   const topWinnerIds = new Set(topWinners.map(t => t.id))
   const secondWinners = participations.filter(p => !topWinnerIds.has(p.id) && isSecond(p))
 
-  // MODIFIQUEI AQUI - LOWEST: menor pontuação CUMULATIVA positiva (excluindo TOP e SECOND)
+  // LOWEST: menor pontuacao acumulativa positiva (excluindo TOP e SECOND)
   const secondWinnerIds = new Set(secondWinners.map(s => s.id))
   const othersWithScore = participations.filter(
     p => !topWinnerIds.has(p.id) && !secondWinnerIds.has(p.id) && p.current_score > 0
@@ -340,22 +325,22 @@ export function calculateDrawPayouts(
     ? (totalRevenue * config.menorPontuacao) / 100
     : 0
 
-  // MODIFIQUEI AQUI - Montar resultado das categorias
+  // Montar resultado das categorias
   const categories = {
     TOP: topWinners.length > 0 ? {
-      score: numbersPerParticipation, // TOP = N acertos em um sorteio
+      score: numbersPerParticipation, // TOP = N numeros unicos acumulados
       winnersCount: topWinners.length,
       amountPerWinner: prizeTop / topWinners.length,
       totalAmount: prizeTop,
     } : null,
     SECOND: secondWinners.length > 0 ? {
-      score: numbersPerParticipation - 1, // SECOND = N-1 acertos em um sorteio
+      score: numbersPerParticipation - 1, // SECOND = N-1 numeros unicos acumulados
       winnersCount: secondWinners.length,
       amountPerWinner: prizeSecond / secondWinners.length,
       totalAmount: prizeSecond,
     } : null,
     LOWEST: lowestWinners.length > 0 ? {
-      score: lowestScore, // LOWEST = menor pontuação cumulativa
+      score: lowestScore, // LOWEST = menor pontuacao acumulativa
       winnersCount: lowestWinners.length,
       amountPerWinner: prizeLowest / lowestWinners.length,
       totalAmount: prizeLowest,

@@ -7,7 +7,7 @@
  */
 import { supabase } from '../lib/supabase'
 import { listDrawsByContestId, getDrawById } from './drawsService'
-import { calculateTotalScore, getMaxHitsInSingleDraw } from '../utils/rankingHelpers'
+import { getAllHitNumbers } from '../utils/rankingHelpers'
 import { calculateRateio, calculateDrawPayouts, RateioConfig } from '../utils/rateioCalculator'
 
 /**
@@ -70,17 +70,17 @@ export async function reprocessContestAfterDraw(contestId: string): Promise<void
       new Date(a.draw_date).getTime() - new Date(b.draw_date).getTime()
     )
 
-    // 5. Calcular nova pontuação para cada participação (MAIOR número de acertos em UM único sorteio)
-    // MODIFIQUEI AQUI - Não soma nada entre sorteios, cada sorteio é verificado individualmente
-    // Score é o maior número de acertos em um único sorteio válido
+    // 5. Calcular nova pontuação para cada participação (numeros UNICOS acertados em QUALQUER sorteio)
+    // Score = contagem de numeros unicos do bilhete que apareceram em qualquer sorteio valido
     const updates: Array<{ id: string; score: number }> = []
 
     participations.forEach((participation: any) => {
       const participationDate = new Date(participation.created_at)
       // Filtrar sorteios válidos (após a participação - anti-fraude)
       const validDraws = draws.filter(d => new Date(d.draw_date) >= participationDate)
-      // Score é o maior número de acertos em um único sorteio (não cumulativo)
-      const newScore = getMaxHitsInSingleDraw(participation.numbers, validDraws, participation.created_at)
+      // Score = numeros unicos acertados (acumulativo)
+      const hitNumbers = getAllHitNumbers(participation.numbers, validDraws, participation.created_at)
+      const newScore = hitNumbers.length
       updates.push({
         id: participation.id,
         score: newScore,
@@ -108,21 +108,15 @@ export async function reprocessContestAfterDraw(contestId: string): Promise<void
 
     console.log(`[reprocessService] Pontuações atualizadas com sucesso`)
 
-    // 7. Verificar se algum participante atingiu TOP (acertou TODOS em UM sorteio) e encerrar concurso
-    // MODIFIQUEI AQUI - TOP agora é acertar todos em um único sorteio, não pontuação cumulativa
+    // 7. Verificar se algum participante atingiu TOP (acumulou TODOS os numeros unicos) e encerrar concurso
+    // TOP = numeros unicos acertados em qualquer sorteio valido == total de numeros do bilhete
     const numbersPerParticipation = contest?.numbers_per_participation
     if (numbersPerParticipation) {
-      // Verificar se alguém acertou TODOS os números em algum sorteio válido
       const hasTopWinner = participations.some((p: any) => {
         const participationDate = new Date(p.created_at)
-        // Filtrar sorteios válidos (após a participação - anti-fraude)
         const validDraws = draws.filter(d => new Date(d.draw_date) >= participationDate)
-        // Verificar se acertou todos em algum sorteio
-        return validDraws.some(draw => {
-          const drawSet = new Set(draw.numbers)
-          const hits = p.numbers.filter((num: number) => drawSet.has(num)).length
-          return hits === p.numbers.length
-        })
+        const hitNumbers = getAllHitNumbers(p.numbers, validDraws, p.created_at)
+        return hitNumbers.length === p.numbers.length
       })
 
       if (hasTopWinner) {
@@ -299,9 +293,8 @@ export async function reprocessDrawResults(drawId: string, cumulativeDraws?: Arr
       return
     }
 
-    // 4. Determinar draws para cálculo de pontuação (todos os sorteios até este para verificar o maior)
-    // MODIFIQUEI AQUI - Incluir draw_date para anti-fraude e cálculo de TOP/SECOND
-    // Não soma nada, apenas verifica o maior número de acertos em um único sorteio até este ponto
+    // 4. Determinar draws para calculo de pontuacao acumulativa (todos os sorteios ate este)
+    // Score = numeros unicos acertados em qualquer sorteio valido ate este ponto
     let drawsForScore: Array<{ numbers: number[]; draw_date: string }>
     if (cumulativeDraws && cumulativeDraws.length > 0 && 'draw_date' in cumulativeDraws[0]) {
       drawsForScore = cumulativeDraws as Array<{ numbers: number[]; draw_date: string }>
@@ -315,15 +308,14 @@ export async function reprocessDrawResults(drawId: string, cumulativeDraws?: Arr
       drawsForScore = allDrawsSorted.slice(0, drawIndex + 1)
     }
 
-    // 5. Calcular pontuação de cada participação (MAIOR número de acertos em UM único sorteio até este)
-    // MODIFIQUEI AQUI - Não soma nada entre sorteios, cada sorteio é verificado individualmente
-    // Score é o maior número de acertos em um único sorteio válido até este ponto
+    // 5. Calcular pontuação de cada participação (numeros UNICOS acertados em qualquer sorteio ate este)
+    // Score = contagem de numeros unicos do bilhete acertados (acumulativo)
     const participationsWithScore = participations.map(p => ({
       id: p.id,
       user_id: p.user_id,
       numbers: p.numbers,
       created_at: p.created_at,
-      current_score: getMaxHitsInSingleDraw(p.numbers, drawsForScore, p.created_at),
+      current_score: getAllHitNumbers(p.numbers, drawsForScore, p.created_at).length,
     }))
 
     // 5. Buscar total arrecadado

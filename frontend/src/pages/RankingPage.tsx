@@ -11,7 +11,7 @@ import { getContestRanking } from '../services/participationsService'
 import { listDrawsByContestId } from '../services/drawsService'
 import { getDrawPayoutSummary, getPayoutsByDraw } from '../services/payoutsService'
 import { Contest, Participation, Draw } from '../types'
-import { calculateTotalScore, getAllHitNumbers, getMaxHitsInSingleDraw } from '../utils/rankingHelpers'
+import { getAllHitNumbers } from '../utils/rankingHelpers'
 // MODIFIQUEI AQUI - Não usar getPayoutCategory para medalha/categoria/prêmio (agora é por SCORE)
 // import { getPayoutCategory } from '../utils/payoutCategoryHelpers'
 import { getContestState } from '../utils/contestHelpers'
@@ -160,83 +160,40 @@ export default function RankingPage() {
     return sorted
   }, [draws])
 
-  const getDrawsUpTo = (drawId: string): Draw[] => {
-    const idx = drawsSortedAsc.findIndex(d => d.id === drawId)
-
-    console.log('MODIFIQUEI AQUI [RankingPage] getDrawsUpTo drawId=', drawId, 'idx=', idx)
-
-    if (idx === -1) {
-      console.log('MODIFIQUEI AQUI [RankingPage] getDrawsUpTo idx=-1 => returning FULL drawsSortedAsc (len)=', drawsSortedAsc.length)
-      return drawsSortedAsc
-    }
-
-    const sliced = drawsSortedAsc.slice(0, idx + 1)
-    console.log(
-      'MODIFIQUEI AQUI [RankingPage] getDrawsUpTo returning sliced (len)=',
-      sliced.length,
-      'draws=',
-      sliced.map(d => ({ id: d.id, draw_date: d.draw_date, code: d.code }))
-    )
-    return sliced
-  }
 
   const getTotalScore = (participation: Participation): number => {
-    // MODIFIQUEI AQUI - Score é o MAIOR número de acertos em UM único sorteio (não cumulativo)
-    // Cada sorteio é verificado individualmente, não soma nada entre sorteios
-    const score = getMaxHitsInSingleDraw(participation.numbers, draws, participation.created_at)
-    console.log('MODIFIQUEI AQUI [RankingPage] getTotalScore participationId=', (participation as any)?.id, 'score=', score)
-    return score
+    // Score = numeros UNICOS do bilhete acertados em QUALQUER sorteio (acumulativo)
+    const hitNumbers = getAllHitNumbers(participation.numbers, draws, participation.created_at)
+    return hitNumbers.length
   }
 
   // testar aqui
 
   const getScoreUpToDraw = (participation: Participation, drawId: string): number => {
-    // MODIFIQUEI AQUI - usar SOMENTE o sorteio selecionado (não acumulado)
-    const drawOnly = draws.find(d => d.id === drawId)
-    const drawsToUse = drawOnly ? [drawOnly] : []
-
-    // MODIFIQUEI AQUI - Score é o número de acertos neste sorteio específico (não cumulativo)
-    const score = drawsToUse.length > 0 
-      ? getMaxHitsInSingleDraw(participation.numbers, drawsToUse, participation.created_at)
-      : 0
-
-    console.log(
-      'MODIFIQUEI AQUI [RankingPage] getScoreUpToDraw(SINGLE)',
-      'participationId=', participation.id,
-      'drawId=', drawId,
-      'drawsToUse.len=', drawsToUse.length,
-      'drawsToUse.ids=', drawsToUse.map(d => d.id),
-      'score=', score
-    )
-
-    return score
+    // Score acumulado ATE o sorteio selecionado (inclusive)
+    const idx = drawsSortedAsc.findIndex(d => d.id === drawId)
+    const drawsUpTo = idx === -1 ? drawsSortedAsc : drawsSortedAsc.slice(0, idx + 1)
+    const hitNumbers = getAllHitNumbers(participation.numbers, drawsUpTo, participation.created_at)
+    return hitNumbers.length
   }
 
 
-  // testar aqui
+  // Numeros sorteados acumulados ATE o sorteio selecionado (ou todos)
   const drawnNumbersSorted = useMemo((): number[] => {
-    // MODIFIQUEI AQUI - usar SOMENTE o sorteio selecionado (não acumulado)
-    const drawOnly = selectedDrawId ? draws.find(d => d.id === selectedDrawId) : undefined
-    const drawsToUse = drawOnly ? [drawOnly] : draws
-  
+    let drawsToUse = draws
+    if (selectedDrawId) {
+      const idx = drawsSortedAsc.findIndex(d => d.id === selectedDrawId)
+      drawsToUse = idx === -1 ? drawsSortedAsc : drawsSortedAsc.slice(0, idx + 1)
+    }
+
     const allNumbers = new Set<number>()
     drawsToUse.forEach((draw) => {
       draw.numbers.forEach((num) => allNumbers.add(num))
     })
-  
-    const sorted = Array.from(allNumbers).sort((a, b) => a - b)
-  
-    console.log(
-      'MODIFIQUEI AQUI [RankingPage] drawnNumbersSorted(SINGLE)',
-      'selectedDrawId=', selectedDrawId,
-      'drawsToUse.len=', drawsToUse.length,
-      'drawsToUse.ids=', drawsToUse.map(d => d.id),
-      'sorted=', sorted
-    )
-  
-    return sorted
+
+    return Array.from(allNumbers).sort((a, b) => a - b)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draws, selectedDrawId])
+  }, [draws, selectedDrawId, drawsSortedAsc])
   
 
   const drawnNumbersSet = useMemo(() => new Set<number>(drawnNumbersSorted), [drawnNumbersSorted])
@@ -246,27 +203,14 @@ export default function RankingPage() {
   }
 
 
-  // testar aqui
-
   const getHitNumbersForParticipation = (participation: Participation): number[] => {
-    // MODIFIQUEI AQUI - usar SOMENTE o sorteio selecionado (não acumulado)
-    const drawOnly = selectedDrawId ? draws.find(d => d.id === selectedDrawId) : undefined
-    const drawsToUse = drawOnly ? [drawOnly] : draws
-  
-    const hits = getAllHitNumbers(participation.numbers, drawsToUse)
-  
-    console.log(
-      'MODIFIQUEI AQUI [RankingPage] getHitNumbersForParticipation(SINGLE)',
-      'participationId=', participation.id,
-      'selectedDrawId=', selectedDrawId,
-      'drawsToUse.len=', drawsToUse.length,
-      'drawsToUse.ids=', drawsToUse.map(d => d.id),
-      'drawNumbers=', drawOnly?.numbers,
-      'participationNumbers=', participation.numbers,
-      'hits=', hits
-    )
-  
-    return hits
+    // Numeros unicos acertados acumulados ATE o sorteio selecionado (ou todos)
+    let drawsToUse = draws
+    if (selectedDrawId) {
+      const idx = drawsSortedAsc.findIndex(d => d.id === selectedDrawId)
+      drawsToUse = idx === -1 ? drawsSortedAsc : drawsSortedAsc.slice(0, idx + 1)
+    }
+    return getAllHitNumbers(participation.numbers, drawsToUse, participation.created_at)
   }
   
 
