@@ -43,6 +43,7 @@ export default function Header() {
   const [notifItems, setNotifItems] = useState<Notif[]>([])
   const [notifUnreadCount, setNotifUnreadCount] = useState(0)
   const notifMenuRef = useRef<HTMLDivElement>(null)
+  const notifMenuRefMobile = useRef<HTMLDivElement>(null)
 
 
   // MODIFIQUEI AQUI - Formatar telefone para exibição
@@ -244,10 +245,10 @@ export default function Header() {
       }
 
       // MODIFIQUEI AQUI - Fechar menu de notificações ao clicar fora
-      if (
-        notifMenuRef.current &&
-        !notifMenuRef.current.contains(event.target as Node)
-      ) {
+      const insideNotif =
+        notifMenuRef.current?.contains(event.target as Node) ||
+        notifMenuRefMobile.current?.contains(event.target as Node)
+      if (!insideNotif) {
         setShowNotifMenu(false)
       }
     }
@@ -336,20 +337,90 @@ export default function Header() {
                       </span>
                     )}
                   </Link>
-                  <Link
-                    to="/notifications"
-                    className="relative p-2.5 mr-3 text-white/90 hover:text-white rounded-lg hover:bg-white/10 transition-all"
-                    title="Notificações"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-                    </svg>
-                    {notifUnreadCount > 0 && (
-                      <span className="absolute top-0.5 right-0.5 bg-[#F4C430] text-[#1F1F1F] text-[10px] font-bold rounded-full h-4 min-w-[16px] px-1 flex items-center justify-center">
-                        {notifUnreadCount > 9 ? '9+' : notifUnreadCount}
-                      </span>
+                  <div className="relative mr-3" ref={notifMenuRefMobile}>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        toggleNotifMenu()
+                        await loadNotifications()
+                      }}
+                      aria-expanded={showNotifMenu}
+                      aria-haspopup="true"
+                      aria-label="Abrir notificações"
+                      className="relative p-2.5 text-white/90 hover:text-white rounded-lg hover:bg-white/10 transition-all"
+                      title="Notificações"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                      </svg>
+                      {notifUnreadCount > 0 && (
+                        <span className="absolute top-0.5 right-0.5 bg-[#F4C430] text-[#1F1F1F] text-[10px] font-bold rounded-full h-4 min-w-[16px] px-1 flex items-center justify-center">
+                          {notifUnreadCount > 9 ? '9+' : notifUnreadCount}
+                        </span>
+                      )}
+                    </button>
+
+                    {showNotifMenu && (
+                      <div
+                        className="fixed right-4 left-4 top-[72px] w-auto max-w-[calc(100vw-2rem)] rounded-2xl border border-[#E5E5E5] bg-white shadow-2xl z-50 overflow-hidden animate-[slideDown_0.2s_ease-out] md:hidden"
+                        role="menu"
+                        aria-orientation="vertical"
+                      >
+                        <div className="p-4 bg-gradient-to-br from-[#F9F9F9] to-white border-b border-[#E5E5E5] flex items-center justify-between">
+                          <div>
+                            <div className="text-sm font-extrabold text-[#1F1F1F]">Notificações</div>
+                            <div className="text-xs text-[#1F1F1F]/60 font-medium">
+                              {notifUnreadCount > 0 ? `${notifUnreadCount} pendente(s)` : 'Tudo em dia ✅'}
+                            </div>
+                          </div>
+                          {notifUnreadCount > 0 && (
+                            <button
+                              onClick={markAllAsRead}
+                              className="text-xs font-bold text-[#1E7F43] hover:text-[#3CCB7F]"
+                            >
+                              Marcar todas como lidas
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="max-h-[360px] overflow-auto">
+                          {notifItems.length === 0 ? (
+                            <div className="p-4 text-sm text-[#1F1F1F]/70">Você não tem notificações no momento.</div>
+                          ) : (
+                            <div className="p-2 space-y-2">
+                              {notifItems.slice(0, 6).map((n) => (
+                                <button
+                                  key={n.id}
+                                  onClick={() => openNotif(n)}
+                                  className={`w-full text-left rounded-2xl border p-3 transition-all ${n.read_at ? 'border-[#E5E5E5] bg-white hover:bg-[#F9F9F9]' : 'border-[#F4C430] bg-[#F4C430]/10 hover:bg-[#F4C430]/15'
+                                    }`}
+                                >
+                                  <div className="font-extrabold text-[#1F1F1F] text-sm">{n.title}</div>
+                                  <div className="text-xs text-[#1F1F1F]/70 mt-1 line-clamp-2">{n.message}</div>
+                                  <div className="text-[11px] text-[#1F1F1F]/40 mt-2">
+                                    {new Date(n.created_at).toLocaleString('pt-BR')}
+                                  </div>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="border-t border-[#E5E5E5] p-3">
+                          <Link
+                            to="/notifications"
+                            onClick={() => setShowNotifMenu(false)}
+                            className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-[#1E7F43] text-white font-extrabold hover:bg-[#3CCB7F] transition-colors"
+                          >
+                            Ver todas
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                            </svg>
+                          </Link>
+                        </div>
+                      </div>
                     )}
-                  </Link>
+                  </div>
                 </>
               )}
             </div>
