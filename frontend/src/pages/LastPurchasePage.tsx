@@ -174,9 +174,8 @@ export default function LastPurchasePage() {
           <div className="space-y-4 sm:space-y-5 md:space-y-6">
             {participations.map((participation) => {
               const numbers = [...participation.numbers].sort((a, b) => a - b)
-              const compatibleContests = activeContests.filter(
-                c => c.id !== participation.contest_id && isCompatible(c, numbers)
-              )
+             // Inclui todos os concursos ativos compatíveis (incluindo o próprio bolão de origem)
+              const compatibleContests = activeContests.filter(c => isCompatible(c, numbers))
 
               return (
                 <div

@@ -144,6 +144,22 @@ export default function Header() {
     loadNotifications()
   }, [user?.id, loadNotifications])
 
+  // Marcar todas as notificações como lidas
+  const markAllAsRead = useCallback(async () => {
+    if (!user?.id || notifUnreadCount === 0) return
+    const now = new Date().toISOString()
+    const { error } = await supabase
+      .from('notifications')
+      .update({ read_at: now })
+      .eq('user_id', user.id)
+      .is('read_at', null)
+
+    if (!error) {
+      setNotifItems((prev) => prev.map((x) => (x.read_at ? x : { ...x, read_at: now })))
+      setNotifUnreadCount(0)
+    }
+  }, [user?.id, notifUnreadCount])
+
   // MODIFIQUEI AQUI - Marcar uma notificação como lida e navegar
   const openNotif = useCallback(
     async (n: Notif) => {
@@ -426,14 +442,14 @@ export default function Header() {
                             {notifUnreadCount > 0 ? `${notifUnreadCount} pendente(s)` : 'Tudo em dia ✅'}
                           </div>
                         </div>
-                        <button
-                          onClick={async () => {
-                            await loadNotifications()
-                          }}
-                          className="text-xs font-bold text-[#1E7F43] hover:text-[#3CCB7F]"
-                        >
-                          Atualizar
-                        </button>
+                        {notifUnreadCount > 0 && (
+                          <button
+                            onClick={markAllAsRead}
+                            className="text-xs font-bold text-[#1E7F43] hover:text-[#3CCB7F]"
+                          >
+                            Marcar todas como lidas
+                          </button>
+                        )}
                       </div>
 
                       <div className="max-h-[360px] overflow-auto">

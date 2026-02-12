@@ -194,7 +194,7 @@ export default function RankingPage() {
     return Array.from(allNumbers).sort((a, b) => a - b)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draws, selectedDrawId, drawsSortedAsc])
-  
+
 
   const drawnNumbersSet = useMemo(() => new Set<number>(drawnNumbersSorted), [drawnNumbersSorted])
 
@@ -212,7 +212,7 @@ export default function RankingPage() {
     }
     return getAllHitNumbers(participation.numbers, drawsToUse, participation.created_at)
   }
-  
+
 
   const maxScoreToDisplay = useMemo(() => {
     if (participations.length === 0) return 0
@@ -291,9 +291,9 @@ export default function RankingPage() {
     // Filtrar apenas participações válidas (criadas antes do sorteio)
     const validParticipations = cutoffDate
       ? participations.filter((p) => {
-          const participationDate = new Date(p.created_at)
-          return participationDate.getTime() <= (cutoffDate!.getTime() + 1000) // +1 segundo de margem
-        })
+        const participationDate = new Date(p.created_at)
+        return participationDate.getTime() <= (cutoffDate!.getTime() + 1000) // +1 segundo de margem
+      })
       : participations
 
     const scoreOf = (p: ParticipationWithUser) =>
@@ -311,13 +311,13 @@ export default function RankingPage() {
     const secondWinnersCount =
       secondScore !== null ? validParticipations.filter((p) => scoreOf(p) === secondScore).length : 0
 
-    // LOWEST = menor pontuação (>0) diferente de TOP e SECOND
-    const positiveScores = validParticipations
+    // LOWEST = menor pontuação (>=0) diferente de TOP e SECOND (inclui zero, conforme "a partir de zero")
+    const lowestEligibleScores = validParticipations
       .map((p) => scoreOf(p))
       .filter(
-        (s) => s > 0 && (topScore === null || s !== topScore) && (secondScore === null || s !== secondScore)
+        (s) => s >= 0 && (topScore === null || s !== topScore) && (secondScore === null || s !== secondScore)
       )
-    const lowestPositiveScore = positiveScores.length > 0 ? Math.min(...positiveScores) : null
+    const lowestPositiveScore = lowestEligibleScores.length > 0 ? Math.min(...lowestEligibleScores) : null
 
     const lowestWinnersCount =
       lowestPositiveScore !== null ? validParticipations.filter((p) => scoreOf(p) === lowestPositiveScore).length : 0
@@ -462,28 +462,50 @@ export default function RankingPage() {
               )}
             </div>
 
-            {/* Números Premiados - mostra SO os numeros do sorteio selecionado */}
+            {/* Resultado / Números sorteados - apenas quem ganhou na categoria TOP */}
             {(() => {
-              const selectedDraw = selectedDrawId ? draws.find(d => d.id === selectedDrawId) : null
-              const drawnNums = selectedDraw
-                ? [...selectedDraw.numbers].sort((a, b) => a - b)
-                : Array.from(new Set(draws.flatMap(d => d.numbers))).sort((a, b) => a - b)
+              const topWinningParticipationIds = Object.entries(payouts)
+                .filter(([, p]) => p && p.amount_won > 0 && p.category === 'TOP')
+                .map(([pid]) => pid)
 
-              return drawnNums.length > 0 ? (
+              const topWinningParticipations = participations.filter(p =>
+                topWinningParticipationIds.includes(p.id)
+              )
+
+              // Cada combinação única de números vencedores TOP (mesmo conjunto pode ter vários ganhadores)
+              const uniqueWinningSets = Array.from(
+                new Map(
+                  topWinningParticipations.map(p => {
+                    const nums = [...(p.numbers || [])].sort((a, b) => a - b)
+                    const key = nums.join(',')
+                    return [key, nums]
+                  })
+                ).values()
+              )
+
+              if (uniqueWinningSets.length === 0) return null
+
+              return (
                 <div className="mb-4">
-                  <h3 className="text-sm font-semibold text-[#1F1F1F]/60 uppercase tracking-wide mb-2">Números Premiados</h3>
-                  <div className="flex flex-wrap gap-2">
-                    {drawnNums.map(num => (
-                      <span
-                        key={num}
-                        className="inline-flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-[#F4C430] text-[#1F1F1F] font-bold text-sm sm:text-base shadow-sm"
-                      >
-                        {num.toString().padStart(2, '0')}
-                      </span>
+                  <h3 className="text-sm font-semibold text-[#1F1F1F]/60 uppercase tracking-wide mb-2">
+                    RESULTADO / NÚMEROS SORTEADO
+                  </h3>
+                  <div className="space-y-4">
+                    {uniqueWinningSets.map((nums, idx) => (
+                      <div key={idx} className="flex flex-wrap gap-3 items-center">
+                        {nums.map(num => (
+                          <span
+                            key={num}
+                            className="inline-flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-[#F4C430] text-[#1F1F1F] font-bold text-sm sm:text-base shadow-sm"
+                          >
+                            {num.toString().padStart(2, '0')}
+                          </span>
+                        ))}
+                      </div>
                     ))}
                   </div>
                 </div>
-              ) : null
+              )
             })()}
 
             {payoutSummary && !drawWinnersByScore.hasAnyWinner ? (
@@ -739,7 +761,7 @@ export default function RankingPage() {
                     const drawsSortedAsc = [...draws].sort(
                       (a, b) => new Date(a.draw_date).getTime() - new Date(b.draw_date).getTime()
                     )
-                    
+
                     // Determinar a data limite: sorteio selecionado ou último sorteio
                     let cutoffDate: Date | null = null
                     if (selectedDrawId) {
@@ -749,7 +771,7 @@ export default function RankingPage() {
                       // Se não há sorteio selecionado, usar o último sorteio
                       cutoffDate = new Date(drawsSortedAsc[drawsSortedAsc.length - 1].draw_date)
                     }
-                    
+
                     // Criar um Set para marcar participações criadas após o sorteio (para destacar visualmente)
                     const participationsCreatedAfterDraw = new Set<string>()
                     if (cutoffDate) {
@@ -760,7 +782,7 @@ export default function RankingPage() {
                         }
                       })
                     }
-                    
+
                     const invalidParticipationsCount = participationsCreatedAfterDraw.size
 
                     // MODIFIQUEI AQUI - Usar TODAS as participações (não filtrar), apenas marcar as inválidas
@@ -785,7 +807,7 @@ export default function RankingPage() {
                     sortedParticipations.forEach((p, idx) => positionById.set(p.id, idx + 1))
 
                     // MODIFIQUEI AQUI - Filtrar participações válidas (não criadas após o sorteio) para cálculo de premiação
-                    const validParticipationsForPrize = sortedParticipations.filter(p => 
+                    const validParticipationsForPrize = sortedParticipations.filter(p =>
                       !participationsCreatedAfterDraw.has(p.id)
                     )
 
@@ -800,14 +822,12 @@ export default function RankingPage() {
 
                     const N = Number(contest?.numbers_per_participation || 0)
                     const topScore = Number.isFinite(N) ? N : null
-                    const secondScore = Number.isFinite(N) ? (N - 1) : null
-
-                    // MODIFIQUEI AQUI - Usar validScores em vez de allScores para calcular lowestPositiveScore
+                    // Usar secondScore do drawWinnersByScore (cascata: maior entre não-TOP) para consistência com Categorias Premiadas
+                    const secondScore = drawWinnersByScore.SECOND.score
                     const positiveScores = validScores.filter(s => s >= 0 && s !== topScore && s !== secondScore)
                     const lowestPositiveScore = positiveScores.length > 0 ? Math.min(...positiveScores) : null
 
                     console.log('MODIFIQUEI AQUI [RankingPage] score thresholds=', {
-                      N,
                       topScore,
                       secondScore,
                       lowestPositiveScore,
@@ -932,132 +952,131 @@ export default function RankingPage() {
                           </tr>
                         )}
                         {filteredParticipations.map((participation, index) => {
-                      const position = positionById.get(participation.id) || (index + 1)
-                      
-                      // MODIFIQUEI AQUI - Verificar se participação foi criada após o sorteio
-                      const wasCreatedAfterDraw = participationsCreatedAfterDraw.has(participation.id)
-                      
-                      // MODIFIQUEI AQUI - Se foi criada após o sorteio, forçar score = 0 e não contar acertos
-                      const hitNumbers = wasCreatedAfterDraw ? [] : getHitNumbersForParticipation(participation)
-                      
-                      // MODIFIQUEI AQUI - Se foi criada após o sorteio, score sempre será 0
-                      const displayScore = wasCreatedAfterDraw 
-                        ? 0 
-                        : (selectedDrawId
-                            ? getScoreUpToDraw(participation, selectedDrawId)
-                            : getTotalScore(participation))
+                          const position = positionById.get(participation.id) || (index + 1)
 
-                      // MODIFIQUEI AQUI - Se foi criada após o sorteio, sempre será 'NONE' (não premiado)
-                      const scoreCategory = wasCreatedAfterDraw ? 'NONE' : (selectedDrawId ? getCategoryByScore(displayScore) : 'NONE')
-                      const medal = getMedalByCategory(scoreCategory)
-                      const hasMedal = medal !== undefined
-                      const positionLabel = hasMedal ? medal : `#${position}`
+                          // MODIFIQUEI AQUI - Verificar se participação foi criada após o sorteio
+                          const wasCreatedAfterDraw = participationsCreatedAfterDraw.has(participation.id)
 
-                      // MODIFIQUEI AQUI - Se foi criada após o sorteio, sempre será não premiado
-                      const expectedPrize = wasCreatedAfterDraw 
-                        ? { isWinner: false, category: 'NONE' as const, amount: 0 }
-                        : getExpectedPrize(participation)
+                          // MODIFIQUEI AQUI - Se foi criada após o sorteio, forçar score = 0 e não contar acertos
+                          const hitNumbers = wasCreatedAfterDraw ? [] : getHitNumbersForParticipation(participation)
 
-                      return (
-                        <tr
-                          key={participation.id}
-                          className={`border-b border-[#E5E5E5] transition-colors hover:bg-[#F9F9F9] ${
-                            hasMedal ? 'bg-gradient-to-r from-yellow-50 to-yellow-100' : 
-                            wasCreatedAfterDraw ? 'bg-orange-50/50 opacity-75' : ''
-                          }`}
-                        >
-                          <td className="py-4 px-6">
-                            <div className="flex items-center gap-3">
-                              <span className={`${hasMedal ? 'text-2xl' : 'text-xl'} font-bold text-[#1F1F1F]/60`}>
-                                {positionLabel}
-                              </span>
-                            </div>
-                          </td>
+                          // MODIFIQUEI AQUI - Se foi criada após o sorteio, score sempre será 0
+                          const displayScore = wasCreatedAfterDraw
+                            ? 0
+                            : (selectedDrawId
+                              ? getScoreUpToDraw(participation, selectedDrawId)
+                              : getTotalScore(participation))
 
-                          <td className="py-4 px-6">
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <span className="font-semibold text-[#1F1F1F]">{participation.user?.name || 'Usuário Anônimo'}</span>
-                                {wasCreatedAfterDraw && (
-                                  <span className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded text-xs font-semibold" title="Criada após o sorteio">
-                                    Após sorteio
-                                  </span>
-                                )}
-                              </div>
-                              {participation.user?.email && <div className="text-sm text-[#1F1F1F]/60">{participation.user.email}</div>}
-                            </div>
-                          </td>
+                          // MODIFIQUEI AQUI - Se foi criada após o sorteio, sempre será 'NONE' (não premiado)
+                          const scoreCategory = wasCreatedAfterDraw ? 'NONE' : (selectedDrawId ? getCategoryByScore(displayScore) : 'NONE')
+                          const medal = getMedalByCategory(scoreCategory)
+                          const hasMedal = medal !== undefined
+                          const positionLabel = hasMedal ? medal : `#${position}`
 
-                          <td className="py-4 px-6">
-                            <div className="flex flex-wrap gap-2">
-                              {[...participation.numbers].sort((a, b) => a - b).map((num) => {
-                                // MODIFIQUEI AQUI - Se foi criada após o sorteio, não marcar como acerto mesmo que coincida
-                                const isHit = wasCreatedAfterDraw ? false : hitNumbers.includes(num)
-                                const isDrawn = isNumberDrawn(num)
+                          // MODIFIQUEI AQUI - Se foi criada após o sorteio, sempre será não premiado
+                          const expectedPrize = wasCreatedAfterDraw
+                            ? { isWinner: false, category: 'NONE' as const, amount: 0 }
+                            : getExpectedPrize(participation)
 
-                                return (
-                                  <span
-                                    key={num}
-                                    className={`font-bold px-3 py-1 rounded-lg text-sm transition-all ${isHit
-                                      ? 'bg-[#1E7F43] text-white shadow-lg transform scale-110'
-                                      : isDrawn && !wasCreatedAfterDraw
-                                        ? 'bg-[#F4C430] text-[#1F1F1F]'
-                                        : 'bg-[#E5E5E5] text-[#1F1F1F]'
-                                      }`}
-                                    title={isHit ? 'Número acertado!' : isDrawn && !wasCreatedAfterDraw ? 'Número sorteado' : wasCreatedAfterDraw ? 'Participação criada após o sorteio' : ''}
-                                  >
-                                    {num.toString().padStart(2, '0')}
-                                    {isHit && ' ✓'}
-                                  </span>
-                                )
-                              })}
-                            </div>
-                          </td>
-
-                          <td className="py-4 px-6 text-center">
-                            <span
-                              className={`inline-block px-4 py-2 rounded-lg font-bold text-lg ${displayScore > 0
-                                ? 'bg-gradient-to-r from-[#1E7F43] to-[#3CCB7F] text-white'
-                                : 'bg-[#E5E5E5] text-[#1F1F1F]'
+                          return (
+                            <tr
+                              key={participation.id}
+                              className={`border-b border-[#E5E5E5] transition-colors hover:bg-[#F9F9F9] ${hasMedal ? 'bg-gradient-to-r from-yellow-50 to-yellow-100' :
+                                  wasCreatedAfterDraw ? 'bg-orange-50/50 opacity-75' : ''
                                 }`}
                             >
-                              {displayScore}
-                            </span>
-                          </td>
+                              <td className="py-4 px-6">
+                                <div className="flex items-center gap-3">
+                                  <span className={`${hasMedal ? 'text-2xl' : 'text-xl'} font-bold text-[#1F1F1F]/60`}>
+                                    {positionLabel}
+                                  </span>
+                                </div>
+                              </td>
 
-                          <td className="py-4 px-6">
-                            <span className="text-sm font-mono text-[#1F1F1F]/70">{participation.ticket_code || 'N/A'}</span>
-                          </td>
-
-                          {/* MODIFIQUEI AQUI - Prêmio agora mostra o VALOR calculado pela %; senão, “Não premiado” */}
-                          <td className="py-4 px-6 text-center">
-                            {(() => {
-                              if (draws.length === 0) {
-                                return <span className="text-sm text-[#1F1F1F]/60">⏳ Aguardando sorteio</span>
-                              }
-                              if (!selectedDrawId) {
-                                return <span className="text-sm text-[#1F1F1F]/40">—</span>
-                              }
-
-                              if (expectedPrize.category !== 'NONE') {
-                                return (
-                                  <div className="flex flex-col items-center gap-1">
-                                    <span className="px-3 py-1 bg-gradient-to-r from-[#F4C430] to-[#FFD700] text-[#1F1F1F] rounded-lg font-bold text-sm">
-                                      🏆 Premiado
-                                    </span>
-                                    <span className="text-lg font-extrabold text-[#1E7F43]">
-                                      R$ {Number(expectedPrize.amount || 0).toFixed(2).replace('.', ',')}
-                                    </span>
+                              <td className="py-4 px-6">
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-semibold text-[#1F1F1F]">{participation.user?.name || 'Usuário Anônimo'}</span>
+                                    {wasCreatedAfterDraw && (
+                                      <span className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded text-xs font-semibold" title="Criada após o sorteio">
+                                        Após sorteio
+                                      </span>
+                                    )}
                                   </div>
-                                )
-                              }
+                                  {participation.user?.email && <div className="text-sm text-[#1F1F1F]/60">{participation.user.email}</div>}
+                                </div>
+                              </td>
 
-                              return <span className="text-sm text-[#1F1F1F]/60">❌ Não premiado</span>
-                            })()}
-                          </td>
-                        </tr>
-                      )
-                    })}
+                              <td className="py-4 px-6">
+                                <div className="flex flex-wrap gap-2">
+                                  {[...participation.numbers].sort((a, b) => a - b).map((num) => {
+                                    // MODIFIQUEI AQUI - Se foi criada após o sorteio, não marcar como acerto mesmo que coincida
+                                    const isHit = wasCreatedAfterDraw ? false : hitNumbers.includes(num)
+                                    const isDrawn = isNumberDrawn(num)
+
+                                    return (
+                                      <span
+                                        key={num}
+                                        className={`font-bold px-3 py-1 rounded-lg text-sm transition-all ${isHit
+                                          ? 'bg-[#1E7F43] text-white shadow-lg transform scale-110'
+                                          : isDrawn && !wasCreatedAfterDraw
+                                            ? 'bg-[#F4C430] text-[#1F1F1F]'
+                                            : 'bg-[#E5E5E5] text-[#1F1F1F]'
+                                          }`}
+                                        title={isHit ? 'Número acertado!' : isDrawn && !wasCreatedAfterDraw ? 'Número sorteado' : wasCreatedAfterDraw ? 'Participação criada após o sorteio' : ''}
+                                      >
+                                        {num.toString().padStart(2, '0')}
+                                        {isHit && ' ✓'}
+                                      </span>
+                                    )
+                                  })}
+                                </div>
+                              </td>
+
+                              <td className="py-4 px-6 text-center">
+                                <span
+                                  className={`inline-block px-4 py-2 rounded-lg font-bold text-lg ${displayScore > 0
+                                    ? 'bg-gradient-to-r from-[#1E7F43] to-[#3CCB7F] text-white'
+                                    : 'bg-[#E5E5E5] text-[#1F1F1F]'
+                                    }`}
+                                >
+                                  {displayScore}
+                                </span>
+                              </td>
+
+                              <td className="py-4 px-6">
+                                <span className="text-sm font-mono text-[#1F1F1F]/70">{participation.ticket_code || 'N/A'}</span>
+                              </td>
+
+                              {/* MODIFIQUEI AQUI - Prêmio agora mostra o VALOR calculado pela %; senão, “Não premiado” */}
+                              <td className="py-4 px-6 text-center">
+                                {(() => {
+                                  if (draws.length === 0) {
+                                    return <span className="text-sm text-[#1F1F1F]/60">⏳ Aguardando sorteio</span>
+                                  }
+                                  if (!selectedDrawId) {
+                                    return <span className="text-sm text-[#1F1F1F]/40">—</span>
+                                  }
+
+                                  if (expectedPrize.category !== 'NONE') {
+                                    return (
+                                      <div className="flex flex-col items-center gap-1">
+                                        <span className="px-3 py-1 bg-gradient-to-r from-[#F4C430] to-[#FFD700] text-[#1F1F1F] rounded-lg font-bold text-sm">
+                                          🏆 Premiado
+                                        </span>
+                                        <span className="text-lg font-extrabold text-[#1E7F43]">
+                                          R$ {Number(expectedPrize.amount || 0).toFixed(2).replace('.', ',')}
+                                        </span>
+                                      </div>
+                                    )
+                                  }
+
+                                  return <span className="text-sm text-[#1F1F1F]/60">❌ Não premiado</span>
+                                })()}
+                              </td>
+                            </tr>
+                          )
+                        })}
                       </>
                     )
                   })()}

@@ -8,36 +8,45 @@ import { ReportData } from '../services/reportsService'
 // @ts-ignore - html2pdf.js não tem tipos TypeScript
 import html2pdf from 'html2pdf.js'
 
+type ExportReportType = 'full' | 'revenue'
+
 /**
  * Exporta relatório para CSV
- * MODIFIQUEI AQUI - Função para exportar CSV
+ * Quando reportType é 'revenue', exporta só Arrecadação por Período
  */
-export function exportToCSV(reportData: ReportData): void {
-  const rows: string[] = []
+export function exportToCSV(reportData: ReportData, reportType: ExportReportType = 'full'): void {
+  const baseName = `relatorio_${reportData.contest.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}`
 
-  // Cabeçalho
-  rows.push('Nome,Email,Código/Ticket,Números,Pontuação,Valor Pago,Status')
+  if (reportType === 'revenue') {
+    const rows: string[] = ['Data,Arrecadado (R$),Participações']
+    ;(reportData.revenueByPeriod || []).forEach((p) => {
+      rows.push(`${p.date},${p.revenue.toFixed(2).replace('.', ',')},${p.participations}`)
+    })
+    const csvContent = rows.join('\n')
+    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' })
+    const link = document.createElement('a')
+    link.setAttribute('href', URL.createObjectURL(blob))
+    link.setAttribute('download', `${baseName}_arrecadacao.csv`)
+    link.style.visibility = 'hidden'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    return
+  }
 
-  // Dados
+  const rows: string[] = ['Nome,Email,Código/Ticket,Números,Pontuação,Valor Pago,Status']
   reportData.participations.forEach((p) => {
-    const numbers = p.numbers.map((n) => n.toString().padStart(2, '0')).join(';')
+    const numbers = (p.numbers || []).map((n) => n.toString().padStart(2, '0')).join(';')
     const value = p.payment ? p.payment.amount.toFixed(2) : '0.00'
     rows.push(
-      `"${p.user?.name || 'N/A'}","${p.user?.email || 'N/A'}","${p.ticket_code || 'N/A'}","${numbers}",${p.current_score},${value},"${p.status}"`
+      `"${p.user?.name || 'N/A'}","${p.user?.email || 'N/A'}","${p.ticket_code || 'N/A'}","${numbers}",${p.current_score || 0},${value},"${p.status || 'N/A'}"`
     )
   })
-
-  // Criar arquivo
   const csvContent = rows.join('\n')
   const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' })
   const link = document.createElement('a')
-  const url = URL.createObjectURL(blob)
-
-  link.setAttribute('href', url)
-  link.setAttribute(
-    'download',
-    `relatorio_${reportData.contest.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.csv`
-  )
+  link.setAttribute('href', URL.createObjectURL(blob))
+  link.setAttribute('download', `${baseName}.csv`)
   link.style.visibility = 'hidden'
   document.body.appendChild(link)
   link.click()
@@ -46,16 +55,30 @@ export function exportToCSV(reportData: ReportData): void {
 
 /**
  * Exporta relatório para Excel (XLSX real)
- * MODIFIQUEI AQUI - Mantém a assinatura void (pra não quebrar botão),
- * mas tenta gerar XLSX real via import dinâmico. Se falhar, cai no CSV como antes.
+ * Quando reportType é 'revenue', exporta só Arrecadação por Período
  */
-export function exportToExcel(reportData: ReportData): void {
+export function exportToExcel(reportData: ReportData, reportType: ExportReportType = 'full'): void {
   ;(async () => {
     try {
       const XLSX = await import('xlsx')
+      const baseName = `relatorio_${reportData.contest.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}`
+
+      if (reportType === 'revenue') {
+        const rows = (reportData.revenueByPeriod || []).map((p) => ({
+          Data: p.date,
+          'Arrecadado (R$)': Number(p.revenue),
+          Participações: p.participations,
+        }))
+        const ws = XLSX.utils.json_to_sheet(rows)
+        ;(ws as any)['!cols'] = [{ wch: 12 }, { wch: 16 }, { wch: 14 }]
+        const wb = XLSX.utils.book_new()
+        XLSX.utils.book_append_sheet(wb, ws, 'Arrecadação')
+        XLSX.writeFile(wb, `${baseName}_arrecadacao.xlsx`)
+        return
+      }
 
       const rows = reportData.participations.map((p) => {
-        const numbers = p.numbers.map((n) => n.toString().padStart(2, '0')).join(' ')
+        const numbers = (p.numbers || []).map((n) => n.toString().padStart(2, '0')).join(' ')
         const value = p.payment ? Number(p.payment.amount) : 0
         return {
           Nome: p.user?.name || 'N/A',
@@ -81,25 +104,22 @@ export function exportToExcel(reportData: ReportData): void {
 
       const wb = XLSX.utils.book_new()
       XLSX.utils.book_append_sheet(wb, ws, 'Relatório')
-
-      XLSX.writeFile(
-        wb,
-        `relatorio_${reportData.contest.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`
-      )
+      XLSX.writeFile(wb, `${baseName}.xlsx`)
     } catch {
-      exportToCSV(reportData)
+      exportToCSV(reportData, reportType)
     }
   })()
 }
 
 /**
  * Gera conteúdo HTML para PDF
- * Usa payouts reais do banco de dados (seguindo regra do RankingPage)
+ * Quando reportType é 'revenue', gera só Arrecadação (header, resumo financeiro, arrecadação por período)
  */
 export function generateReportHTML(
   reportData: ReportData,
   payoutSummary?: any,
-  payouts?: Record<string, any>
+  payouts?: Record<string, any>,
+  reportType: ExportReportType = 'full'
 ): string {
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('pt-BR', {
@@ -119,14 +139,29 @@ export function generateReportHTML(
     })
   }
 
-  // MODIFIQUEI AQUI - Coletar todos os números sorteados de todos os sorteios
+  // MODIFIQUEI AQUI - Números dos ganhadores TOP (igual RankingsPage) - só quando houver ganhador
+  const topWinningParticipationIds = Object.entries(payouts || {})
+    .filter(([, p]: [string, any]) => p && p.amount_won > 0 && p.category === 'TOP')
+    .map(([pid]) => pid)
+  const topWinningParticipations = reportData.participations.filter((p) =>
+    topWinningParticipationIds.includes(p.id)
+  )
+  const uniqueWinningSets = Array.from(
+    new Map(
+      topWinningParticipations.map((p) => {
+        const nums = [...(p.numbers || [])].sort((a, b) => a - b)
+        return [nums.join(','), nums] as [string, number[]]
+      })
+    ).values()
+  )
+
+  // Para acertos na tabela: números únicos sorteados em todos os draws
   const allDrawnNumbers: number[] = []
   reportData.draws.forEach((draw) => {
     allDrawnNumbers.push(...draw.numbers)
   })
   const uniqueDrawnNumbers = Array.from(new Set(allDrawnNumbers)).sort((a, b) => a - b)
 
-  // MODIFIQUEI AQUI - Função para verificar se um número foi acertado
   const isHit = (number: number): boolean => {
     return uniqueDrawnNumbers.includes(number)
   }
@@ -165,36 +200,55 @@ export function generateReportHTML(
 
   const totalArrecadado = toNumber((reportData as any)?.totalRevenue || 0)
 
-  // MODIFIQUEI AQUI - Calcular valores: primeiro desconta admin, depois distribui
+  // Percentuais aplicados sobre o TOTAL (igual rateioCalculator) - não desconta admin antes
   const adminAmount = (totalArrecadado * adminPercent) / 100
-  const poolSemAdmin = Math.max(totalArrecadado - adminAmount, 0)
+  const totalTop = (totalArrecadado * topPercent) / 100
+  const totalSecond = (totalArrecadado * secondPercent) / 100
+  const totalLowest = (totalArrecadado * lowestPercent) / 100
 
-  // MODIFIQUEI AQUI - Valor TOTAL de cada categoria (sem divisão por ganhador)
-  const totalTop = (poolSemAdmin * topPercent) / 100
-  const totalSecond = (poolSemAdmin * secondPercent) / 100
-  const totalLowest = (poolSemAdmin * lowestPercent) / 100
-
-  // ============================
-  // MODIFIQUEI AQUI - Resumo financeiro: APENAS TOP/2º/MENOR em VALOR (R$)
-  // ============================
-  const financeHtml = `
+  // Completo: TOP/2º/MENOR sem % e sem Admin | Arrecadação: TOP/2º/MENOR/ADMIN com %
+  const financeHtmlFull = `
 <div class="finance-mini">
   <h3>Resumo Financeiro</h3>
-
-  <div class="finance-grid">
+  <div class="finance-grid" style="grid-template-columns: 1fr 1fr 1fr;">
     <div class="finance-card">
       <div class="finance-label">TOP (🥇)</div>
       <div class="finance-value">R$ ${money(totalTop)}</div>
     </div>
-
     <div class="finance-card">
       <div class="finance-label">2º (🥈)</div>
       <div class="finance-value">R$ ${money(totalSecond)}</div>
     </div>
-
     <div class="finance-card">
       <div class="finance-label">Menor (🥉)</div>
       <div class="finance-value">R$ ${money(totalLowest)}</div>
+    </div>
+  </div>
+</div>
+`
+  const financeHtmlRevenue = `
+<div class="finance-mini">
+  <h3>Resumo Financeiro</h3>
+  <div class="finance-grid">
+    <div class="finance-card">
+      <div class="finance-label">TOP (🥇)</div>
+      <div class="finance-value">R$ ${money(totalTop)}</div>
+      <div style="font-size: 10px; color: #666; margin-top: 4px;">${topPercent}%</div>
+    </div>
+    <div class="finance-card">
+      <div class="finance-label">2º (🥈)</div>
+      <div class="finance-value">R$ ${money(totalSecond)}</div>
+      <div style="font-size: 10px; color: #666; margin-top: 4px;">${secondPercent}%</div>
+    </div>
+    <div class="finance-card">
+      <div class="finance-label">Menor (🥉)</div>
+      <div class="finance-value">R$ ${money(totalLowest)}</div>
+      <div style="font-size: 10px; color: #666; margin-top: 4px;">${lowestPercent}%</div>
+    </div>
+    <div class="finance-card">
+      <div class="finance-label">Taxa Admin (📋)</div>
+      <div class="finance-value">R$ ${money(adminAmount)}</div>
+      <div style="font-size: 10px; color: #666; margin-top: 4px;">${adminPercent}%</div>
     </div>
   </div>
 </div>
@@ -248,6 +302,12 @@ export function generateReportHTML(
           font-weight: 700;
           margin-bottom: 8px;
           letter-spacing: -0.5px;
+        }
+        .header .header-code {
+          color: #888;
+          font-size: 11px;
+          font-family: monospace;
+          margin-bottom: 4px;
         }
         .header .subtitle {
           color: #666;
@@ -417,7 +477,7 @@ export function generateReportHTML(
         }
         .number-item {
           margin-right: 6px;
-          background: #F4C430;
+          background: #E5E5E5;
           color: #1F1F1F;
           border-radius: 4px;
           font-weight: 600;
@@ -594,36 +654,74 @@ export function generateReportHTML(
 
       <div class="header">
         <h1>${reportData.contest.name}</h1>
+        ${(reportData.contest as any).contest_code ? `<div class="header-code">Código do Concurso: ${(reportData.contest as any).contest_code}</div>` : ''}
+        ${reportData.draw ? `<div class="header-code">Código do Sorteio: ${reportData.draw.code || `Sorteio ${formatDate(reportData.draw.draw_date)}`}</div>` : ''}
         <div class="subtitle">Data de Início: ${formatDate(reportData.contest.start_date)}</div>
         <div class="date">Relatório gerado em: ${formatDateTime(new Date().toISOString())}</div>
       </div>
   `
 
-  // resumo financeiro
-  html += financeHtml
+  // resumo financeiro - Completo: 3 cards sem % | Arrecadação: 4 cards com % e Taxa Admin
+  html += reportType === 'revenue' ? financeHtmlRevenue : financeHtmlFull
 
-  // aviso
+  // Relatório de Arrecadação: só header, resumo e arrecadação por período
+  if (reportType === 'revenue') {
+    if (reportData.revenueByPeriod && reportData.revenueByPeriod.length > 0) {
+      const maxRevenue = Math.max(...reportData.revenueByPeriod.map((p) => p.revenue))
+      html += `
+      <div class="results-section" style="margin-bottom: 25px;">
+        <h2>Arrecadação por Período</h2>
+        <div style="background: #fff; border-radius: 8px; padding: 16px;">
+          ${reportData.revenueByPeriod
+            .map(
+              (p) =>
+                `<div style="display: flex; align-items: center; gap: 16px; margin-bottom: 12px;">
+              <div style="width: 80px; font-size: 11px; color: #666;">${new Date(p.date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</div>
+              <div style="flex: 1;">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 4px; font-size: 11px;">
+                  <span style="color: #666;">${p.participations} participação(ões)</span>
+                  <span style="font-weight: 600; color: #1E7F43;">R$ ${p.revenue.toFixed(2).replace('.', ',')}</span>
+                </div>
+                <div style="height: 12px; background: #E5E5E5; border-radius: 6px; overflow: hidden;">
+                  <div style="height: 100%; background: linear-gradient(90deg, #1E7F43, #3CCB7F); border-radius: 6px; width: ${maxRevenue > 0 ? (p.revenue / maxRevenue) * 100 : 0}%;"></div>
+                </div>
+              </div>
+            </div>`
+            )
+            .join('')}
+        </div>
+      </div>
+      `
+    }
+    html += `</div></body></html>`
+    return html
+  }
+
+  // aviso - só no completo
   html += `
       <div class="warning-box">
         <p>⚠️ Atenção - O jogo que não estiver pago não terá direito de receber os prêmios.</p>
       </div>
   `
 
-  // resultados
-  html += `
+  // resultados - só mostra quando houver ganhador TOP (igual RankingsPage)
+  if (uniqueWinningSets.length > 0) {
+    html += `
       <div class="results-section">
-        <h2>Resultados / Números Sorteados</h2>
+        <h2>RESULTADO / NÚMEROS SORTEADO</h2>
         <div class="results-numbers">
-          ${
-            uniqueDrawnNumbers.length > 0
-              ? uniqueDrawnNumbers
+          ${uniqueWinningSets
+            .map(
+              (nums) =>
+                `<div style="display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px;">${nums
                   .map((n) => `<span class="result-number">${n.toString().padStart(2, '0')}</span>`)
-                  .join('')
-              : '<span class="no-results">Resultados: -</span>'
-          }
+                  .join('')}</div>`
+            )
+            .join('')}
         </div>
       </div>
-  `
+    `
+  }
 
   // Resumo final / ganhadores
   const isFinalReport = reportData.reportType === 'final' || reportData.contest.status === 'finished'
@@ -808,8 +906,13 @@ function showErrorModal(title: string, message: string) {
   })
 }
 
-export function exportToPDF(reportData: ReportData, payoutSummary?: any, payouts?: Record<string, any>): void {
-  const html = generateReportHTML(reportData, payoutSummary, payouts)
+export function exportToPDF(
+  reportData: ReportData,
+  payoutSummary?: any,
+  payouts?: Record<string, any>,
+  reportType: ExportReportType = 'full'
+): void {
+  const html = generateReportHTML(reportData, payoutSummary, payouts, reportType)
 
   const iframe = document.createElement('iframe')
   iframe.style.position = 'absolute'
@@ -850,9 +953,10 @@ export function exportToPDF(reportData: ReportData, payoutSummary?: any, payouts
 
       await waitForPaint()
 
+      const baseName = `relatorio_${reportData.contest.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}`
       const opt = {
         margin: [10, 10, 10, 10],
-        filename: `relatorio_${reportData.contest.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`,
+        filename: reportType === 'revenue' ? `${baseName}_arrecadacao.pdf` : `${baseName}.pdf`,
         image: { type: 'jpeg', quality: 0.98 },
         html2canvas: {
           scale: 2,

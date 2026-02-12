@@ -204,11 +204,11 @@ export default function RankingsPage() {
   const participationsCreatedAfterDraw = useMemo(() => {
     const result = new Set<string>()
     if (draws.length === 0) return result
-    
+
     const drawsSortedAsc = [...draws].sort(
       (a, b) => new Date(a.draw_date).getTime() - new Date(b.draw_date).getTime()
     )
-    
+
     // Determinar a data limite: sorteio selecionado ou último sorteio
     let cutoffDate: Date | null = null
     if (selectedDrawId) {
@@ -217,7 +217,7 @@ export default function RankingsPage() {
     } else if (drawsSortedAsc.length > 0) {
       cutoffDate = new Date(drawsSortedAsc[drawsSortedAsc.length - 1].draw_date)
     }
-    
+
     if (cutoffDate) {
       ranking.forEach((p) => {
         const participationDate = new Date(p.created_at)
@@ -226,7 +226,7 @@ export default function RankingsPage() {
         }
       })
     }
-    
+
     return result
   }, [ranking, draws, selectedDrawId])
 
@@ -584,14 +584,26 @@ export default function RankingsPage() {
                 </div>
               )}
 
-              {/* Resultado do Sorteio - Números sorteados */}
+              {/* Resultado do Sorteio - Só mostra números quando houver ganhador TOP (não mostra números sorteados durante o bolão) */}
               {draws.length > 0 && (() => {
-                // Se um sorteio especifico esta selecionado, mostrar SO os numeros daquele sorteio
-                // Se "Todos", mostrar numeros unicos acumulados de todos os sorteios
-                const selectedDraw = selectedDrawId ? draws.find(d => d.id === selectedDrawId) : null
-                const allDrawnNums = selectedDraw
-                  ? [...selectedDraw.numbers].sort((a, b) => a - b)
-                  : Array.from(new Set(draws.flatMap(d => d.numbers))).sort((a, b) => a - b)
+                const topWinningParticipationIds = selectedDrawId
+                  ? Object.entries(payouts)
+                      .filter(([, p]) => p && p.amount_won > 0 && p.category === 'TOP')
+                      .map(([pid]) => pid)
+                  : []
+                const topWinningParticipations = ranking.filter(p => topWinningParticipationIds.includes(p.id))
+                const uniqueWinningSets = Array.from(
+                  new Map(
+                    topWinningParticipations.map(p => {
+                      const nums = [...(p.numbers || [])].sort((a, b) => a - b)
+                      return [nums.join(','), nums]
+                    })
+                  ).values()
+                )
+
+                const hasTopWinner = selectedDrawId && uniqueWinningSets.length > 0
+
+                if (!hasTopWinner) return null
 
                 return (
                   <div className="mb-4">
@@ -603,24 +615,24 @@ export default function RankingsPage() {
                           </svg>
                         </div>
                         <h4 className="text-sm font-semibold text-[#1F1F1F]/60 uppercase tracking-wide">
-                          {selectedDrawId ? 'Resultado do Sorteio' : `Resultado Acumulado (${drawsToShow.length} sorteio${drawsToShow.length !== 1 ? 's' : ''})`}
+                          RESULTADO / NÚMEROS SORTEADO
                         </h4>
                       </div>
-                      <div className="flex flex-wrap gap-2">
-                        {allDrawnNums.map(num => (
-                          <span
-                            key={num}
-                            className="inline-flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-[#F4C430] text-[#1F1F1F] font-bold text-sm sm:text-base shadow-sm"
-                          >
-                            {num.toString().padStart(2, '0')}
-                          </span>
+                      
+                          <div className="space-y-4">
+                            {uniqueWinningSets.map((nums, idx) => (
+                              <div key={idx} className="flex flex-wrap gap-3 items-center">
+                            {nums.map(num => (
+                              <span
+                                key={num}
+                                className="inline-flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-[#F4C430] text-[#1F1F1F] font-bold text-sm sm:text-base shadow-sm"
+                              >
+                                {num.toString().padStart(2, '0')}
+                              </span>
+                            ))}
+                          </div>
                         ))}
                       </div>
-                      {!selectedDrawId && drawsToShow.length > 1 && (
-                        <p className="text-xs text-[#1F1F1F]/50 mt-2">
-                          {allDrawnNums.length} numero{allDrawnNums.length !== 1 ? 's' : ''} unico{allDrawnNums.length !== 1 ? 's' : ''} sorteado{allDrawnNums.length !== 1 ? 's' : ''} no total
-                        </p>
-                      )}
                     </div>
                   </div>
                 )
@@ -720,6 +732,9 @@ export default function RankingsPage() {
                                 <div className="text-sm sm:text-base font-bold text-[#1F1F1F] mb-1 truncate">
                                   {entry.userName}
                                 </div>
+                                {entry.ticketCode && (
+                                  <div className="text-xs font-mono text-[#1F1F1F]/60 mb-0.5">{entry.ticketCode}</div>
+                                )}
                                 <div className="text-lg sm:text-xl font-extrabold text-[#1F1F1F]">{entry.score} pts</div>
                               </div>
                             ))}
@@ -739,6 +754,9 @@ export default function RankingsPage() {
                                 <div className="text-base sm:text-lg font-bold text-[#1F1F1F] mb-1 truncate">
                                   {entry.userName}
                                 </div>
+                                {entry.ticketCode && (
+                                  <div className="text-xs font-mono text-[#1F1F1F]/60 mb-0.5">{entry.ticketCode}</div>
+                                )}
                                 <div className="text-xl sm:text-2xl font-extrabold text-[#1F1F1F]">{entry.score} pts</div>
                               </div>
                             ))}
@@ -758,6 +776,9 @@ export default function RankingsPage() {
                                 <div className="text-sm sm:text-base font-bold text-[#1F1F1F] mb-1 truncate">
                                   {entry.userName}
                                 </div>
+                                {entry.ticketCode && (
+                                  <div className="text-xs font-mono text-[#1F1F1F]/60 mb-0.5">{entry.ticketCode}</div>
+                                )}
                                 <div className="text-lg sm:text-xl font-extrabold text-[#1F1F1F]">{entry.score} pts</div>
                               </div>
                             ))}
@@ -813,7 +834,7 @@ export default function RankingsPage() {
                         // Verificar se foram criadas após o sorteio
                         const aAfterDraw = participationsCreatedAfterDraw.has(a.id)
                         const bAfterDraw = participationsCreatedAfterDraw.has(b.id)
-                        
+
                         // Buscar score de cada participação
                         const scoreA = aAfterDraw 
                           ? 0 
@@ -821,7 +842,7 @@ export default function RankingsPage() {
                         const scoreB = bAfterDraw
                           ? 0
                           : (rankingResult.entries.find(e => e.participationId === b.id)?.score || 0)
-                        
+
                         if (scoreB !== scoreA) return scoreB - scoreA
                         return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
                       })
@@ -831,28 +852,28 @@ export default function RankingsPage() {
                           {sortedParticipations.slice(0, 10).map((participation, index) => {
                         // MODIFIQUEI AQUI - Verificar se participação foi criada após o sorteio
                         const wasCreatedAfterDraw = participationsCreatedAfterDraw.has(participation.id)
-                        
+
                         // Buscar entry do rankingResult se existir
                         const entry = rankingResult.entries.find(e => e.participationId === participation.id)
-                        
+
                         // MODIFIQUEI AQUI - Se foi criada após o sorteio, forçar score = 0 e não mostrar acertos
                         const displayScore = wasCreatedAfterDraw ? 0 : (entry?.score || 0)
                         const hitNumbers = wasCreatedAfterDraw ? [] : getHitNumbersForParticipation(participation)
-                        
+
                         // Calcular posição baseada no índice ordenado
                         const position = index + 1
-                        
+
                         // Determinar categoria e medalha (apenas se não foi criada após o sorteio)
                         const scoreCategory = wasCreatedAfterDraw ? 'NONE' : (entry?.category || 'NONE')
                         const medal = wasCreatedAfterDraw ? null : entry?.medal || null
                         const hasMedal = medal !== null
                         const positionLabel = hasMedal ? medal : `#${position}`
-                        
+
                         // Buscar dados do usuário da participação
                         const userName = participation.user?.name || 'Anônimo'
                         const userEmail = participation.user?.email
                         const highlightRow = entry?.highlightRow || false
-                      
+
                         return (
                           <div
                             key={participation.id}

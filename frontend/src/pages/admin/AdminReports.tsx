@@ -10,11 +10,11 @@ import Header from '../../components/Header'
 import Footer from '../../components/Footer'
 import { listAllContests } from '../../services/contestsService'
 import { listDrawsByContestId } from '../../services/drawsService'
-import { getReportData, ReportData } from '../../services/reportsService'
+import { getReportData, getRevenueByPeriod, ReportData } from '../../services/reportsService'
 import { getDrawPayoutSummary, getPayoutsByDraw } from '../../services/payoutsService'
 import { Contest, Draw } from '../../types'
 import { exportToCSV, exportToExcel, exportToPDF } from '../../utils/exportUtils'
-import { calculateRateio, RateioResult } from '../../utils/rateioCalculator'
+import { getAllHitNumbers } from '../../utils/rankingHelpers'
 
 export default function AdminReports() {
   const navigate = useNavigate()
@@ -27,11 +27,9 @@ export default function AdminReports() {
   const [generatingReport, setGeneratingReport] = useState(false)
   const [error, setError] = useState<string | null>(null)
   // MODIFIQUEI AQUI - Estados para filtros e visualizações
-  const [reportType, setReportType] = useState<'full' | 'revenue' | 'rateio'>('full')
+  const [reportType, setReportType] = useState<'full' | 'revenue'>('full')
   const [startDate, setStartDate] = useState<string>('')
   const [endDate, setEndDate] = useState<string>('')
-  const [rateioData, setRateioData] = useState<RateioResult | null>(null)
-  const [showRateio, setShowRateio] = useState(false)
   const [payoutSummary, setPayoutSummary] = useState<any>(null)
   const [payouts, setPayouts] = useState<Record<string, any>>({})
 
@@ -155,7 +153,16 @@ export default function AdminReports() {
     setGeneratingReport(true)
     setError(null)
     try {
-      const data = await getReportData(selectedContestId, selectedDrawId || undefined)
+      let data = await getReportData(selectedContestId, selectedDrawId || undefined)
+      // Para relatório de Arrecadação com filtro de datas, buscar arrecadação por período
+      if (reportType === 'revenue' && (startDate || endDate)) {
+        const revenueByPeriod = await getRevenueByPeriod(
+          selectedContestId,
+          startDate || undefined,
+          endDate || undefined
+        )
+        data = { ...data, revenueByPeriod }
+      }
       setReportData(data)
       
       // MODIFIQUEI AQUI - Buscar payouts reais do sorteio selecionado (seguindo regra do RankingPage)
@@ -184,33 +191,6 @@ export default function AdminReports() {
         setPayoutSummary(null)
         setPayouts({})
       }
-      
-      // MODIFIQUEI AQUI - Calcular rateio se houver sorteios, usando regras do concurso (para visualização)
-      if (data.draws.length > 0 && data.participations.some(p => p.current_score > 0)) {
-        // Buscar informações do concurso para usar percentuais configurados
-        const contest = contests.find(c => c.id === selectedContestId)
-        const rateioConfig = contest ? {
-          maiorPontuacao: contest.first_place_pct || 65,
-          segundaMaiorPontuacao: contest.second_place_pct || 10,
-          menorPontuacao: contest.lowest_place_pct || 7,
-          taxaAdministrativa: contest.admin_fee_pct || 18,
-        } : undefined
-
-        const rateio = calculateRateio(
-          data.participations.map(p => ({
-            current_score: p.current_score,
-            user_id: p.user_id,
-            id: p.id,
-            ticket_code: p.ticket_code,
-            user: p.user,
-          })),
-          data.totalRevenue,
-          rateioConfig
-        )
-        setRateioData(rateio)
-      } else {
-        setRateioData(null)
-      }
     } catch (err) {
       console.error('Erro ao gerar relatório:', err)
       setError(err instanceof Error ? err.message : 'Erro ao gerar relatório')
@@ -219,15 +199,15 @@ export default function AdminReports() {
     }
   }
 
-  // MODIFIQUEI AQUI - Funções de exportação
+  // Funções de exportação - passam reportType para gerar arquivo adequado
   const handleExportCSV = () => {
     if (!reportData) return
-    exportToCSV(reportData)
+    exportToCSV(reportData, reportType)
   }
 
   const handleExportExcel = () => {
     if (!reportData) return
-    exportToExcel(reportData)
+    exportToExcel(reportData, reportType)
   }
 
   const handleExportPDF = async () => {
@@ -256,8 +236,7 @@ export default function AdminReports() {
       }
     }
     
-    // MODIFIQUEI AQUI - Passar payouts reais e summary para o PDF
-    exportToPDF(reportData, payoutSummaryToExport, payoutsToExport)
+    exportToPDF(reportData, payoutSummaryToExport, payoutsToExport, reportType)
   }
 
   const formatDate = (dateString: string) => {
@@ -327,16 +306,6 @@ export default function AdminReports() {
                 }`}
               >
                 Arrecadação
-              </button>
-              <button
-                onClick={() => setReportType('rateio')}
-                className={`px-4 py-2 rounded-xl font-semibold transition-all ${
-                  reportType === 'rateio'
-                    ? 'bg-gradient-to-r from-[#1E7F43] to-[#3CCB7F] text-white'
-                    : 'bg-[#F9F9F9] text-[#1F1F1F] hover:bg-[#E5E5E5]'
-                }`}
-              >
-                Rateio
               </button>
             </div>
           </div>
@@ -463,8 +432,8 @@ export default function AdminReports() {
                     </p>
                   )}
                   {reportData.draw && (
-                    <p className="text-sm text-[#1F1F1F]/70">
-                      Sorteio: {reportData.draw.code || `Sorteio ${formatDate(reportData.draw.draw_date)}`}
+                    <p className="text-xs text-[#1F1F1F]/60 font-mono mb-1">
+                      Código do Sorteio: {reportData.draw.code || `Sorteio ${formatDate(reportData.draw.draw_date)}`}
                     </p>
                   )}
                   <p className="text-xs text-[#1F1F1F]/60 mt-1">
@@ -524,9 +493,88 @@ export default function AdminReports() {
                   <p className="text-2xl font-bold text-[#1E7F43]">{reportData.draws.length}</p>
                 </div>
               </div>
+
+              {/* Resumo Financeiro (TOP, 2º, Menor, Taxa Admin com %) - apenas no Arrecadação */}
+              {reportType === 'revenue' && (() => {
+                const contest = reportData.contest as { admin_fee_pct?: number; first_place_pct?: number; second_place_pct?: number; lowest_place_pct?: number }
+                const adminPct = Number(contest?.admin_fee_pct) || 18
+                const topPct = Number(contest?.first_place_pct) || 65
+                const secondPct = Number(contest?.second_place_pct) || 10
+                const lowestPct = Number(contest?.lowest_place_pct) || 7
+                const total = reportData.totalRevenue || 0
+                const adminAmount = (total * adminPct) / 100
+                const totalTop = (total * topPct) / 100
+                const totalSecond = (total * secondPct) / 100
+                const totalLowest = (total * lowestPct) / 100
+                const fmt = (v: number) => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                return (
+                  <div className="p-6 border-t border-[#E5E5E5]">
+                    <h3 className="text-lg font-bold text-[#1F1F1F] mb-4">Resumo Financeiro</h3>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div className="bg-[#F9F9F9] rounded-xl p-4 border border-[#E5E5E5]">
+                        <p className="text-xs text-[#1F1F1F]/70 mb-1">TOP 🥇</p>
+                        <p className="text-xl font-bold text-[#1F1F1F]">R$ {fmt(totalTop)}</p>
+                        <p className="text-xs text-[#1F1F1F]/60 mt-1">{topPct}%</p>
+                      </div>
+                      <div className="bg-[#F9F9F9] rounded-xl p-4 border border-[#E5E5E5]">
+                        <p className="text-xs text-[#1F1F1F]/70 mb-1">2º 🥈</p>
+                        <p className="text-xl font-bold text-[#1F1F1F]">R$ {fmt(totalSecond)}</p>
+                        <p className="text-xs text-[#1F1F1F]/60 mt-1">{secondPct}%</p>
+                      </div>
+                      <div className="bg-[#F9F9F9] rounded-xl p-4 border border-[#E5E5E5]">
+                        <p className="text-xs text-[#1F1F1F]/70 mb-1">Menor 🥉</p>
+                        <p className="text-xl font-bold text-[#1F1F1F]">R$ {fmt(totalLowest)}</p>
+                        <p className="text-xs text-[#1F1F1F]/60 mt-1">{lowestPct}%</p>
+                      </div>
+                      <div className="bg-[#F9F9F9] rounded-xl p-4 border-2 border-[#1E7F43]">
+                        <p className="text-xs text-[#1F1F1F]/70 mb-1">Taxa Admin 📋</p>
+                        <p className="text-xl font-bold text-[#1E7F43]">R$ {fmt(adminAmount)}</p>
+                        <p className="text-xs text-[#1F1F1F]/60 mt-1">{adminPct}%</p>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })()}
+
+              {/* Resultado / Números sorteados - só no Completo e quando houver ganhador TOP */}
+              {reportType === 'full' && (() => {
+                const topWinningIds = Object.entries(payouts)
+                  .filter(([, p]) => p && p.amount_won > 0 && p.category === 'TOP')
+                  .map(([pid]) => pid)
+                const topWinningParticipations = reportData.participations.filter(p => topWinningIds.includes(p.id))
+                const uniqueWinningSets = Array.from(
+                  new Map(
+                    topWinningParticipations.map(p => {
+                      const nums = [...(p.numbers || [])].sort((a, b) => a - b)
+                      return [nums.join(','), nums]
+                    })
+                  ).values()
+                )
+                if (uniqueWinningSets.length === 0) return null
+                return (
+                  <div className="p-6 border-t border-[#E5E5E5]">
+                    <h3 className="text-lg font-bold text-[#1F1F1F] mb-2">RESULTADO / NÚMEROS SORTEADO</h3>
+                    <div className="space-y-3">
+                      {uniqueWinningSets.map((nums, idx) => (
+                        <div key={idx} className="flex flex-wrap gap-3">
+                          {nums.map(num => (
+                            <span
+                              key={num}
+                              className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-[#1E7F43] text-white font-bold text-sm"
+                            >
+                              {num.toString().padStart(2, '0')}
+                            </span>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })()}
             </div>
 
-            {/* Lista de Participantes */}
+            {/* Lista de Participantes - só no Completo */}
+            {reportType === 'full' && (
             <div className="p-6">
               <h3 className="text-xl font-bold text-[#1F1F1F] mb-4">
                 Lista de Participantes ({reportData.participations.length})
@@ -559,14 +607,36 @@ export default function AdminReports() {
                         </td>
                         <td className="py-3 px-4">
                           <div className="flex flex-wrap gap-1">
-                            {participation.numbers.map((num, idx) => (
-                              <span
-                                key={idx}
-                                className="px-2 py-1 bg-[#F4C430] text-[#1F1F1F] rounded text-xs font-bold"
-                              >
-                                {num.toString().padStart(2, '0')}
-                              </span>
-                            ))}
+                            {(() => {
+                              const drawsSorted = [...(reportData?.draws || [])].sort(
+                                (a, b) => new Date(a.draw_date).getTime() - new Date(b.draw_date).getTime()
+                              )
+                              const drawsToUse = selectedDrawId
+                                ? (() => {
+                                    const idx = drawsSorted.findIndex(d => d.id === selectedDrawId)
+                                    return idx >= 0 ? drawsSorted.slice(0, idx + 1) : drawsSorted
+                                  })()
+                                : drawsSorted
+                              const hitNumbers = getAllHitNumbers(
+                                participation.numbers || [],
+                                drawsToUse,
+                                participation.created_at
+                              )
+                              return (participation.numbers || []).sort((a, b) => a - b).map((num, idx) => {
+                                const isHit = hitNumbers.includes(num)
+                                return (
+                                  <span
+                                    key={idx}
+                                    className={`px-2 py-1 rounded text-xs font-bold ${
+                                      isHit ? 'bg-[#1E7F43] text-white' : 'bg-[#E5E5E5] text-[#1F1F1F]'
+                                    }`}
+                                  >
+                                    {num.toString().padStart(2, '0')}
+                                    {isHit && ' ✓'}
+                                  </span>
+                                )
+                              })
+                            })()}
                           </div>
                         </td>
                         <td className="py-3 px-4">
@@ -587,171 +657,13 @@ export default function AdminReports() {
                 </table>
               </div>
             </div>
-
-            {/* MODIFIQUEI AQUI - Visualização de Rateio com regra do ranking aplicada */}
-            {rateioData && (
-              <div className="p-6 border-t border-[#E5E5E5]">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-xl font-bold text-[#1F1F1F]">
-                    Rateio de Prêmios
-                  </h3>
-                  {rateioData.ganhadores.length > 0 && (
-                    <button
-                      onClick={() => setShowRateio(!showRateio)}
-                      className="text-sm text-[#1E7F43] hover:text-[#3CCB7F] font-semibold"
-                    >
-                      {showRateio ? 'Ocultar' : 'Ver Detalhes'}
-                    </button>
-                  )}
-                </div>
-                
-                {/* MODIFIQUEI AQUI - Aplicar regra do ranking: filtrar apenas categorias com ganhadores */}
-                {(() => {
-                  // Filtrar distribuições que realmente têm ganhadores (quantidadeGanhadores > 0)
-                  const distribuicoesComGanhadores = rateioData.distribuicao.filter(
-                    (dist: any) => dist.quantidadeGanhadores > 0
-                  )
-                  
-                  // Verificar se há ganhadores após filtrar
-                  const hasGanhadores = distribuicoesComGanhadores.length > 0
-                  
-                  if (!hasGanhadores) {
-                    return (
-                      <div className="bg-yellow-50 border-2 border-yellow-200 rounded-xl p-6 text-center">
-                        <div className="inline-flex items-center justify-center w-16 h-16 bg-yellow-100 rounded-full mb-4">
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                          </svg>
-                        </div>
-                        <h4 className="text-lg font-bold text-yellow-900 mb-2">
-                          Nenhum Ganhador
-                        </h4>
-                        <p className="text-yellow-800 text-sm">
-                          Não há ganhadores neste concurso. Nenhum participante acertou números suficientes para receber prêmios.
-                        </p>
-                      </div>
-                    )
-                  }
-                  
-                  return (
-                    <>
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                        <div className="bg-gradient-to-br from-[#1E7F43] to-[#3CCB7F] rounded-xl p-4 text-white">
-                          <p className="text-xs opacity-90 mb-1">Total Arrecadado</p>
-                          <p className="text-2xl font-bold">
-                            R$ {rateioData.totalArrecadado.toFixed(2).replace('.', ',')}
-                          </p>
-                        </div>
-                        <div className="bg-gradient-to-br from-[#F4C430] to-[#FFD700] rounded-xl p-4 text-[#1F1F1F]">
-                          <p className="text-xs opacity-70 mb-1">Valor de Premiação</p>
-                          <p className="text-2xl font-bold">
-                            R$ {rateioData.valorPremiacao.toFixed(2).replace('.', ',')}
-                          </p>
-                        </div>
-                        <div className="bg-[#F9F9F9] rounded-xl p-4 border-2 border-[#E5E5E5]">
-                          <p className="text-xs text-[#1F1F1F]/70 mb-1">Taxa Administrativa</p>
-                          <p className="text-2xl font-bold text-[#1F1F1F]">
-                            R$ {rateioData.taxaAdministrativa.toFixed(2).replace('.', ',')}
-                          </p>
-                          <p className="text-xs text-[#1F1F1F]/60 mt-1">18%</p>
-                        </div>
-                      </div>
-
-                      {showRateio && (
-                        <div className="space-y-4">
-                          {/* MODIFIQUEI AQUI - Distribuição por Categoria: mostrar apenas categorias com ganhadores */}
-                          <div>
-                            <h4 className="font-semibold text-[#1F1F1F] mb-3">Distribuição por Categoria</h4>
-                            <div className="space-y-2">
-                              {distribuicoesComGanhadores.map((dist: any, idx: number) => (
-                                <div key={idx} className="bg-[#F9F9F9] rounded-xl p-4">
-                                  <div className="flex items-center justify-between mb-2">
-                                    <div>
-                                      <p className="font-semibold text-[#1F1F1F]">{dist.categoria}</p>
-                                      <p className="text-xs text-[#1F1F1F]/70">
-                                        {dist.quantidadeGanhadores} ganhador(es) com {dist.pontuacao} acerto(s)
-                                      </p>
-                                    </div>
-                                    <div className="text-right">
-                                      <p className="text-lg font-bold text-[#1E7F43]">
-                                        R$ {dist.valorTotal.toFixed(2).replace('.', ',')}
-                                      </p>
-                                      <p className="text-xs text-[#1F1F1F]/60">{dist.percentual}%</p>
-                                    </div>
-                                  </div>
-                                  <div className="mt-2 pt-2 border-t border-[#E5E5E5]">
-                                    <p className="text-xs text-[#1F1F1F]/70">
-                                      Valor por ganhador: <span className="font-semibold text-[#3CCB7F]">
-                                        R$ {dist.valorPorGanhador.toFixed(2).replace('.', ',')}
-                                      </span>
-                                    </p>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-
-                          {/* MODIFIQUEI AQUI - Lista de Ganhadores: mostrar apenas ganhadores com prêmio > 0 */}
-                          <div>
-                            <h4 className="font-semibold text-[#1F1F1F] mb-3">Ganhadores</h4>
-                            <div className="overflow-x-auto">
-                              <table className="w-full text-sm">
-                                <thead>
-                                  <tr className="border-b border-[#E5E5E5]">
-                                    <th className="text-left py-2 px-3 font-semibold text-[#1F1F1F]">Nome</th>
-                                    <th className="text-left py-2 px-3 font-semibold text-[#1F1F1F]">Código/Ticket</th>
-                                    <th className="text-left py-2 px-3 font-semibold text-[#1F1F1F]">Pontuação</th>
-                                    <th className="text-left py-2 px-3 font-semibold text-[#1F1F1F]">Categoria</th>
-                                    <th className="text-left py-2 px-3 font-semibold text-[#1F1F1F]">Prêmio</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {rateioData.ganhadores
-                                    .filter((ganhador: any) => ganhador.valorPremio > 0)
-                                    .map((ganhador: any, idx: number) => (
-                                      <tr key={idx} className="border-b border-[#E5E5E5]/50 hover:bg-[#F9F9F9]">
-                                        <td className="py-2 px-3">{ganhador.userName}</td>
-                                        <td className="py-2 px-3">
-                                          {ganhador.ticketCode ? (
-                                            <span className="font-mono text-xs bg-[#1E7F43]/10 text-[#1E7F43] px-2 py-1 rounded">
-                                              {ganhador.ticketCode}
-                                            </span>
-                                          ) : (
-                                            'N/A'
-                                          )}
-                                        </td>
-                                        <td className="py-2 px-3">
-                                          <span className="font-semibold text-[#1E7F43]">{ganhador.pontuacao}</span>
-                                        </td>
-                                        <td className="py-2 px-3">
-                                          <span className="px-2 py-1 bg-[#F4C430]/20 text-[#F4C430] rounded text-xs font-semibold">
-                                            {ganhador.categoria}
-                                          </span>
-                                        </td>
-                                        <td className="py-2 px-3">
-                                          <span className="font-bold text-[#3CCB7F]">
-                                            R$ {ganhador.valorPremio.toFixed(2).replace('.', ',')}
-                                          </span>
-                                        </td>
-                                      </tr>
-                                    ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </>
-                  )
-                })()}
-              </div>
             )}
 
-            {/* MODIFIQUEI AQUI - Gráfico de Arrecadação por Período */}
+            {/* Arrecadação por Período - mesmo design do Completo */}
             {reportData.revenueByPeriod && reportData.revenueByPeriod.length > 0 && (
               <div className="p-6 border-t border-[#E5E5E5]">
                 <h3 className="text-xl font-bold text-[#1F1F1F] mb-4">
-                  Arrecadação por Período (Últimos 30 dias)
+                  Arrecadação por Período{startDate || endDate ? ' (Período selecionado)' : ' (Últimos 30 dias)'}
                 </h3>
                 <div className="bg-[#F9F9F9] rounded-xl p-4">
                   <div className="space-y-2">
@@ -787,8 +699,8 @@ export default function AdminReports() {
               </div>
             )}
 
-            {/* Histórico de Sorteios (se houver) */}
-            {reportData.draws.length > 0 && (
+            {/* Histórico de Sorteios - só no Completo */}
+            {reportType === 'full' && reportData.draws.length > 0 && (
               <div className="p-6 border-t border-[#E5E5E5]">
                 <h3 className="text-xl font-bold text-[#1F1F1F] mb-4">
                   Histórico de Sorteios ({reportData.draws.length})
