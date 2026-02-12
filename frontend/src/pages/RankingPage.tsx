@@ -462,16 +462,12 @@ export default function RankingPage() {
               )}
             </div>
 
-            {/* Números Premiados */}
+            {/* Números Premiados - mostra SO os numeros do sorteio selecionado */}
             {(() => {
-              const drawsSortedAscLocal = [...draws].sort(
-                (a, b) => new Date(a.draw_date).getTime() - new Date(b.draw_date).getTime()
-              )
-              const idx = selectedDrawId ? drawsSortedAscLocal.findIndex(d => d.id === selectedDrawId) : -1
-              const drawsUpTo = idx === -1 ? drawsSortedAscLocal : drawsSortedAscLocal.slice(0, idx + 1)
-              const drawnNums = Array.from(
-                new Set(drawsUpTo.flatMap(d => d.numbers))
-              ).sort((a, b) => a - b)
+              const selectedDraw = selectedDrawId ? draws.find(d => d.id === selectedDrawId) : null
+              const drawnNums = selectedDraw
+                ? [...selectedDraw.numbers].sort((a, b) => a - b)
+                : Array.from(new Set(draws.flatMap(d => d.numbers))).sort((a, b) => a - b)
 
               return drawnNums.length > 0 ? (
                 <div className="mb-4">

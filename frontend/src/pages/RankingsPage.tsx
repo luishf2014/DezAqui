@@ -586,10 +586,12 @@ export default function RankingsPage() {
 
               {/* Resultado do Sorteio - Números sorteados */}
               {draws.length > 0 && (() => {
-                const drawsToShow = getDrawsUpToSelected()
-                const allDrawnNums = Array.from(
-                  new Set(drawsToShow.flatMap(d => d.numbers))
-                ).sort((a, b) => a - b)
+                // Se um sorteio especifico esta selecionado, mostrar SO os numeros daquele sorteio
+                // Se "Todos", mostrar numeros unicos acumulados de todos os sorteios
+                const selectedDraw = selectedDrawId ? draws.find(d => d.id === selectedDrawId) : null
+                const allDrawnNums = selectedDraw
+                  ? [...selectedDraw.numbers].sort((a, b) => a - b)
+                  : Array.from(new Set(draws.flatMap(d => d.numbers))).sort((a, b) => a - b)
 
                 return (
                   <div className="mb-4">
