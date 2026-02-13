@@ -336,11 +336,13 @@ export default function CartPage() {
       if (paymentMethod === 'pix') {
         // Para Pix, criar um único pagamento com o valor total
         // Usamos a primeira participação como referência
-        const firstParticipation = participations[0]
+        const firstParticipation = items[0]
+        const cartContestId = firstItem?.contestId ? String(firstItem.contestId) : ''
 
         const pixData = await createPixPayment({
           // MODIFIQUEI AQUI - enviar contestId para passar no body_validation da Edge Function
           contestId: cartContestId,
+          selectedNumbers: firstItem.selectedNumbers,
 
           participationId: firstParticipation.id,
           ticketCode: ticketCodes.join(', '),
