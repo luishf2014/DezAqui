@@ -127,6 +127,11 @@ export interface CreateContestInput {
   second_place_pct?: number
   lowest_place_pct?: number
   admin_fee_pct?: number
+  // MODIFIQUEI AQUI - Campos informativos do concurso oficial
+  official_contest_name?: string | null
+  official_contest_code?: string | null
+  official_contest_numbers?: string | null
+  official_contest_date?: string | null
 }
 
 export async function createContest(input: CreateContestInput): Promise<Contest> {
@@ -203,6 +208,11 @@ export interface UpdateContestInput {
   second_place_pct?: number
   lowest_place_pct?: number
   admin_fee_pct?: number
+  // MODIFIQUEI AQUI - Campos informativos do concurso oficial
+  official_contest_name?: string | null
+  official_contest_code?: string | null
+  official_contest_numbers?: string | null
+  official_contest_date?: string | null
 }
 
 export async function updateContest(

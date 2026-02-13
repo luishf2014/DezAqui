@@ -7,14 +7,17 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { getContestById } from '../services/contestsService'
+import { listOfficialRefsByContestId } from '../services/contestOfficialRefsService'
 import { getContestRanking } from '../services/participationsService'
 import { listDrawsByContestId } from '../services/drawsService'
 import { getDrawPayoutSummary, getPayoutsByDraw } from '../services/payoutsService'
-import { Contest, Participation, Draw } from '../types'
+import { Contest, Participation, Draw, ContestOfficialRef } from '../types'
 import { getAllHitNumbers } from '../utils/rankingHelpers'
 // MODIFIQUEI AQUI - Não usar getPayoutCategory para medalha/categoria/prêmio (agora é por SCORE)
 // import { getPayoutCategory } from '../utils/payoutCategoryHelpers'
 import { getContestState } from '../utils/contestHelpers'
+import { formatOfficialRefDate } from '../utils/contestOfficialRefUtils'
+import OfficialContestNumbersBadges from '../components/OfficialContestNumbersBadges'
 import Header from '../components/Header'
 import Footer from '../components/Footer'
 import CustomSelect from '../components/CustomSelect'
@@ -34,6 +37,7 @@ export default function RankingPage() {
   const [filter, setFilter] = useState<'all' | 'premiados' | 'TOP' | 'SECOND' | 'LOWEST' | 'nao_premiados'>('all')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [officialRefs, setOfficialRefs] = useState<ContestOfficialRef[]>([])
 
   useEffect(() => {
     async function loadRankingData() {
@@ -49,10 +53,11 @@ export default function RankingPage() {
 
         console.log('MODIFIQUEI AQUI [RankingPage] loadRankingData START - contestId=', id)
 
-        const [contestData, rankingData, drawsData] = await Promise.all([
+        const [contestData, rankingData, drawsData, refsData] = await Promise.all([
           getContestById(id),
           getContestRanking(id),
           listDrawsByContestId(id),
+          listOfficialRefsByContestId(id).catch(() => []),
         ])
 
         console.log('MODIFIQUEI AQUI [RankingPage] contestData exists=', !!contestData)
@@ -78,6 +83,7 @@ export default function RankingPage() {
         }
 
         setContest(contestData)
+        setOfficialRefs(refsData || [])
         console.log('AQUI[RankingPage] contest keys=', Object.keys(contestData || {}))
         console.log('AQUI[RankingPage] contest=', contestData)
 
@@ -411,6 +417,59 @@ export default function RankingPage() {
                 <span className="px-3 py-1 bg-[#1E7F43] text-white rounded-full text-xs sm:text-sm font-mono font-semibold">
                   Código do Concurso: {contest.contest_code}
                 </span>
+              </div>
+            )}
+
+            {/* Bloco Concurso Oficial - padronizado com o sistema */}
+            {(officialRefs.length > 0 || (contest.official_contest_name && contest.official_contest_code)) && (
+              <div className="mb-4 rounded-xl border border-[#E5E5E5] bg-[#F9F9F9]/50 p-4">
+                <div className="flex items-center gap-2 sm:gap-3 mb-3">
+                  <div className="p-1.5 sm:p-2 bg-[#1E7F43]/10 rounded-lg shrink-0">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 sm:h-5 sm:w-5 text-[#1E7F43]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7a1.994 1.994 0 01-.586-1.414V7a4 4 0 014-4z" />
+                    </svg>
+                  </div>
+                  <h4 className="text-xs sm:text-sm font-semibold text-[#1F1F1F]/80 uppercase tracking-wide">Concurso Oficial</h4>
+                </div>
+                <div className="space-y-3">
+                  {officialRefs.length > 0
+                    ? officialRefs.map((ref) => (
+                        <div key={ref.id} className="p-4 bg-[#1E7F43]/10 rounded-xl border border-[#1E7F43]/20 hover:border-[#1E7F43]/30 transition-colors">
+                          <p className="text-base font-bold text-[#1F1F1F]">
+                            Concurso {ref.official_contest_code} • {ref.official_contest_name}
+                          </p>
+                          {ref.official_contest_numbers && (
+                            <OfficialContestNumbersBadges numbers={ref.official_contest_numbers} />
+                          )}
+                          {ref.official_contest_date && (
+                            <p className="text-sm text-[#1F1F1F]/60 mt-1 flex items-center gap-1">
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                              </svg>
+                              {formatOfficialRefDate(ref.official_contest_date)}
+                            </p>
+                          )}
+                        </div>
+                      ))
+                    : (
+                      <div className="p-4 bg-[#1E7F43]/10 rounded-xl border border-[#1E7F43]/20">
+                        <p className="text-base font-bold text-[#1F1F1F]">
+                          Concurso {contest.official_contest_code} • {contest.official_contest_name}
+                        </p>
+{contest.official_contest_numbers && (
+                        <OfficialContestNumbersBadges numbers={contest.official_contest_numbers} />
+                      )}
+                        {contest.official_contest_date && (
+                          <p className="text-sm text-[#1F1F1F]/60 mt-1 flex items-center gap-1">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                            {formatOfficialRefDate(contest.official_contest_date)}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                </div>
               </div>
             )}
 

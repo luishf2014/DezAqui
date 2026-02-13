@@ -44,9 +44,25 @@ export interface Contest {
   admin_fee_pct?: number
   // MODIFIQUEI AQUI - Código único do concurso (ex: CG-20250124-A1B2C3)
   contest_code?: string | null
+  // MODIFIQUEI AQUI - Campos informativos do concurso oficial (Mega-Sena/Loto etc.)
+  official_contest_name?: string | null
+  official_contest_code?: string | null
+  official_contest_numbers?: string | null
+  official_contest_date?: string | null
   created_by: string
   created_at: string
   updated_at: string
+}
+
+// MODIFIQUEI AQUI - Referência de concurso oficial (múltiplas por bolão, informativas)
+export interface ContestOfficialRef {
+  id: string
+  contest_id: string
+  official_contest_name: string
+  official_contest_code: string
+  official_contest_numbers?: string | null
+  official_contest_date?: string | null
+  created_at: string
 }
 
 // ============================================

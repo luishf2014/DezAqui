@@ -10,9 +10,10 @@ import Header from '../../components/Header'
 import Footer from '../../components/Footer'
 import CustomSelect from '../../components/CustomSelect'
 import { listAllContests } from '../../services/contestsService'
+import { listOfficialRefsByContestId, createOfficialRef, updateOfficialRef, deleteOfficialRef } from '../../services/contestOfficialRefsService'
 import { listAllDraws, createDraw, updateDraw, deleteDraw, CreateDrawInput, UpdateDrawInput } from '../../services/drawsService'
 import { supabase } from '../../lib/supabase'
-import { Contest, Draw } from '../../types'
+import { Contest, Draw, ContestOfficialRef } from '../../types'
 
 export default function AdminDraws() {
   const navigate = useNavigate()
@@ -37,12 +38,42 @@ export default function AdminDraws() {
   const [useCustomNumbersCount, setUseCustomNumbersCount] = useState(false)
   const [savingDraw, setSavingDraw] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null)
+  // MODIFIQUEI AQUI - Modal Concurso Oficial (informativo, antes do sorteio, sem vínculo com draws)
+  const [showOfficialContestFormModal, setShowOfficialContestFormModal] = useState(false)
+  const [officialContestForm, setOfficialContestForm] = useState({
+    contest_id: '',
+    official_contest_name: '',
+    official_contest_code: '',
+    official_contest_numbers: '',
+    official_contest_date: '',
+  })
+  const [savingOfficialContest, setSavingOfficialContest] = useState(false)
+  // MODIFIQUEI AQUI - Lista de refs do concurso selecionado no modal (para adicionar novos sem remover)
+  const [officialRefs, setOfficialRefs] = useState<ContestOfficialRef[]>([])
+  const [loadingOfficialRefs, setLoadingOfficialRefs] = useState(false)
+  const [deleteRefConfirm, setDeleteRefConfirm] = useState<string | null>(null)
+  const [editingRefId, setEditingRefId] = useState<string | null>(null)
 
   // Estado removido - quantidade será sempre baseada no concurso selecionado
 
   useEffect(() => {
     loadData()
   }, [])
+
+  // MODIFIQUEI AQUI - Carregar refs quando seleciona concurso no modal
+  useEffect(() => {
+    if (!showOfficialContestFormModal || !officialContestForm.contest_id) {
+      setOfficialRefs([])
+      return
+    }
+    let cancelled = false
+    setLoadingOfficialRefs(true)
+    listOfficialRefsByContestId(officialContestForm.contest_id)
+      .then((data) => { if (!cancelled) setOfficialRefs(data) })
+      .catch(() => { if (!cancelled) setOfficialRefs([]) })
+      .finally(() => { if (!cancelled) setLoadingOfficialRefs(false) })
+    return () => { cancelled = true }
+  }, [showOfficialContestFormModal, officialContestForm.contest_id])
 
   const loadDraws = useCallback(async () => {
     try {
@@ -574,6 +605,30 @@ export default function AdminDraws() {
     })
   }
 
+  // MODIFIQUEI AQUI - Formatar data para dd/mm/aaaa e números com auto-espaçamento
+  const formatOfficialRefDate = (s: string | null | undefined): string => {
+    if (!s?.trim()) return ''
+    const d = new Date(s)
+    if (isNaN(d.getTime())) return s
+    return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  }
+  const formatNumbersWithSpaces = (s: string): string => {
+    const digits = s.replace(/\D/g, '')
+    if (digits.length === 0) return ''
+    return digits.match(/.{1,2}/g)?.map(n => n.padStart(2, '0')).join(' ') ?? ''
+  }
+  const parseDateForInput = (s: string | null | undefined): string => {
+    if (!s?.trim()) return ''
+    let d = new Date(s)
+    if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10)
+    const m = String(s).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+    if (m) {
+      d = new Date(parseInt(m[3], 10), parseInt(m[2], 10) - 1, parseInt(m[1], 10))
+      if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10)
+    }
+    return ''
+  }
+
   return (
     <div className="min-h-screen bg-[#F9F9F9] flex flex-col">
       <Header />
@@ -639,6 +694,27 @@ export default function AdminDraws() {
                       ]}
                     />
                   </div>
+                  {/* MODIFIQUEI AQUI - Botão Concurso Oficial (igual Novo Sorteio - abre modal com select + inputs) */}
+                  <button
+                    onClick={() => {
+                      const c = filterContestId !== 'all' ? contests.find(x => x.id === filterContestId) : null
+                      setOfficialContestForm({
+                        contest_id: c?.id || '',
+                        official_contest_name: c?.official_contest_name || '',
+                        official_contest_code: c?.official_contest_code || '',
+                        official_contest_numbers: c?.official_contest_numbers || '',
+                        official_contest_date: c?.official_contest_date || '',
+                      })
+                      setShowOfficialContestFormModal(true)
+                    }}
+                    className="shrink-0 h-[42px] px-6 bg-[#1E7F43] text-white rounded-xl hover:bg-[#3CCB7F] transition-colors font-semibold flex items-center justify-center gap-2"
+                    title="Lançar/editar concurso oficial"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7a1.994 1.994 0 01-.586-1.414V7a4 4 0 014-4z" />
+                    </svg>
+                    Concurso Oficial
+                  </button>
                   <button
                     onClick={() => handleOpenDrawModal()}
                     className="shrink-0 h-[42px] px-6 bg-[#1E7F43] text-white rounded-xl hover:bg-[#3CCB7F] transition-colors font-semibold flex items-center justify-center gap-2"
@@ -778,7 +854,7 @@ export default function AdminDraws() {
                               </div>
                             </td>
                             <td className="py-3 px-4">
-                              <div className="flex items-center gap-2">
+                              <div className="flex flex-wrap items-center gap-2">
                                 <button
                                   onClick={() => handleOpenDrawModal(draw)}
                                   className="px-3 py-1 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-xs font-semibold"
@@ -1161,6 +1237,274 @@ export default function AdminDraws() {
                     <button
                       onClick={() => handleDeleteDraw(showDeleteConfirm)}
                       className="px-6 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors font-semibold"
+                    >
+                      Excluir
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* MODIFIQUEI AQUI - Modal Concurso Oficial (informativo, sem vínculo com sorteios) */}
+            {showOfficialContestFormModal && (
+              <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                <div className="bg-white rounded-2xl shadow-2xl border border-[#E5E5E5] max-w-lg w-full animate-[scaleIn_0.3s_ease-out] max-h-[90vh] flex flex-col overflow-hidden">
+                  <div className="flex items-center justify-between gap-3 p-6 pb-4 shrink-0">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-[#1E7F43]/10 rounded-xl">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-[#1E7F43]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7a1.994 1.994 0 01-.586-1.414V7a4 4 0 014-4z" />
+                        </svg>
+                      </div>
+                      <div>
+                        <h3 className="text-xl font-bold text-[#1F1F1F]">Lançar Concurso Oficial</h3>
+                        <p className="text-sm text-[#1F1F1F]/70 mt-0.5">
+                          Informativo, sem vínculo com sorteios.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => { setShowOfficialContestFormModal(false); setDeleteRefConfirm(null); setEditingRefId(null) }}
+                      className="p-2 text-[#1F1F1F]/60 hover:text-[#1F1F1F] hover:bg-[#F9F9F9] rounded-lg transition-all duration-200"
+                      title="Fechar"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                  <div className="flex-1 min-h-0 overflow-y-auto px-6">
+                  <div className="space-y-4 mb-4">
+                    <div className="bg-[#F9F9F9] rounded-xl border border-[#E5E5E5] p-4">
+                      <label className="block text-sm font-semibold text-[#1F1F1F] mb-2">Concurso (bolão)</label>
+                      <CustomSelect
+                        value={officialContestForm.contest_id}
+                        onChange={(v) => {
+                          setOfficialContestForm({
+                            contest_id: v,
+                            official_contest_name: '',
+                            official_contest_code: '',
+                            official_contest_numbers: '',
+                            official_contest_date: '',
+                          })
+                        }}
+                        options={[
+                          { value: '', label: '-- Selecione um concurso --' },
+                          ...contests.map((c) => ({
+                            value: c.id,
+                            label: `${c.name}${c.contest_code ? ` (${c.contest_code})` : ''}`,
+                          })),
+                        ]}
+                      />
+                    </div>
+                    {officialContestForm.contest_id && (
+                      <>
+                        <div className="rounded-xl border border-[#E5E5E5] bg-white shadow-sm overflow-hidden">
+                          <div className="px-4 py-3 bg-[#1E7F43]/5 border-b border-[#E5E5E5]">
+                            <h4 className="text-sm font-semibold text-[#1F1F1F]">Já lançados</h4>
+                          </div>
+                          <div className="p-4">
+                            {loadingOfficialRefs ? (
+                              <p className="text-sm text-[#1F1F1F]/60">Carregando...</p>
+                            ) : officialRefs.length === 0 ? (
+                              <p className="text-sm text-[#1F1F1F]/60">Nenhum ainda. Adicione abaixo.</p>
+                            ) : (
+                              <div className="space-y-3">
+                                {officialRefs.map((ref) => (
+                                  <div key={ref.id} className="rounded-xl border border-[#E5E5E5] bg-[#F9F9F9] p-4 hover:border-[#1E7F43]/30 transition-colors">
+                                    <div className="flex items-start justify-between gap-3">
+                                      <div className="flex-1 min-w-0">
+                                        <p className="text-base font-bold text-[#1F1F1F]">
+                                          {ref.official_contest_code} • {ref.official_contest_name}
+                                        </p>
+                                        {ref.official_contest_numbers && (
+                                          <p className="text-sm text-[#1F1F1F]/80 mt-1 font-mono">
+                                            {formatNumbersWithSpaces(ref.official_contest_numbers)}
+                                          </p>
+                                        )}
+                                        {ref.official_contest_date && (
+                                          <p className="text-sm text-[#1F1F1F]/60 mt-1 flex items-center gap-1">
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                            </svg>
+                                            {formatOfficialRefDate(ref.official_contest_date)}
+                                          </p>
+                                        )}
+                                      </div>
+                                      <div className="flex gap-2 shrink-0">
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setEditingRefId(ref.id)
+                                            setOfficialContestForm({
+                                              contest_id: officialContestForm.contest_id,
+                                              official_contest_name: ref.official_contest_name,
+                                              official_contest_code: ref.official_contest_code,
+                                              official_contest_numbers: ref.official_contest_numbers || '',
+                                              official_contest_date: ref.official_contest_date || '',
+                                            })
+                                          }}
+                                          className="px-3 py-1.5 bg-[#1E7F43] text-white rounded-lg hover:bg-[#3CCB7F] text-xs font-semibold transition-colors"
+                                          title="Editar"
+                                        >
+                                          Editar
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => setDeleteRefConfirm(ref.id)}
+                                          className="px-3 py-1.5 bg-red-500 text-white rounded-lg hover:bg-red-600 text-xs font-semibold transition-colors"
+                                          title="Excluir"
+                                        >
+                                          Excluir
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <div className="rounded-xl border border-[#E5E5E5] bg-white shadow-sm overflow-hidden">
+                          <div className="px-4 py-3 bg-[#1E7F43]/5 border-b border-[#E5E5E5]">
+                            <h4 className="text-sm font-semibold text-[#1F1F1F]">{editingRefId ? 'Editando' : 'Adicionar novo'}</h4>
+                          </div>
+                          <div className="p-4 space-y-4">
+                            <div>
+                              <label className="block text-sm font-semibold text-[#1F1F1F] mb-2">Nome (ex: Mega-Sena)</label>
+                              <input
+                                type="text"
+                                value={officialContestForm.official_contest_name}
+                                onChange={(e) => setOfficialContestForm(f => ({ ...f, official_contest_name: e.target.value }))}
+                                placeholder="Mega-Sena"
+                                className="w-full px-4 py-3 border border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43] focus:border-transparent"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm font-semibold text-[#1F1F1F] mb-2">Código (ex: 2743)</label>
+                              <input
+                                type="text"
+                                value={officialContestForm.official_contest_code}
+                                onChange={(e) => setOfficialContestForm(f => ({ ...f, official_contest_code: e.target.value }))}
+                                placeholder="2743"
+                                className="w-full px-4 py-3 border border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43] focus:border-transparent"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm font-semibold text-[#1F1F1F] mb-2">Números sorteados</label>
+                              <input
+                                type="text"
+                                value={officialContestForm.official_contest_numbers}
+                                onChange={(e) => {
+                                  const digits = e.target.value.replace(/\D/g, '')
+                                  setOfficialContestForm(f => ({ ...f, official_contest_numbers: formatNumbersWithSpaces(digits) }))
+                                }}
+                                placeholder="010512233759 ou 01 05 12 23 37 59"
+                                className="w-full px-4 py-3 border border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43]"
+                              />
+                              <p className="text-xs text-[#1F1F1F]/50 mt-1">Digite com ou sem espaços — será formatado automaticamente</p>
+                            </div>
+                            <div>
+                              <label className="block text-sm font-semibold text-[#1F1F1F] mb-2">Data (opcional)</label>
+                              <input
+                                type="date"
+                                value={parseDateForInput(officialContestForm.official_contest_date)}
+                                onChange={(e) => setOfficialContestForm(f => ({ ...f, official_contest_date: e.target.value || '' }))}
+                                className="w-full px-4 py-3 border border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43] focus:border-transparent"
+                              />
+                              <p className="text-xs text-[#1F1F1F]/50 mt-1">Exibido como dd/mm/aaaa</p>
+                            </div>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  </div>
+                  <div className="flex justify-end gap-3 p-6 pt-4 shrink-0 border-t border-[#E5E5E5] bg-[#F9F9F9] rounded-b-2xl">
+                    {editingRefId && (
+                      <button
+                        onClick={() => {
+                          setEditingRefId(null)
+                          setOfficialContestForm(f => ({ ...f, official_contest_name: '', official_contest_code: '', official_contest_numbers: '', official_contest_date: '' }))
+                        }}
+                        className="px-6 py-2 bg-gray-300 text-[#1F1F1F] rounded-lg hover:bg-gray-400 font-semibold"
+                      >
+                        Cancelar edição
+                      </button>
+                    )}
+                    <button
+                      onClick={() => { setShowOfficialContestFormModal(false); setDeleteRefConfirm(null); setEditingRefId(null) }}
+                      className="px-6 py-2 bg-gray-300 text-[#1F1F1F] rounded-lg hover:bg-gray-400 font-semibold"
+                    >
+                      Fechar
+                    </button>
+                    <button
+                      onClick={async () => {
+                        if (!officialContestForm.contest_id || !officialContestForm.official_contest_name?.trim() || !officialContestForm.official_contest_code?.trim()) return
+                        setSavingOfficialContest(true)
+                        try {
+                          const payload = {
+                            official_contest_name: officialContestForm.official_contest_name.trim(),
+                            official_contest_code: officialContestForm.official_contest_code.trim(),
+                            official_contest_numbers: officialContestForm.official_contest_numbers?.trim() || null,
+                            official_contest_date: officialContestForm.official_contest_date?.trim() || null,
+                          }
+                          if (editingRefId) {
+                            await updateOfficialRef(editingRefId, payload)
+                            setEditingRefId(null)
+                          } else {
+                            await createOfficialRef({
+                              contest_id: officialContestForm.contest_id,
+                              ...payload,
+                            })
+                          }
+                          const refs = await listOfficialRefsByContestId(officialContestForm.contest_id)
+                          setOfficialRefs(refs)
+                          setOfficialContestForm(f => ({ ...f, official_contest_name: '', official_contest_code: '', official_contest_numbers: '', official_contest_date: '' }))
+                        } catch (err) {
+                          console.error('Erro ao salvar concurso oficial:', err)
+                          setError(err instanceof Error ? err.message : 'Erro ao salvar')
+                        } finally {
+                          setSavingOfficialContest(false)
+                        }
+                      }}
+                      disabled={savingOfficialContest || !officialContestForm.contest_id || !officialContestForm.official_contest_name?.trim() || !officialContestForm.official_contest_code?.trim()}
+                      className="px-6 py-2 bg-[#1E7F43] text-white rounded-lg hover:bg-[#3CCB7F] font-semibold disabled:opacity-50"
+                    >
+                      {savingOfficialContest ? 'Salvando...' : editingRefId ? 'Salvar' : 'Adicionar'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* MODIFIQUEI AQUI - Confirmar exclusão de ref de concurso oficial */}
+            {deleteRefConfirm && (
+              <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
+                <div className="bg-white rounded-2xl p-6 max-w-sm w-full">
+                  <p className="text-[#1F1F1F] mb-4">Excluir esta referência de concurso oficial?</p>
+                  <div className="flex gap-3 justify-end">
+                    <button
+                      onClick={() => setDeleteRefConfirm(null)}
+                      className="px-4 py-2 bg-gray-300 rounded-lg font-semibold"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={async () => {
+                        if (!deleteRefConfirm) return
+                        try {
+                          await deleteOfficialRef(deleteRefConfirm)
+                          if (officialContestForm.contest_id) {
+                            const refs = await listOfficialRefsByContestId(officialContestForm.contest_id)
+                            setOfficialRefs(refs)
+                          }
+                          setDeleteRefConfirm(null)
+                        } catch (err) {
+                          setError(err instanceof Error ? err.message : 'Erro ao excluir')
+                        }
+                      }}
+                      className="px-4 py-2 bg-red-500 text-white rounded-lg font-semibold"
                     >
                       Excluir
                     </button>

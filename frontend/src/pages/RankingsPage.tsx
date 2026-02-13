@@ -9,15 +9,18 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { listActiveContests, listFinishedContests, getContestById } from '../services/contestsService'
+import { listOfficialRefsByContestId } from '../services/contestOfficialRefsService'
 import { getContestRanking } from '../services/participationsService'
 import { listDrawsByContestId } from '../services/drawsService'
 import { getDrawPayoutSummary, getPayoutsByDraw } from '../services/payoutsService'
-import { Contest, Participation, Draw } from '../types'
+import { Contest, Participation, Draw, ContestOfficialRef } from '../types'
 import { calculateRanking, createRankingMap, RankingEntry } from '../utils/rankingCalculator'
 import { getAllHitNumbers } from '../utils/rankingHelpers'
 import { useAuth } from '../contexts/AuthContext'
 import ContestStatusBadge from '../components/ContestStatusBadge'
 import CustomSelect from '../components/CustomSelect'
+import { formatOfficialRefDate } from '../utils/contestOfficialRefUtils'
+import OfficialContestNumbersBadges from '../components/OfficialContestNumbersBadges'
 import Header from '../components/Header'
 import Footer from '../components/Footer'
 
@@ -46,6 +49,7 @@ export default function RankingsPage() {
   const [loading, setLoading] = useState(true)
   const [loadingRanking, setLoadingRanking] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [officialRefs, setOfficialRefs] = useState<ContestOfficialRef[]>([])
 
   // Carregar concursos ativos e finalizados (todos os usuários autenticados)
   useEffect(() => {
@@ -106,6 +110,7 @@ export default function RankingsPage() {
         setPayouts({})
         setPayoutSummary(null)
         setSelectedContest(null)
+        setOfficialRefs([])
         // MODIFIQUEI AQUI
         setSelectedDrawId('')
         return
@@ -124,8 +129,13 @@ export default function RankingsPage() {
 
         setSelectedContest(contest)
 
-        // Buscar ranking, sorteios e payouts do concurso selecionado
-        const [rankingData, drawsData] = await Promise.all([getContestRanking(selectedContestId), listDrawsByContestId(selectedContestId)])
+        // Buscar ranking, sorteios, refs oficiais e payouts do concurso selecionado
+        const [rankingData, drawsData, refsData] = await Promise.all([
+          getContestRanking(selectedContestId),
+          listDrawsByContestId(selectedContestId),
+          listOfficialRefsByContestId(selectedContestId).catch(() => []),
+        ])
+        setOfficialRefs(refsData || [])
 
         setRanking(rankingData)
         setDraws(drawsData)
@@ -411,7 +421,7 @@ export default function RankingsPage() {
       </div>
 
       {/* Conteúdo Principal */}
-      <div className="container mx-auto px-2 sm:px-4 pb-6 sm:pb-8 flex-1 max-w-7xl">
+      <div className="container mx-auto px-2 sm:px-4 pb-6 sm:pb-8 flex-1 flex flex-col min-h-0 max-w-7xl">
         {error && (
           <div className="mb-4 rounded-xl border border-red-100 bg-red-50 p-4">
             <p className="text-sm text-red-700">{error}</p>
@@ -478,11 +488,11 @@ export default function RankingsPage() {
             <p className="mt-4 text-[#1F1F1F]/70">Carregando ranking...</p>
           </div>
         ) : selectedContest ? (
-          <div className="space-y-4 sm:space-y-6">
-            <div className="rounded-2xl sm:rounded-3xl border-2 border-[#E5E5E5] bg-white p-4 sm:p-6 shadow-xl hover:shadow-2xl hover:border-[#F4C430] transition-all">
+          <div className="space-y-4 sm:space-y-6 flex-1 flex flex-col min-h-0">
+            <div className="rounded-2xl sm:rounded-3xl border-2 border-[#E5E5E5] bg-white p-4 sm:p-6 pb-8 sm:pb-10 shadow-xl hover:shadow-2xl hover:border-[#F4C430] transition-all flex-1 min-h-[60vh]">
               {/* Header do Concurso */}
               <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-4 sm:mb-6">
-                <div className="flex-1">
+                <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 sm:gap-3 mb-2 sm:mb-3 flex-wrap">
                     <ContestStatusBadge contest={selectedContest} hasDraws={draws.length > 0} variant="card" />
                     <span className="px-2 sm:px-3 py-1 bg-[#F4C430]/20 text-[#1F1F1F] rounded-full text-xs font-semibold whitespace-nowrap">
@@ -495,7 +505,6 @@ export default function RankingsPage() {
                     )}
                   </div>
                   <h3 className="text-lg sm:text-xl md:text-2xl font-extrabold text-[#1F1F1F] mb-2 break-words">{selectedContest.name}</h3>
-                  {/* MODIFIQUEI AQUI - Exibir código do concurso */}
                   {selectedContest.contest_code && (
                     <div className="mb-2">
                       <span className="px-2 py-1 bg-[#1E7F43] text-white rounded-full text-xs font-mono font-semibold">
@@ -512,7 +521,7 @@ export default function RankingsPage() {
                       : `Encerra em ${formatDate(selectedContest.end_date)}`}
                   </p>
                 </div>
-                <div className="flex flex-col sm:flex-row gap-2">
+                <div className="flex flex-col sm:flex-row gap-2 shrink-0">
                   <Link
                     to={`/contests/${selectedContest.id}/ranking`}
                     className="px-4 py-2 bg-[#F4C430] text-[#1F1F1F] rounded-lg font-semibold hover:bg-[#FFD700] transition-all text-sm sm:text-base whitespace-nowrap text-center"
@@ -527,6 +536,59 @@ export default function RankingsPage() {
                   </Link>
                 </div>
               </div>
+
+              {/* Bloco Concurso Oficial - largura total do card */}
+              {(officialRefs.length > 0 || (selectedContest.official_contest_name && selectedContest.official_contest_code)) && (
+                <div className="w-full rounded-xl border border-[#E5E5E5] bg-[#F9F9F9]/50 p-4 mb-4">
+                  <div className="flex items-center gap-2 sm:gap-3 mb-3">
+                    <div className="p-1.5 sm:p-2 bg-[#1E7F43]/10 rounded-lg shrink-0">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 sm:h-5 sm:w-5 text-[#1E7F43]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7a1.994 1.994 0 01-.586-1.414V7a4 4 0 014-4z" />
+                      </svg>
+                    </div>
+                    <h4 className="text-xs sm:text-sm font-semibold text-[#1F1F1F]/80 uppercase tracking-wide">Concurso Oficial</h4>
+                  </div>
+                  <div className="space-y-3">
+                    {officialRefs.length > 0
+                      ? officialRefs.map((ref) => (
+                          <div key={ref.id} className="p-4 bg-[#1E7F43]/10 rounded-xl border border-[#1E7F43]/20 hover:border-[#1E7F43]/30 transition-colors w-full">
+                            <p className="text-sm sm:text-base font-bold text-[#1F1F1F]">
+                              Concurso {ref.official_contest_code} • {ref.official_contest_name}
+                            </p>
+                            {ref.official_contest_numbers && (
+                              <OfficialContestNumbersBadges numbers={ref.official_contest_numbers} />
+                            )}
+                            {ref.official_contest_date && (
+                              <p className="text-xs sm:text-sm text-[#1F1F1F]/60 mt-1 flex items-center gap-1">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                </svg>
+                                {formatOfficialRefDate(ref.official_contest_date)}
+                              </p>
+                            )}
+                          </div>
+                        ))
+                      : (
+                        <div className="p-4 bg-[#1E7F43]/10 rounded-xl border border-[#1E7F43]/20 w-full">
+                          <p className="text-sm sm:text-base font-bold text-[#1F1F1F]">
+                            Concurso {selectedContest.official_contest_code} • {selectedContest.official_contest_name}
+                          </p>
+                          {selectedContest.official_contest_numbers && (
+                            <OfficialContestNumbersBadges numbers={selectedContest.official_contest_numbers} />
+                          )}
+                          {selectedContest.official_contest_date && (
+                            <p className="text-xs sm:text-sm text-[#1F1F1F]/60 mt-1 flex items-center gap-1">
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                              </svg>
+                              {formatOfficialRefDate(selectedContest.official_contest_date)}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                  </div>
+                </div>
+              )}
 
               {/* MODIFIQUEI AQUI - Seletor de Sorteio */}
               {draws.length > 0 && (
