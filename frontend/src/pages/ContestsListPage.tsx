@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { listActiveContests, listFinishedContests } from '../services/contestsService'
 import { listDrawsByContestId } from '../services/drawsService'
+import { getDrawPayoutSummary } from '../services/payoutsService'
 import { Contest } from '../types'
 import Header from '../components/Header'
 import Footer from '../components/Footer'
@@ -20,6 +21,7 @@ export default function ContestsListPage() {
   const [activeContests, setActiveContests] = useState<Contest[]>([])
   const [finishedContests, setFinishedContests] = useState<Contest[]>([])
   const [contestsWithDraws, setContestsWithDraws] = useState<Record<string, boolean>>({})
+  const [topWinnersByContest, setTopWinnersByContest] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -38,8 +40,9 @@ export default function ContestsListPage() {
         
         console.log('[ContestsListPage] Concursos ativos:', activeData.length, 'Finalizados:', finishedData.length)
         
-        // MODIFIQUEI AQUI - Verificar sorteios para todos os concursos (ativos + finalizados)
+        // Verificar sorteios e contagem de ganhadores TOP para cada concurso
         const drawsMap: Record<string, boolean> = {}
+        const topWinnersMap: Record<string, number> = {}
         const allContests = [...activeData, ...finishedData]
         
         await Promise.all(
@@ -47,6 +50,16 @@ export default function ContestsListPage() {
             try {
               const draws = await listDrawsByContestId(contest.id)
               drawsMap[contest.id] = draws.length > 0
+              
+              // Para concursos finalizados com sorteio, buscar contagem de ganhadores TOP
+              if (contest.status === 'finished' && draws.length > 0) {
+                try {
+                  const summary = await getDrawPayoutSummary(draws[0].id)
+                  topWinnersMap[contest.id] = summary.categories.TOP?.winnersCount ?? 0
+                } catch {
+                  topWinnersMap[contest.id] = 0
+                }
+              }
             } catch (err) {
               console.error(`Erro ao verificar sorteios do concurso ${contest.id}:`, err)
               drawsMap[contest.id] = false
@@ -57,6 +70,7 @@ export default function ContestsListPage() {
         setActiveContests(activeData)
         setFinishedContests(finishedData)
         setContestsWithDraws(drawsMap)
+        setTopWinnersByContest(topWinnersMap)
       } catch (err) {
         console.error('[ContestsListPage] Erro ao carregar concursos:', err)
         const errorMessage = err instanceof Error ? err.message : 'Erro ao carregar concursos'
@@ -247,6 +261,15 @@ export default function ContestsListPage() {
                     </div>
                   </div>
                 </div>
+
+                {/* Texto de ganhadores TOP (apenas no histórico, concursos com sorteio) */}
+                {activeTab === 'history' && contestsWithDraws[contest.id] && (
+                  <p className="text-sm sm:text-base font-semibold text-[#1F1F1F] mb-3">
+                    {(topWinnersByContest[contest.id] ?? 0) === 0
+                      ? 'Nenhuma pessoa atingiu a pontuação máxima do sorteio'
+                      : `${topWinnersByContest[contest.id]} ${topWinnersByContest[contest.id] === 1 ? 'pessoa atingiu' : 'pessoas atingiram'} a pontuação máxima do sorteio`}
+                  </p>
+                )}
 
                 {/* Botão */}
                 <Link

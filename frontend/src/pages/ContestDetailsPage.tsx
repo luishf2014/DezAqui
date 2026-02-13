@@ -8,7 +8,9 @@ import { useEffect, useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { getContestById } from '../services/contestsService'
 import { listDrawsByContestId } from '../services/drawsService'
-import { Contest, Draw } from '../types'
+import { getDrawPayoutSummary, getPayoutsByDraw } from '../services/payoutsService'
+import { getContestRanking } from '../services/participationsService'
+import { Contest, Draw, Participation } from '../types'
 import { useAuth } from '../contexts/AuthContext'
 import Header from '../components/Header'
 import Footer from '../components/Footer'
@@ -20,6 +22,9 @@ export default function ContestDetailsPage() {
   const { user } = useAuth()
   const [contest, setContest] = useState<Contest | null>(null)
   const [draws, setDraws] = useState<Draw[]>([])
+  const [participations, setParticipations] = useState<Participation[]>([])
+  const [payouts, setPayouts] = useState<Record<string, { category: string; amount_won: number }>>({})
+  const [topWinnersCount, setTopWinnersCount] = useState<number>(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -57,6 +62,37 @@ export default function ContestDetailsPage() {
 
     loadContestData()
   }, [id])
+
+  // Carregar participações e payouts do sorteio mais recente (para exibir números vencedores TOP)
+  useEffect(() => {
+    if (draws.length === 0 || !id) {
+      setTopWinnersCount(0)
+      setPayouts({})
+      setParticipations([])
+      return
+    }
+    const latestDraw = draws[0]
+    Promise.all([
+      getDrawPayoutSummary(latestDraw.id),
+      getPayoutsByDraw(latestDraw.id),
+      getContestRanking(id),
+    ])
+      .then(([summary, drawPayouts, rankingData]) => {
+        const count = summary.categories.TOP?.winnersCount ?? 0
+        setTopWinnersCount(count)
+        const payoutsMap: Record<string, { category: string; amount_won: number }> = {}
+        drawPayouts.forEach((p) => {
+          payoutsMap[p.participation_id] = { category: p.category, amount_won: p.amount_won }
+        })
+        setPayouts(payoutsMap)
+        setParticipations(rankingData)
+      })
+      .catch(() => {
+        setTopWinnersCount(0)
+        setPayouts({})
+        setParticipations([])
+      })
+  }, [draws, id])
 
   // MODIFIQUEI AQUI - Atualizar estado do botão quando a data de início chegar
   useEffect(() => {
@@ -300,6 +336,65 @@ export default function ContestDetailsPage() {
             <p className="text-sm sm:text-base md:text-lg font-semibold text-[#1F1F1F] break-words">{formatDate(contest.end_date)}</p>
           </div>
         </div>
+
+        {/* Resultado do Sorteio - números que fizeram (ganhadores TOP) */}
+        {draws.length > 0 && (
+          <div className="rounded-xl sm:rounded-2xl border border-[#E5E5E5] bg-white p-4 sm:p-6 shadow-lg mb-6 sm:mb-8">
+            <div className="flex items-center gap-2 sm:gap-3 mb-3 sm:mb-4">
+              <h2 className="text-lg sm:text-xl font-bold text-[#1F1F1F]">🎯 Resultado do Sorteio</h2>
+            </div>
+            {(() => {
+              const topWinningParticipationIds = Object.entries(payouts)
+                .filter(([, p]) => p && p.amount_won > 0 && p.category === 'TOP')
+                .map(([pid]) => pid)
+
+              const topWinningParticipations = participations.filter((p) =>
+                topWinningParticipationIds.includes(p.id)
+              )
+
+              const uniqueWinningSets = Array.from(
+                new Map(
+                  topWinningParticipations.map((p) => {
+                    const nums = [...(p.numbers || [])].sort((a, b) => a - b)
+                    const key = nums.join(',')
+                    return [key, nums]
+                  })
+                ).values()
+              )
+
+              return (
+                <>
+                  {uniqueWinningSets.length > 0 && (
+                    <>
+                      <p className="text-xs sm:text-sm font-semibold text-[#1F1F1F]/60 uppercase tracking-wide mb-2 sm:mb-3">
+                        Resultado / Números sorteados
+                      </p>
+                      <div className="space-y-4 mb-4">
+                        {uniqueWinningSets.map((nums, idx) => (
+                          <div key={idx} className="flex flex-wrap gap-2 sm:gap-3 items-center">
+                            {nums.map((num) => (
+                              <span
+                                key={num}
+                                className="inline-flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-[#F4C430] text-[#1F1F1F] font-bold text-sm sm:text-base shadow-sm"
+                              >
+                                {num.toString().padStart(2, '0')}
+                              </span>
+                            ))}
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                  <p className="text-sm sm:text-base font-semibold text-[#1F1F1F]">
+                    {topWinnersCount === 0
+                      ? 'Nenhuma pessoa atingiu a pontuação máxima do sorteio'
+                      : `${topWinnersCount} ${topWinnersCount === 1 ? 'pessoa atingiu' : 'pessoas atingiram'} a pontuação máxima do sorteio`}
+                  </p>
+                </>
+              )
+            })()}
+          </div>
+        )}
 
         {/* Botão para Ranking */}
         <div className="mb-6 sm:mb-8">

@@ -122,10 +122,12 @@ export default function Header() {
         supabase
           .from('notifications')
           .select('id', { count: 'exact', head: true })
+          .eq('user_id', user.id)
           .is('read_at', null),
         supabase
           .from('notifications')
           .select('id,title,message,link,read_at,created_at')
+          .eq('user_id', user.id)
           .order('created_at', { ascending: false })
           .limit(8),
       ])
@@ -710,10 +712,10 @@ export default function Header() {
                             </svg>
                             Criar Novo Concurso
                           </Link>
+
+                          <div className="my-2 border-t border-[#E5E5E5]" role="separator"></div>
                         </>
                       )}
-
-                      <div className="my-2 border-t border-[#E5E5E5]" role="separator"></div>
 
                       <Link
                         to="/contests"

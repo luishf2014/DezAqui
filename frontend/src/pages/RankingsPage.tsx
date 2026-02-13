@@ -9,7 +9,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { listActiveContests, listFinishedContests, getContestById } from '../services/contestsService'
-import { getContestRanking, listMyParticipations } from '../services/participationsService'
+import { getContestRanking } from '../services/participationsService'
 import { listDrawsByContestId } from '../services/drawsService'
 import { getDrawPayoutSummary, getPayoutsByDraw } from '../services/payoutsService'
 import { Contest, Participation, Draw } from '../types'
@@ -28,7 +28,7 @@ interface ParticipationWithUser extends Participation {
 type TabType = 'active' | 'history'
 
 export default function RankingsPage() {
-  const { user, isAdmin, loading: authLoading } = useAuth()
+  const { user, loading: authLoading } = useAuth()
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState<TabType>('active')
   const [activeContests, setActiveContests] = useState<Contest[]>([])
@@ -47,50 +47,27 @@ export default function RankingsPage() {
   const [loadingRanking, setLoadingRanking] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // MODIFIQUEI AQUI - Carregar concursos ativos e finalizados baseado no tipo de usuário
+  // Carregar concursos ativos e finalizados (todos os usuários autenticados)
   useEffect(() => {
     async function loadAvailableContests() {
       if (authLoading) return
+      if (!user) {
+        navigate('/login')
+        return
+      }
 
       try {
         setLoading(true)
         setError(null)
 
-        if (isAdmin) {
-          // Admin: ver todos os concursos ativos e finalizados
-          const [activeData, finishedData] = await Promise.all([listActiveContests(), listFinishedContests()])
-          setActiveContests(activeData)
-          setFinishedContests(finishedData)
-        } else if (user) {
-          // Usuário comum: ver apenas concursos onde está participando (ativos + finalizados)
-          const myParticipations = await listMyParticipations()
-          // Extrair IDs únicos de concursos
-          const contestIds = [...new Set(myParticipations.map((p) => p.contest_id).filter(Boolean))]
+        // Todos os usuários autenticados veem concursos ativos e finalizados (igual ContestsListPage)
+        const [activeData, finishedData] = await Promise.all([
+          listActiveContests(),
+          listFinishedContests(),
+        ])
 
-          // Buscar detalhes dos concursos
-          const allContests = await Promise.all(
-            contestIds.map(async (contestId) => {
-              try {
-                return await getContestById(contestId)
-              } catch (err) {
-                console.error(`Erro ao buscar concurso ${contestId}:`, err)
-                return null
-              }
-            })
-          )
-
-          const validContests = allContests.filter((c): c is Contest => c !== null)
-          // Separar em ativos e finalizados
-          const active = validContests.filter((c) => c.status === 'active')
-          const finished = validContests.filter((c) => c.status === 'finished')
-
-          setActiveContests(active)
-          setFinishedContests(finished)
-        } else {
-          // Não autenticado: redirecionar para login
-          navigate('/login')
-          return
-        }
+        setActiveContests(activeData)
+        setFinishedContests(finishedData)
       } catch (err) {
         console.error('[RankingsPage] Erro ao carregar concursos:', err)
         setError(err instanceof Error ? err.message : 'Erro ao carregar concursos')
@@ -100,7 +77,7 @@ export default function RankingsPage() {
     }
 
     loadAvailableContests()
-  }, [user, isAdmin, authLoading, navigate])
+  }, [user, authLoading, navigate])
 
   // MODIFIQUEI AQUI - Atualizar lista de concursos disponíveis baseado na aba selecionada
   useEffect(() => {
@@ -240,12 +217,6 @@ export default function RankingsPage() {
     if (!selectedDrawId) return draws
     const idx = drawsSortedAsc.findIndex(d => d.id === selectedDrawId)
     return idx === -1 ? drawsSortedAsc : drawsSortedAsc.slice(0, idx + 1)
-  }
-
-  const isNumberDrawn = (number: number): boolean => {
-    if (draws.length === 0) return false
-    const drawsToUse = getDrawsUpToSelected()
-    return drawsToUse.some(d => d.numbers.includes(number))
   }
 
   const getHitNumbersForParticipation = (participation: Participation): number[] => {
@@ -407,14 +378,12 @@ export default function RankingsPage() {
                 </div>
                 <span className="px-3 sm:px-4 py-1 bg-white/30 text-[#1F1F1F] rounded-full text-xs sm:text-sm font-semibold whitespace-nowrap">
                   ● {availableContests.length} {availableContests.length === 1 ? 'Concurso' : 'Concursos'}{' '}
-                  {isAdmin ? 'Disponíveis' : 'Participando'}
+                  Disponíveis
                 </span>
               </div>
               <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-extrabold text-[#1F1F1F] mb-3">🏆 Rankings</h1>
               <p className="text-[#1F1F1F]/90 text-sm sm:text-base md:text-lg max-w-2xl">
-                {isAdmin
-                  ? 'Visualize os rankings de todos os concursos ativos e veja quem está na liderança'
-                  : 'Visualize o ranking dos concursos em que você está participando'}
+                Visualize os rankings de todos os concursos, ativos e finalizados.
               </p>
             </div>
           </div>
@@ -475,12 +444,8 @@ export default function RankingsPage() {
             {availableContests.length === 0 && (
               <p className="mt-3 text-sm text-[#1F1F1F]/60">
                 {activeTab === 'active'
-                  ? isAdmin
-                    ? 'Nenhum concurso ativo no momento.'
-                    : 'Você ainda não está participando de nenhum concurso ativo.'
-                  : isAdmin
-                    ? 'Nenhum concurso finalizado ainda.'
-                    : 'Você ainda não participou de nenhum concurso finalizado.'}
+                  ? 'Nenhum concurso ativo no momento.'
+                  : 'Nenhum concurso finalizado ainda.'}
               </p>
             )}
           </div>
@@ -919,18 +884,15 @@ export default function RankingsPage() {
                             {[...participation.numbers].sort((a, b) => a - b).map((num) => {
                               // MODIFIQUEI AQUI - Se foi criada após o sorteio, não marcar como acerto mesmo que coincida
                               const isHit = wasCreatedAfterDraw ? false : hitNumbers.includes(num)
-                              const isDrawn = isNumberDrawn(num)
 
                               return (
                                 <span
                                   key={num}
                                   className={`font-bold px-2 sm:px-3 py-1 rounded-lg text-xs sm:text-sm transition-all ${isHit
                                     ? 'bg-[#1E7F43] text-white shadow-lg transform scale-110'
-                                    : isDrawn && !wasCreatedAfterDraw
-                                      ? 'bg-[#F4C430] text-[#1F1F1F]'
-                                      : 'bg-[#E5E5E5] text-[#1F1F1F]'
+                                    : 'bg-[#E5E5E5] text-[#1F1F1F]'
                                     }`}
-                                  title={isHit ? 'Número acertado!' : isDrawn && !wasCreatedAfterDraw ? 'Número sorteado' : wasCreatedAfterDraw ? 'Participação criada após o sorteio' : ''}
+                                  title={isHit ? 'Número acertado!' : wasCreatedAfterDraw ? 'Participação criada após o sorteio' : 'Número não sorteado'}
                                 >
                                   {num.toString().padStart(2, '0')}
                                   {isHit && ' ✓'}

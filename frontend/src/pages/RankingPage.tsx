@@ -197,13 +197,6 @@ export default function RankingPage() {
   }, [draws, selectedDrawId, drawsSortedAsc])
 
 
-  const drawnNumbersSet = useMemo(() => new Set<number>(drawnNumbersSorted), [drawnNumbersSorted])
-
-  const isNumberDrawn = (number: number): boolean => {
-    return drawnNumbersSet.has(number)
-  }
-
-
   const getHitNumbersForParticipation = (participation: Participation): number[] => {
     // Numeros unicos acertados acumulados ATE o sorteio selecionado (ou todos)
     let drawsToUse = draws
@@ -603,9 +596,9 @@ export default function RankingPage() {
         {/* Informações sobre sorteios */}
         {draws.length > 0 && (
           <div className="bg-white rounded-2xl shadow-lg p-6 mb-6 border border-[#E5E5E5]">
-            <h2 className="text-xl font-bold text-[#1F1F1F] mb-4">📊 Últimos Sorteios</h2>
-            <div className="space-y-3">
-              {draws.slice(0, 3).map((draw) => (
+            <h2 className="text-xl font-bold text-[#1F1F1F] mb-4">📊 Sorteios Realizados</h2>
+            <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
+              {draws.map((draw) => (
                 <div key={draw.id} className="flex items-center justify-between p-3 bg-[#F9F9F9] rounded-lg">
                   <div className="flex items-center gap-3">
                     <div className="bg-[#1E7F43] text-white rounded-full w-10 h-10 flex items-center justify-center font-bold">
@@ -1008,18 +1001,15 @@ export default function RankingPage() {
                                   {[...participation.numbers].sort((a, b) => a - b).map((num) => {
                                     // MODIFIQUEI AQUI - Se foi criada após o sorteio, não marcar como acerto mesmo que coincida
                                     const isHit = wasCreatedAfterDraw ? false : hitNumbers.includes(num)
-                                    const isDrawn = isNumberDrawn(num)
 
                                     return (
                                       <span
                                         key={num}
                                         className={`font-bold px-3 py-1 rounded-lg text-sm transition-all ${isHit
                                           ? 'bg-[#1E7F43] text-white shadow-lg transform scale-110'
-                                          : isDrawn && !wasCreatedAfterDraw
-                                            ? 'bg-[#F4C430] text-[#1F1F1F]'
-                                            : 'bg-[#E5E5E5] text-[#1F1F1F]'
+                                          : 'bg-[#E5E5E5] text-[#1F1F1F]'
                                           }`}
-                                        title={isHit ? 'Número acertado!' : isDrawn && !wasCreatedAfterDraw ? 'Número sorteado' : wasCreatedAfterDraw ? 'Participação criada após o sorteio' : ''}
+                                        title={isHit ? 'Número acertado!' : wasCreatedAfterDraw ? 'Participação criada após o sorteio' : 'Número não sorteado'}
                                       >
                                         {num.toString().padStart(2, '0')}
                                         {isHit && ' ✓'}

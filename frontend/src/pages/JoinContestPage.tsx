@@ -395,39 +395,7 @@ export default function JoinContestPage() {
         </div>
 
         <form onSubmit={handleSubmit} className="rounded-2xl sm:rounded-3xl border border-[#E5E5E5] bg-white p-4 sm:p-6 shadow-xl">
-          {/* MODIFIQUEI AQUI - Box Última Compra (antes de "Escolha seus números") */}
-          {lastPurchase && lastPurchase.contestId === id && lastPurchase.selections.length > 0 && (
-            <div className="mb-6 p-4 rounded-2xl border border-[#E5E5E5] bg-[#F9F9F9]">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                <div>
-                  <p className="text-sm font-extrabold text-[#1F1F1F] mb-2">Última Compra</p>
-                  <div className="space-y-2">
-                    {lastPurchase.selections.map((nums, idx) => (
-                      <div key={idx} className="flex flex-wrap gap-2">
-                        {nums.map((n) => (
-                          <span
-                            key={`${idx}-${n}`}
-                            className="px-3 py-1 bg-[#1E7F43] text-white rounded-lg font-bold text-sm"
-                          >
-                            {n.toString().padStart(2, '0')}
-                          </span>
-                        ))}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleRepeatLastPurchase}
-                  className="w-full sm:w-auto px-6 py-3 bg-[#1E7F43] text-white rounded-xl font-semibold hover:bg-[#3CCB7F] transition-colors"
-                >
-                  Repetir Compra
-                </button>
-              </div>
-            </div>
-          )}
-
+          
           <h2 className="text-xl sm:text-2xl font-extrabold text-[#1F1F1F] mb-4">
             Escolha seus números
           </h2>
