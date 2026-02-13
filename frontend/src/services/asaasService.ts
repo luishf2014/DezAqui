@@ -105,19 +105,20 @@ export async function createPixPayment(
       // MODIFIQUEI AQUI - REMOVIDO apikey (isso estava causando Invalid JWT)
       // ...(anonKey ? { apikey: anonKey } : {}),
     },
-    body: JSON.stringify({
-      // MODIFIQUEI AQUI - enviar contestId para passar na validação do backend
-      contestId: params.contestId,
+      body: JSON.stringify({
+    // MODIFIQUEI AQUI - campos exigidos pela Edge Function
+    contestId: params.contestId,
+    selectedNumbers: params.selectedNumbers,
 
-      participationId: params.participationId,
-      ticketCode: params.ticketCode,
-      amount: params.amount,
-      description: params.description,
-      customerName: params.customerName,
-      customerEmail: params.customerEmail,
-      customerPhone: params.customerPhone,
-      customerCpfCnpj: params.customerCpfCnpj,
-    }),
+    participationId: params.participationId,
+    ticketCode: params.ticketCode,
+    amount: params.amount,
+    description: params.description,
+    customerName: params.customerName,
+    customerEmail: params.customerEmail,
+    customerPhone: params.customerPhone,
+    customerCpfCnpj: params.customerCpfCnpj,
+  }),
   })
 
   const text = await res.text()
