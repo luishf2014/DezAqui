@@ -391,6 +391,7 @@ export default function CheckoutPage() {
       const pixData = await createPixPayment({
         // MODIFIQUEI AQUI - enviar contestId para passar no body_validation da Edge Function
         contestId: contest.id,
+        selectedNumbers: selectedNumbers,
 
         participationId: participationData.id,
         ticketCode: participationData.ticket_code || '',
