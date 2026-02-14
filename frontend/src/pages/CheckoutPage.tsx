@@ -9,6 +9,7 @@ import { useParams, useNavigate, useLocation, Link } from 'react-router-dom'
 import { getContestById } from '../services/contestsService'
 import { createParticipation } from '../services/participationsService'
 import { createPixPayment } from '../services/asaasService'
+import { checkPixPaymentStatus } from '../services/paymentsService'
 import { getDiscountByCode, calculateDiscountedPrice, incrementDiscountUses } from '../services/discountsService'
 import { Contest, Participation, Discount } from '../types'
 import { useAuth } from '../contexts/AuthContext'
@@ -63,6 +64,8 @@ export default function CheckoutPage() {
   const [processing, setProcessing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
+  const [pixPaymentId, setPixPaymentId] = useState<string>('') // ID Asaas para polling
+  const [pixConfirmed, setPixConfirmed] = useState<{ ticketCodes: string[]; contestId?: string } | null>(null)
   const participationCreatedRef = useRef(false) // MODIFIQUEI AQUI - Flag para evitar criação duplicada
   const isCreatingRef = useRef(false) // MODIFIQUEI AQUI - Flag para evitar race condition
 
@@ -190,6 +193,26 @@ export default function CheckoutPage() {
       cancelled = true
     }
   }, [id, user, authLoading, selectedNumbers])
+
+  // Polling para verificar confirmação do Pix
+  useEffect(() => {
+    if (!pixPaymentId || pixConfirmed) return
+
+    const checkStatus = async () => {
+      const result = await checkPixPaymentStatus(pixPaymentId)
+      if (result.paid && result.ticketCodes.length > 0) {
+        setPixConfirmed({
+          ticketCodes: result.ticketCodes,
+          contestId: result.contestId,
+        })
+      }
+    }
+
+    const interval = setInterval(checkStatus, 3000)
+    checkStatus()
+
+    return () => clearInterval(interval)
+  }, [pixPaymentId, pixConfirmed])
 
   const handlePaymentMethodSelect = (method: 'pix' | 'cash') => {
     setPaymentMethod(method)
@@ -389,6 +412,7 @@ export default function CheckoutPage() {
       })
 
       // 5. Se chegou aqui, tudo deu certo - exibir QR Code
+      setPixPaymentId(pixData.id)
       setPixQrCode(pixData.qrCode.encodedImage)
       setPixPayload(pixData.qrCode.payload)
       setPixExpirationDate(pixData.qrCode.expirationDate)
@@ -806,8 +830,49 @@ export default function CheckoutPage() {
           </div>
         )}
 
-        {/* QR Code Pix */}
-        {success && paymentMethod === 'pix' && pixQrCode && (
+        {/* Pix confirmado - Card de sucesso (como na imagem) */}
+        {success && paymentMethod === 'pix' && pixConfirmed && (
+          <div className="bg-white rounded-2xl shadow-lg p-6 border border-[#E5E5E5]">
+            <div className="text-center space-y-4">
+              <div className="w-16 h-16 mx-auto rounded-xl bg-[#1E7F43] flex items-center justify-center">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <h2 className="text-2xl font-bold text-[#1F1F1F] mb-2">
+                Participação Criada com Sucesso!
+              </h2>
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 max-w-md mx-auto">
+                <p className="text-blue-800 text-sm mb-2">
+                  <strong>Código do Ticket:</strong>
+                </p>
+                <p className="font-mono font-bold text-lg text-blue-900 mb-3">
+                  {pixConfirmed.ticketCodes[0] || 'N/A'}
+                </p>
+                <p className="text-blue-700 text-sm">
+                  Seu pagamento Pix foi confirmado e sua participação está ativa!
+                </p>
+              </div>
+              <div className="flex gap-3 justify-center pt-4">
+                <Link
+                  to={pixConfirmed.contestId ? `/contests/${pixConfirmed.contestId}` : `/contests/${id}`}
+                  className="px-6 py-3 bg-[#1E7F43] text-white rounded-xl font-semibold hover:bg-[#3CCB7F] transition-colors"
+                >
+                  Voltar para o Concurso
+                </Link>
+                <Link
+                  to="/my-tickets"
+                  className="px-6 py-3 bg-white border-2 border-[#1E7F43] text-[#1E7F43] rounded-xl font-semibold hover:bg-[#1E7F43]/5 transition-colors"
+                >
+                  Ver Meus Tickets
+                </Link>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* QR Code Pix - exibido enquanto aguarda confirmação */}
+        {success && paymentMethod === 'pix' && pixQrCode && !pixConfirmed && (
           <div className="bg-white rounded-2xl shadow-lg p-6 border border-[#E5E5E5]">
             <h2 className="text-xl font-bold text-[#1F1F1F] mb-4">Pagamento via Pix</h2>
 

@@ -261,6 +261,73 @@ export async function listAllPayments(filters?: PaymentFilters): Promise<Payment
 }
 
 /**
+ * Verifica se um pagamento Pix foi confirmado (para exibir mensagem de sucesso)
+ * Usado em CheckoutPage e CartPage para polling enquanto o usuário vê o QR Code
+ *
+ * @param externalId ID do pagamento no Asaas (retornado por createPixPayment)
+ * @returns Objeto com status e códigos dos tickets quando confirmado
+ */
+export interface PixPaymentStatusResult {
+  paid: boolean
+  ticketCodes: string[]
+  contestId?: string
+}
+
+export async function checkPixPaymentStatus(
+  externalId: string
+): Promise<PixPaymentStatusResult> {
+  if (!externalId?.trim()) {
+    return { paid: false, ticketCodes: [] }
+  }
+
+  const { data: payments, error } = await supabase
+    .from('payments')
+    .select(
+      `
+      id,
+      status,
+      participation_id,
+      participations (
+        ticket_code,
+        contest_id
+      )
+    `
+    )
+    .eq('external_id', externalId)
+
+  if (error) {
+    console.error('[checkPixPaymentStatus] Erro:', error)
+    return { paid: false, ticketCodes: [] }
+  }
+
+  const list = (payments || []) as any[]
+  const paidPayments = list.filter((p) => p.status === 'paid')
+
+  if (paidPayments.length === 0) {
+    return { paid: false, ticketCodes: [] }
+  }
+
+  const ticketCodes: string[] = []
+  let contestId: string | undefined
+
+  for (const p of paidPayments) {
+    const part = Array.isArray(p.participations) ? p.participations[0] : p.participations
+    if (part?.ticket_code) {
+      ticketCodes.push(part.ticket_code)
+      if (!contestId && part.contest_id) {
+        contestId = part.contest_id
+      }
+    }
+  }
+
+  return {
+    paid: true,
+    ticketCodes,
+    contestId,
+  }
+}
+
+/**
  * Calcula estatísticas financeiras gerais
  * MODIFIQUEI AQUI - Função para estatísticas financeiras
  * 

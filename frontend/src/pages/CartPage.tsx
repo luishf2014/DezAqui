@@ -9,6 +9,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { useCart } from '../contexts/CartContext'
 import { createParticipation } from '../services/participationsService'
 import { createPixPayment } from '../services/asaasService'
+import { checkPixPaymentStatus } from '../services/paymentsService'
 import { listActiveContests } from '../services/contestsService'
 import { Contest } from '../types'
 import Header from '../components/Header'
@@ -86,6 +87,8 @@ export default function CartPage() {
   const [pixQrCode, setPixQrCode] = useState<string>('')
   const [pixPayload, setPixPayload] = useState<string>('')
   const [pixExpirationDate, setPixExpirationDate] = useState<string>('')
+  const [pixPaymentId, setPixPaymentId] = useState<string>('')
+  const [pixConfirmed, setPixConfirmed] = useState<{ ticketCodes: string[] } | null>(null)
   const [paymentMethod, setPaymentMethod] = useState<'pix' | 'cash' | null>(null)
   const [createdTicketCodes, setCreatedTicketCodes] = useState<string[]>([])
   const [paidAmount, setPaidAmount] = useState<number>(0) // Valor pago (salvo antes de limpar carrinho)
@@ -140,6 +143,23 @@ export default function CartPage() {
 
     loadData()
   }, [])
+
+  // Polling para verificar confirmação do Pix
+  useEffect(() => {
+    if (!pixPaymentId || pixConfirmed) return
+
+    const checkStatus = async () => {
+      const result = await checkPixPaymentStatus(pixPaymentId)
+      if (result.paid && result.ticketCodes.length > 0) {
+        setPixConfirmed({ ticketCodes: result.ticketCodes })
+      }
+    }
+
+    const interval = setInterval(checkStatus, 3000)
+    checkStatus()
+
+    return () => clearInterval(interval)
+  }, [pixPaymentId, pixConfirmed])
 
   // MODIFIQUEI AQUI - Recarregar carrinho do localStorage quando o usuário fizer login
   useEffect(() => {
@@ -331,6 +351,7 @@ export default function CartPage() {
           cartItems,
         })
 
+        setPixPaymentId(pixData.id)
         setPixQrCode(pixData.qrCode.encodedImage)
         setPixPayload(pixData.qrCode.payload)
         setPixExpirationDate(pixData.qrCode.expirationDate)
@@ -406,7 +427,50 @@ export default function CartPage() {
       <div className="min-h-screen bg-[#F9F9F9] flex flex-col">
         <Header />
         <main className="flex-1 container mx-auto px-4 py-8 max-w-4xl">
-          {paymentMethod === 'pix' && pixQrCode ? (
+          {/* Pix confirmado - Card de sucesso (como na imagem) */}
+          {paymentMethod === 'pix' && pixConfirmed ? (
+            <div className="bg-white rounded-2xl shadow-lg p-6 border border-[#E5E5E5]">
+              <div className="text-center space-y-4">
+                <div className="w-16 h-16 mx-auto rounded-xl bg-[#1E7F43] flex items-center justify-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+                <h2 className="text-2xl font-bold text-[#1F1F1F] mb-2">
+                  Participações Criadas com Sucesso!
+                </h2>
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 max-w-md mx-auto">
+                  <p className="text-blue-800 text-sm mb-2">
+                    <strong>Códigos dos Tickets:</strong>
+                  </p>
+                  <div className="space-y-1 mb-3">
+                    {pixConfirmed.ticketCodes.map((code, idx) => (
+                      <p key={idx} className="font-mono font-bold text-lg text-blue-900">
+                        {code}
+                      </p>
+                    ))}
+                  </div>
+                  <p className="text-blue-700 text-sm">
+                    Seu pagamento Pix foi confirmado e suas participações estão ativas!
+                  </p>
+                </div>
+                <div className="flex flex-col sm:flex-row gap-3 justify-center pt-4">
+                  <Link
+                    to="/contests"
+                    className="w-full sm:w-auto text-center px-6 py-3 bg-[#1E7F43] text-white rounded-xl font-semibold hover:bg-[#3CCB7F] transition-colors min-h-[44px] flex items-center justify-center touch-manipulation"
+                  >
+                    Ver Concursos
+                  </Link>
+                  <Link
+                    to="/my-tickets"
+                    className="w-full sm:w-auto text-center px-6 py-3 bg-white border-2 border-[#1E7F43] text-[#1E7F43] rounded-xl font-semibold hover:bg-[#1E7F43]/5 transition-colors min-h-[44px] flex items-center justify-center touch-manipulation"
+                  >
+                    Ver Meus Tickets
+                  </Link>
+                </div>
+              </div>
+            </div>
+          ) : paymentMethod === 'pix' && pixQrCode ? (
             <div className="bg-white rounded-2xl shadow-lg p-6 border border-[#E5E5E5]">
               <h2 className="text-xl font-bold text-[#1F1F1F] mb-4">Pagamento via Pix</h2>
 
@@ -449,11 +513,11 @@ export default function CartPage() {
                   </p>
                   {pixExpirationDate && (
                     <p className="text-sm text-blue-800 mt-1">
-                      <strong>Valido ate:</strong> {formatDateTime(pixExpirationDate)}
+                      <strong>Válido até:</strong> {formatDateTime(pixExpirationDate)}
                     </p>
                   )}
                   <p className="text-sm text-blue-800 mt-2">
-                    Apos o pagamento, suas participacoes serao ativadas automaticamente.
+                    Após o pagamento, suas participações serão ativadas automaticamente.
                   </p>
                 </div>
 
