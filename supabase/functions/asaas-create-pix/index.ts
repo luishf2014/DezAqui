@@ -159,37 +159,51 @@ serve(async (req) => {
   // ============================================
   const body = await req.json()
 
-  // MODIFIQUEI AQUI - Novo contrato: NÃO recebe participationId/ticketCode.
-  // Agora o Pix é gerado a partir de um "intent" (pedido pendente), e a participação
-  // (ticket) só será criada quando o webhook confirmar o pagamento.
   const contestId = trim(body?.contestId)
   const selectedNumbersRaw = body?.selectedNumbers
   const amount = Number(body?.amount)
+  const cartItemsRaw = body?.cartItems
 
-  if (!contestId) {
-    return jsonResponse({ error: 'contestId é obrigatório', debug: { step: 'body_validation' } }, 400)
-  }
+  const isCartFlow = Array.isArray(cartItemsRaw) && cartItemsRaw.length > 0
 
-  if (!Array.isArray(selectedNumbersRaw) || selectedNumbersRaw.length === 0) {
-    return jsonResponse({ error: 'selectedNumbers é obrigatório', debug: { step: 'body_validation' } }, 400)
-  }
-
-  const selectedNumbers = selectedNumbersRaw
-    .map((n: any) => Number(n))
-    .filter((n: number) => Number.isInteger(n) && n >= 0)
-
-  if (selectedNumbers.length !== selectedNumbersRaw.length) {
-    return jsonResponse({ error: 'selectedNumbers inválido', debug: { step: 'body_validation' } }, 400)
-  }
-
-  if (!Number.isFinite(amount) || amount <= 0) {
-    return jsonResponse({ error: 'amount inválido', debug: { step: 'body_validation' } }, 400)
+  if (isCartFlow) {
+    // Validação modo carrinho: cartItems SEM participationId - tickets criados pelo webhook após pagamento
+    const cartItems = cartItemsRaw.map((it: any) => ({
+      contestId: trim(it?.contestId),
+      selectedNumbers: Array.isArray(it?.selectedNumbers)
+        ? it.selectedNumbers.map((n: any) => Number(n)).filter((n: number) => Number.isInteger(n) && n >= 0)
+        : [],
+      amount: Number(it?.amount),
+    }))
+    if (cartItems.some((it: any) => !it.contestId || it.selectedNumbers.length === 0 || !Number.isFinite(it.amount) || it.amount <= 0)) {
+      return jsonResponse({ error: 'cartItems inválido', debug: { step: 'body_validation' } }, 400)
+    }
+    const sumAmount = cartItems.reduce((s: number, it: any) => s + it.amount, 0)
+    if (!Number.isFinite(amount) || amount <= 0 || Math.abs(amount - sumAmount) > 0.01) {
+      return jsonResponse({ error: 'amount deve ser a soma dos cartItems', debug: { step: 'body_validation' } }, 400)
+    }
+  } else {
+    // Validação modo checkout único (intent)
+    if (!contestId) {
+      return jsonResponse({ error: 'contestId é obrigatório', debug: { step: 'body_validation' } }, 400)
+    }
+    if (!Array.isArray(selectedNumbersRaw) || selectedNumbersRaw.length === 0) {
+      return jsonResponse({ error: 'selectedNumbers é obrigatório', debug: { step: 'body_validation' } }, 400)
+    }
+    const selectedNumbers = selectedNumbersRaw
+      .map((n: any) => Number(n))
+      .filter((n: number) => Number.isInteger(n) && n >= 0)
+    if (selectedNumbers.length !== selectedNumbersRaw.length) {
+      return jsonResponse({ error: 'selectedNumbers inválido', debug: { step: 'body_validation' } }, 400)
+    }
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return jsonResponse({ error: 'amount inválido', debug: { step: 'body_validation' } }, 400)
+    }
   }
 
   // ============================================
   // ASAAS FLOW
   // ============================================
-  // Validar CPF obrigatório para pagamentos Pix
   const normalizedCpf = normalizeDigits(body.customerCpfCnpj)
   if (!normalizedCpf || normalizedCpf.length !== 11) {
     return jsonResponse(
@@ -206,13 +220,88 @@ serve(async (req) => {
   })
 
   const dueDate = new Date(Date.now() + 86400000).toISOString().split('T')[0]
-
-  // ============================================
-  // SAVE INTENT (DB)
-  // ============================================
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY)
 
-  // MODIFIQUEI AQUI - cria um "intent" para esse pedido Pix (a participação só será criada após o webhook)
+  if (isCartFlow) {
+    // ============================================
+    // FLUXO CARRINHO: N intents, 1 Pix - tickets criados pelo webhook APÓS pagamento
+    // ============================================
+    const cartItems = cartItemsRaw.map((it: any) => ({
+      contestId: trim(it?.contestId),
+      selectedNumbers: Array.isArray(it?.selectedNumbers)
+        ? it.selectedNumbers.map((n: any) => Number(n)).filter((n: number) => Number.isInteger(n) && n >= 0)
+        : [],
+      amount: Number(it?.amount),
+    }))
+
+    const intentIds: string[] = []
+    for (const it of cartItems) {
+      const { data: intent, error: intentErr } = await admin
+        .from('pix_payment_intents')
+        .insert({
+          user_id: user.id,
+          contest_id: it.contestId,
+          selected_numbers: it.selectedNumbers,
+          amount: it.amount,
+          status: 'PENDING',
+        })
+        .select('id')
+        .single()
+      if (intentErr || !intent?.id) {
+        console.error('[asaas-create-pix] Erro ao criar intent (cart):', intentErr)
+        return jsonResponse({ error: 'Erro ao criar pedido Pix', debug: { step: 'create_intents' } }, 500)
+      }
+      intentIds.push(intent.id)
+    }
+
+    const payment = await createAsaasPayment(ASAAS_API_KEY, ASAAS_BASE_URL, {
+      customerId: customer.id,
+      amount,
+      dueDate,
+      description: body.description,
+      externalReference: intentIds[0],
+    })
+
+    const qrCode = await getAsaasPixQrCode(ASAAS_API_KEY, ASAAS_BASE_URL, payment.id)
+
+    for (let i = 0; i < intentIds.length; i++) {
+      await admin.from('pix_payment_intents').update({
+        asaas_payment_id: payment.id,
+        updated_at: new Date().toISOString(),
+      }).eq('id', intentIds[i])
+    }
+
+    try {
+      for (let i = 0; i < cartItems.length; i++) {
+        await admin.from('payments').insert({
+          participation_id: null,
+          amount: cartItems[i].amount,
+          status: 'pending',
+          payment_method: 'pix',
+          external_id: payment.id,
+          intent_id: intentIds[i],
+        })
+      }
+    } catch (err) {
+      console.error('[asaas-create-pix] Erro ao salvar payments (cart):', err)
+      return jsonResponse({ error: 'Erro ao salvar pagamentos', debug: { step: 'save_payments' } }, 500)
+    }
+
+    return jsonResponse({
+      id: payment.id,
+      status: payment.status,
+      dueDate: payment.dueDate,
+      qrCode: qrCode.qrCode,
+    })
+  }
+
+  // ============================================
+  // FLUXO CHECKOUT ÚNICO: intent (participação criada pelo webhook)
+  // ============================================
+  const selectedNumbers = (selectedNumbersRaw || [])
+    .map((n: any) => Number(n))
+    .filter((n: number) => Number.isInteger(n) && n >= 0)
+
   const { data: intent, error: intentError } = await admin
     .from('pix_payment_intents')
     .insert({
@@ -234,26 +323,17 @@ serve(async (req) => {
     )
   }
 
-  // ============================================
-  // CREATE ASAAS PAYMENT
-  // ============================================
   const payment = await createAsaasPayment(ASAAS_API_KEY, ASAAS_BASE_URL, {
     customerId: customer.id,
     amount,
     dueDate,
     description: body.description,
-    // MODIFIQUEI AQUI - externalReference agora é o intentId (não mais ticketCode)
     externalReference: intent.id,
   })
 
-  const qrCode = await getAsaasPixQrCode(
-    ASAAS_API_KEY,
-    ASAAS_BASE_URL,
-    payment.id
-  )
+  const qrCode = await getAsaasPixQrCode(ASAAS_API_KEY, ASAAS_BASE_URL, payment.id)
 
-  // MODIFIQUEI AQUI - vincular asaas_payment_id no intent
-  const { error: updateIntentError } = await admin
+  await admin
     .from('pix_payment_intents')
     .update({
       asaas_payment_id: payment.id,
@@ -261,17 +341,6 @@ serve(async (req) => {
     })
     .eq('id', intent.id)
 
-  if (updateIntentError) {
-    // Não falha o checkout por isso; loga para correção.
-    console.error('[asaas-create-pix] Erro ao atualizar intent:', updateIntentError)
-  }
-
-  // ============================================
-  // SAVE DB (compat)
-  // ============================================
-  // MODIFIQUEI AQUI - antes salvava em payments com participation_id.
-  // Agora não existe participation antes do pagamento. Se sua tabela payments exigir participation_id,
-  // este insert pode falhar. Mantemos em try/catch para não quebrar o checkout.
   try {
     await admin.from('payments').insert({
       participation_id: null,
@@ -279,7 +348,6 @@ serve(async (req) => {
       status: 'pending',
       payment_method: 'pix',
       external_id: payment.id,
-      // campos extras (se existirem) ajudam no futuro
       intent_id: intent.id,
       contest_id: contestId,
       user_id: user.id,
@@ -289,7 +357,6 @@ serve(async (req) => {
   }
 
   return jsonResponse({
-    // MODIFIQUEI AQUI - retorna intentId para o frontend, para rastreamento
     intentId: intent.id,
     id: payment.id,
     status: payment.status,

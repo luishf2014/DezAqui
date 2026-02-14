@@ -10,12 +10,14 @@ import Footer from '../../components/Footer'
 import { useAuth } from '../../contexts/AuthContext'
 import { useEffect, useState } from 'react'
 import { listAllContests } from '../../services/contestsService'
-import { getRecentWinners, countRecentWinners, RecentWinner } from '../../services/payoutsService'
+import { listDrawsByContestId } from '../../services/drawsService'
+import { getRecentWinners, countRecentWinners, getDrawPayoutSummary, RecentWinner } from '../../services/payoutsService'
 import { Contest } from '../../types'
 
 export default function AdminDashboard() {
   const { profile, isAdmin, user, loading: authLoading } = useAuth()
   const [contests, setContests] = useState<Contest[]>([])
+  const [topWinnersByContest, setTopWinnersByContest] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(true)
   const [recentWinners, setRecentWinners] = useState<RecentWinner[]>([])
   const [winnersCount, setWinnersCount] = useState(0)
@@ -41,6 +43,23 @@ export default function AdminDashboard() {
     try {
       const data = await listAllContests()
       setContests(data)
+
+      const topWinnersMap: Record<string, number> = {}
+      await Promise.all(
+        data.map(async (contest) => {
+          if (contest.status !== 'finished') return
+          try {
+            const draws = await listDrawsByContestId(contest.id)
+            if (draws.length > 0) {
+              const summary = await getDrawPayoutSummary(draws[0].id)
+              topWinnersMap[contest.id] = summary.categories.TOP?.winnersCount ?? 0
+            }
+          } catch {
+            topWinnersMap[contest.id] = 0
+          }
+        })
+      )
+      setTopWinnersByContest(topWinnersMap)
     } catch (error) {
       console.error('Erro ao carregar concursos:', error)
     } finally {
@@ -390,18 +409,24 @@ export default function AdminDashboard() {
                   to={`/admin/contests/${contest.id}`}
                   className="block p-4 rounded-xl border border-[#E5E5E5] hover:border-[#1E7F43] hover:shadow-md transition-all"
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div className="flex-1 min-w-0">
                       <h3 className="font-semibold text-[#1F1F1F] mb-1">{contest.name}</h3>
-                      {/* MODIFIQUEI AQUI - Exibir código do concurso */}
                       {contest.contest_code && (
                         <p className="text-xs text-[#1F1F1F]/70 mb-1 font-mono">
                           Código: {contest.contest_code}
                         </p>
                       )}
                       <p className="text-sm text-[#1F1F1F]/70 line-clamp-1">{contest.description || 'Sem descrição'}</p>
+                      {contest.status === 'finished' && topWinnersByContest[contest.id] !== undefined && (
+                        <p className="text-xs sm:text-sm font-semibold text-[#1F1F1F] mt-1">
+                          {topWinnersByContest[contest.id] === 0
+                            ? 'Nenhuma pessoa atingiu a pontuação máxima do sorteio'
+                            : `${topWinnersByContest[contest.id]} ${topWinnersByContest[contest.id] === 1 ? 'pessoa atingiu' : 'pessoas atingiram'} a pontuação máxima do sorteio`}
+                        </p>
+                      )}
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 shrink-0">
                       <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
                         contest.status === 'active' ? 'bg-[#3CCB7F]/20 text-[#3CCB7F]' :
                         contest.status === 'draft' ? 'bg-[#F4C430]/20 text-[#F4C430]' :

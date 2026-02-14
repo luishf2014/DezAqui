@@ -283,7 +283,8 @@ export default function CartPage() {
     if (!user || !profile || items.length === 0 || processingRef.current) return
 
     // Validar CPF para pagamento via Pix
-    if (paymentMethod === 'pix' && (!profile.cpf || profile.cpf.length !== 11)) {
+    const cpfDigits = String(profile?.cpf || '').replace(/\D/g, '')
+    if (paymentMethod === 'pix' && cpfDigits.length !== 11) {
       setError('Para pagar via Pix, é necessário cadastrar seu CPF. Acesse "Minha Conta" nas configurações do seu perfil para adicionar o CPF, ou escolha pagamento em Dinheiro.')
       return
     }
@@ -293,70 +294,73 @@ export default function CartPage() {
       setProcessing(true)
       setError(null)
 
-      // MODIFIQUEI AQUI - Garantir contestId válido para o pagamento (Edge Function exige contestId)
       const firstItem = items[0]
       const cartContestId = firstItem?.contestId ? String(firstItem.contestId) : ''
       if (!cartContestId) {
         throw new Error('contestId é obrigatório para finalizar a compra')
       }
 
-      // Criar todas as participações
-      const participations = []
-      const ticketCodes: string[] = []
-
-      for (const item of items) {
-        // MODIFIQUEI AQUI - Garantir contestId por item
-        if (!item?.contestId) {
-          throw new Error('contestId é obrigatório para criar participação')
-        }
-
-        // MODIFIQUEI AQUI - Garantir amount válido ao criar participação (createParticipation agora valida isso)
-        const amount = Number(item.price)
-        if (!Number.isFinite(amount) || amount <= 0) {
-          throw new Error('Valor inválido para criar participação')
-        }
-
-        const participation = await createParticipation({
-          contestId: item.contestId,
-          numbers: item.selectedNumbers,
-          amount, // MODIFIQUEI AQUI - passa valor da participação
-        })
-        participations.push(participation)
-        if (participation.ticket_code) {
-          ticketCodes.push(participation.ticket_code)
-        }
-      }
-
-      setCreatedTicketCodes(ticketCodes)
-
-      // Salvar valor total ANTES de limpar o carrinho
-      const totalAmount = getTotalPrice()
-      setPaidAmount(totalAmount)
-
       if (paymentMethod === 'pix') {
-        // Para Pix, criar um único pagamento com o valor total
-        // Usamos a primeira participação como referência
-        const firstParticipation = items[0]
-        const cartContestId = firstItem?.contestId ? String(firstItem.contestId) : ''
+        // Pix: NÃO criar participação aqui - ticket só é criado pelo webhook APÓS confirmação do pagamento
+        const totalAmount = getTotalPrice()
+        setPaidAmount(totalAmount)
+        setCreatedTicketCodes([])
+
+        const cartItems: Array<{ contestId: string; selectedNumbers: number[]; amount: number }> = items.map((item) => {
+          if (!item?.contestId) throw new Error('contestId é obrigatório')
+          const amount = Number(item.price)
+          if (!Number.isFinite(amount) || amount <= 0) throw new Error('Valor inválido')
+          return {
+            contestId: item.contestId,
+            selectedNumbers: item.selectedNumbers,
+            amount,
+          }
+        })
 
         const pixData = await createPixPayment({
-          // MODIFIQUEI AQUI - enviar contestId para passar no body_validation da Edge Function
           contestId: cartContestId,
           selectedNumbers: firstItem.selectedNumbers,
-
-          participationId: firstParticipation.id,
-          ticketCode: ticketCodes.join(', '),
+          participationId: '',
+          ticketCode: '',
           amount: totalAmount,
           description: 'Pedido de Compra',
           customerName: profile.name || 'Cliente',
           customerEmail: profile.email || undefined,
           customerPhone: profile.phone || undefined,
-          customerCpfCnpj: profile.cpf,
+          customerCpfCnpj: cpfDigits,
+          cartItems,
         })
 
         setPixQrCode(pixData.qrCode.encodedImage)
         setPixPayload(pixData.qrCode.payload)
         setPixExpirationDate(pixData.qrCode.expirationDate)
+      } else {
+        // Dinheiro: criar participações (fluxo antigo)
+        const participations = []
+        const ticketCodes: string[] = []
+
+        for (const item of items) {
+          if (!item?.contestId) {
+            throw new Error('contestId é obrigatório para criar participação')
+          }
+          const amount = Number(item.price)
+          if (!Number.isFinite(amount) || amount <= 0) {
+            throw new Error('Valor inválido para criar participação')
+          }
+
+          const participation = await createParticipation({
+            contestId: item.contestId,
+            numbers: item.selectedNumbers,
+            amount,
+          })
+          participations.push(participation)
+          if (participation.ticket_code) {
+            ticketCodes.push(participation.ticket_code)
+          }
+        }
+
+        setCreatedTicketCodes(ticketCodes)
+        setPaidAmount(getTotalPrice())
       }
 
       // MODIFIQUEI AQUI - Atualizar Última Compra SOMENTE após finalizar a compra com sucesso (opção A)
@@ -417,19 +421,19 @@ export default function CartPage() {
 
                 <div>
                   <label className="block text-sm font-semibold text-[#1F1F1F] mb-2">
-                    Codigo Pix (Copia e Cola):
+                    Código Pix (Copia e Cola):
                   </label>
-                  <div className="flex gap-2">
+                  <div className="flex flex-col sm:flex-row gap-2">
                     <input
                       type="text"
                       readOnly
                       value={pixPayload}
-                      className="flex-1 px-4 py-2 border border-[#E5E5E5] rounded-lg font-mono text-sm bg-[#F9F9F9]"
+                      className="flex-1 min-w-0 px-4 py-2.5 sm:py-2 border border-[#E5E5E5] rounded-lg font-mono text-xs sm:text-sm bg-[#F9F9F9]"
                     />
                     <button
                       id="copy-pix-btn"
                       onClick={copyPixPayload}
-                      className="px-6 py-2 bg-[#1E7F43] text-white rounded-lg font-semibold hover:bg-[#3CCB7F] transition-colors"
+                      className="shrink-0 px-6 py-3 sm:py-2 bg-[#1E7F43] text-white rounded-lg font-semibold hover:bg-[#3CCB7F] transition-colors min-h-[44px] touch-manipulation"
                     >
                       Copiar
                     </button>
@@ -441,7 +445,7 @@ export default function CartPage() {
                     <strong>Valor Total:</strong> {formatCurrency(paidAmount)}
                   </p>
                   <p className="text-sm text-blue-800 mt-1">
-                    <strong>Tickets:</strong> {createdTicketCodes.join(', ')}
+                    Após a confirmação do pagamento Pix, seus tickets aparecerão automaticamente em <strong>Meus Tickets</strong>.
                   </p>
                   {pixExpirationDate && (
                     <p className="text-sm text-blue-800 mt-1">
@@ -453,16 +457,16 @@ export default function CartPage() {
                   </p>
                 </div>
 
-                <div className="flex gap-3 justify-center">
+                <div className="flex flex-col sm:flex-row gap-3 justify-center">
                   <Link
                     to="/contests"
-                    className="px-6 py-3 bg-[#1E7F43] text-white rounded-xl font-semibold hover:bg-[#3CCB7F] transition-colors"
+                    className="w-full sm:w-auto text-center px-6 py-3 bg-[#1E7F43] text-white rounded-xl font-semibold hover:bg-[#3CCB7F] transition-colors min-h-[44px] flex items-center justify-center touch-manipulation"
                   >
                     Ver Concursos
                   </Link>
                   <Link
                     to="/my-tickets"
-                    className="px-6 py-3 bg-white border-2 border-[#1E7F43] text-[#1E7F43] rounded-xl font-semibold hover:bg-[#1E7F43]/5 transition-colors"
+                    className="w-full sm:w-auto text-center px-6 py-3 bg-white border-2 border-[#1E7F43] text-[#1E7F43] rounded-xl font-semibold hover:bg-[#1E7F43]/5 transition-colors min-h-[44px] flex items-center justify-center touch-manipulation"
                   >
                     Ver Meus Tickets
                   </Link>
@@ -491,16 +495,16 @@ export default function CartPage() {
                     Suas participacoes estao <strong>pendentes</strong>. Um administrador registrara o pagamento em dinheiro e ativara suas participacoes.
                   </p>
                 </div>
-                <div className="flex gap-3 justify-center pt-4">
+                <div className="flex flex-col sm:flex-row gap-3 justify-center pt-4">
                   <Link
                     to="/contests"
-                    className="px-6 py-3 bg-[#1E7F43] text-white rounded-xl font-semibold hover:bg-[#3CCB7F] transition-colors"
+                    className="w-full sm:w-auto text-center px-6 py-3 bg-[#1E7F43] text-white rounded-xl font-semibold hover:bg-[#3CCB7F] transition-colors min-h-[44px] flex items-center justify-center touch-manipulation"
                   >
                     Ver Concursos
                   </Link>
                   <Link
                     to="/my-tickets"
-                    className="px-6 py-3 bg-white border-2 border-[#1E7F43] text-[#1E7F43] rounded-xl font-semibold hover:bg-[#1E7F43]/5 transition-colors"
+                    className="w-full sm:w-auto text-center px-6 py-3 bg-white border-2 border-[#1E7F43] text-[#1E7F43] rounded-xl font-semibold hover:bg-[#1E7F43]/5 transition-colors min-h-[44px] flex items-center justify-center touch-manipulation"
                   >
                     Ver Meus Tickets
                   </Link>

@@ -615,7 +615,12 @@ export default function AdminDraws() {
   const formatNumbersWithSpaces = (s: string): string => {
     const digits = s.replace(/\D/g, '')
     if (digits.length === 0) return ''
-    return digits.match(/.{1,2}/g)?.map(n => n.padStart(2, '0')).join(' ') ?? ''
+    const groups: string[] = []
+    for (let i = 0; i < digits.length; i += 2) {
+      const chunk = digits.slice(i, i + 2)
+      groups.push(chunk.length === 2 ? chunk.padStart(2, '0') : chunk)
+    }
+    return groups.join(' ')
   }
   const parseDateForInput = (s: string | null | undefined): string => {
     if (!s?.trim()) return ''
@@ -694,27 +699,6 @@ export default function AdminDraws() {
                       ]}
                     />
                   </div>
-                  {/* MODIFIQUEI AQUI - Botão Concurso Oficial (igual Novo Sorteio - abre modal com select + inputs) */}
-                  <button
-                    onClick={() => {
-                      const c = filterContestId !== 'all' ? contests.find(x => x.id === filterContestId) : null
-                      setOfficialContestForm({
-                        contest_id: c?.id || '',
-                        official_contest_name: c?.official_contest_name || '',
-                        official_contest_code: c?.official_contest_code || '',
-                        official_contest_numbers: c?.official_contest_numbers || '',
-                        official_contest_date: c?.official_contest_date || '',
-                      })
-                      setShowOfficialContestFormModal(true)
-                    }}
-                    className="shrink-0 h-[42px] px-6 bg-[#1E7F43] text-white rounded-xl hover:bg-[#3CCB7F] transition-colors font-semibold flex items-center justify-center gap-2"
-                    title="Lançar/editar concurso oficial"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7a1.994 1.994 0 01-.586-1.414V7a4 4 0 014-4z" />
-                    </svg>
-                    Concurso Oficial
-                  </button>
                   <button
                     onClick={() => handleOpenDrawModal()}
                     className="shrink-0 h-[42px] px-6 bg-[#1E7F43] text-white rounded-xl hover:bg-[#3CCB7F] transition-colors font-semibold flex items-center justify-center gap-2"
@@ -908,7 +892,7 @@ export default function AdminDraws() {
                   </div>
 
                   {/* Conteúdo do Modal com Scroll */}
-                  <div className="overflow-y-auto flex-1 px-6 py-6 custom-scrollbar">
+                  <div className="overflow-y-auto flex-1 px-4 sm:px-6 py-4 sm:py-6 custom-scrollbar">
                     <div className="space-y-6">
                       <div className="bg-[#F9F9F9] rounded-xl p-4 border border-[#E5E5E5]">
                         <label htmlFor="draw-contest" className="block text-sm font-bold text-[#1F1F1F] mb-3 flex items-center gap-2">
@@ -938,11 +922,11 @@ export default function AdminDraws() {
                         <>
                           {/* Quantidade de números customizada (opcional) */}
                           <div className="bg-[#F9F9F9] rounded-xl p-4 border border-[#E5E5E5]">
-                            <div className="flex items-center justify-between mb-3">
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-0 mb-3">
                               <label className="block text-sm font-bold text-[#1F1F1F] flex items-center gap-2">
                                 Quantidade de Números
                               </label>
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2 flex-wrap">
                                 <span className="text-xs text-[#1F1F1F]/60">
                                   Padrão: {contests.find(c => c.id === drawForm.contest_id)?.numbers_per_participation || 6}
                                 </span>
@@ -998,6 +982,35 @@ export default function AdminDraws() {
                                 </p>
                               </div>
                             )}
+                          </div>
+
+                          {/* Concurso Oficial - seção opcional, não interfere no fluxo do sorteio */}
+                          <div className="bg-[#F9F9F9] rounded-xl p-4 border border-[#E5E5E5] border-dashed">
+                            <p className="text-xs text-[#1F1F1F]/60 mb-2">Opcional</p>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const c = drawForm.contest_id ? contests.find(x => x.id === drawForm.contest_id) : null
+                                setOfficialContestForm({
+                                  contest_id: c?.id || '',
+                                  official_contest_name: c?.official_contest_name || '',
+                                  official_contest_code: c?.official_contest_code || '',
+                                  official_contest_numbers: c?.official_contest_numbers || '',
+                                  official_contest_date: c?.official_contest_date || '',
+                                })
+                                setShowOfficialContestFormModal(true)
+                              }}
+                              className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2.5 sm:py-2 bg-[#1E7F43]/10 text-[#1E7F43] rounded-xl hover:bg-[#1E7F43]/20 transition-colors font-semibold text-sm border border-[#1E7F43]/30 min-h-[44px] sm:min-h-0 touch-manipulation"
+                              title="Lançar/editar concurso oficial (informativo)"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7a1.994 1.994 0 01-.586-1.414V7a4 4 0 014-4z" />
+                              </svg>
+                              Concurso Oficial
+                            </button>
+                            <p className="text-xs text-[#1F1F1F]/50 mt-2">
+                              Referência ao sorteio oficial (ex: Mega-Sena). Informativo, sem vínculo com o sorteio.
+                            </p>
                           </div>
 
                           <div className="bg-[#F9F9F9] rounded-xl p-4 border border-[#E5E5E5]">

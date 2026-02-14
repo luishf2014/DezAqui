@@ -6,11 +6,15 @@ export interface AsaasPixQRCodeResponse {
   expirationDate: string
 }
 
-export interface CreatePixPaymentParams {
-  // MODIFIQUEI AQUI - exigidos pela Edge Function (body_validation)
+export interface CartItemForPix {
   contestId: string
   selectedNumbers: number[]
+  amount: number
+}
 
+export interface CreatePixPaymentParams {
+  contestId: string
+  selectedNumbers: number[]
   participationId: string
   ticketCode: string
   amount: number
@@ -19,6 +23,9 @@ export interface CreatePixPaymentParams {
   customerCpfCnpj?: string
   customerEmail?: string
   customerPhone?: string
+  discountCode?: string
+  /** Carrinho: múltiplas participações em um único Pix. Quando presente, ignora participationId/ticketCode. */
+  cartItems?: CartItemForPix[]
 }
 
 export interface CreatePixPaymentResponse {
@@ -106,18 +113,16 @@ export async function createPixPayment(
       // ...(anonKey ? { apikey: anonKey } : {}),
     },
       body: JSON.stringify({
-    // MODIFIQUEI AQUI - campos exigidos pela Edge Function
     contestId: params.contestId,
     selectedNumbers: params.selectedNumbers,
-
-    participationId: params.participationId,
-    ticketCode: params.ticketCode,
     amount: params.amount,
     description: params.description,
     customerName: params.customerName,
     customerEmail: params.customerEmail,
     customerPhone: params.customerPhone,
     customerCpfCnpj: params.customerCpfCnpj,
+    discountCode: params.discountCode,
+    cartItems: params.cartItems,
   }),
   })
 

@@ -99,46 +99,99 @@ serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, serviceRoleKey)
 
-    const { data: payment, error: payFindErr } = await supabase
+    const { data: payments, error: payFindErr } = await supabase
       .from('payments')
-      .select('id, participation_id, status')
+      .select('id, participation_id, intent_id, status')
       .eq('external_id', paymentId)
-      .maybeSingle()
 
     if (payFindErr) {
       console.error('[asaas-webhook] erro find payment:', payFindErr)
       return jsonResponse({ error: 'Falha ao buscar pagamento' }, 500)
     }
 
-    if (!payment) {
+    const paymentList = payments || []
+    if (paymentList.length === 0) {
       console.log('[asaas-webhook] pagamento não encontrado:', paymentId)
       return jsonResponse({ message: 'Pagamento não encontrado' }, 200)
     }
 
-    // 🔁 Idempotência
-    if (payment.status === 'paid') {
-      return jsonResponse({ message: 'Pagamento já processado' }, 200)
+    const participationIdsToActivate: string[] = []
+
+    for (const payment of paymentList) {
+      if (payment.status === 'paid') continue
+
+      let participationId = payment.participation_id
+
+      // Se não tem participação (fluxo Pix com intent - CheckoutPage), criar a partir do intent
+      if (!participationId && payment.intent_id) {
+        const { data: intent, error: intentErr } = await supabase
+          .from('pix_payment_intents')
+          .select('id, user_id, contest_id, selected_numbers, amount')
+          .eq('id', payment.intent_id)
+          .maybeSingle()
+
+        if (intentErr || !intent) {
+          console.error('[asaas-webhook] intent não encontrado:', payment.intent_id, intentErr)
+          return jsonResponse({ error: 'Intent não encontrado' }, 500)
+        }
+
+        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+        let randomPart = ''
+        for (let i = 0; i < 6; i++) {
+          randomPart += chars.charAt(Math.floor(Math.random() * chars.length))
+        }
+        const ticketCode = `TK-${randomPart}`
+
+        const { data: newPart, error: partInsertErr } = await supabase
+          .from('participations')
+          .insert({
+            contest_id: intent.contest_id,
+            user_id: intent.user_id,
+            numbers: intent.selected_numbers,
+            amount: Number(intent.amount),
+            status: 'active',
+            ticket_code: ticketCode,
+          })
+          .select('id')
+          .single()
+
+        if (partInsertErr || !newPart) {
+          console.error('[asaas-webhook] erro ao criar participação:', partInsertErr)
+          return jsonResponse({ error: 'Erro ao criar participação' }, 500)
+        }
+
+        participationId = newPart.id
+
+        await supabase
+          .from('pix_payment_intents')
+          .update({ status: 'PAID', updated_at: new Date().toISOString() })
+          .eq('id', intent.id)
+      }
+
+      if (participationId) {
+        participationIdsToActivate.push(participationId)
+      }
+
+      const { error: payRes } = await supabase
+        .from('payments')
+        .update({
+          status: 'paid',
+          paid_at: paymentDate,
+          participation_id: participationId,
+        })
+        .eq('id', payment.id)
+
+      if (payRes) {
+        console.error('[asaas-webhook] erro update payment:', payRes)
+        return jsonResponse({ error: 'Erro ao atualizar pagamento' }, 500)
+      }
     }
 
-    // Atualiza pagamento + participação
-    const [payRes, partRes] = await Promise.all([
-      supabase
-        .from('payments')
-        .update({ status: 'paid', paid_at: paymentDate })
-        .eq('id', payment.id),
-
-      supabase
+    for (const pid of participationIdsToActivate) {
+      await supabase
         .from('participations')
         .update({ status: 'active' })
-        .eq('id', payment.participation_id),
-    ])
-
-    if (payRes.error || partRes.error) {
-      console.error('[asaas-webhook] erro update:', {
-        pay: payRes.error,
-        part: partRes.error,
-      })
-      return jsonResponse({ error: 'Erro ao atualizar registros' }, 500)
+        .eq('id', pid)
     }
 
     return jsonResponse({ message: 'Pagamento confirmado com sucesso' }, 200)

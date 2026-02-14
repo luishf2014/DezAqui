@@ -354,53 +354,38 @@ export default function CheckoutPage() {
   const handlePixPayment = async () => {
     if (!contest || !profile || selectedNumbers.length === 0) return
 
-    // Evitar múltiplas chamadas simultâneas
-    if (processing || participationCreatedRef.current) return
+    if (processing) return
+
+    const finalAmount = getFinalAmount()
+    const cpfDigits = String(profile?.cpf || '').replace(/\D/g, '')
+
+    if (cpfDigits.length !== 11) {
+      setError('Para pagar via Pix, é necessário cadastrar seu CPF. Acesse "Minha Conta" nas configurações do seu perfil para adicionar o CPF, ou escolha pagamento em Dinheiro.')
+      return
+    }
+
+    if (finalAmount < 1) {
+      setError('O valor do pedido deve ser maior que zero.')
+      return
+    }
 
     try {
       setProcessing(true)
       setError(null)
 
-      // MODIFIQUEI AQUI - Valor final travado no checkout
-      const finalAmount = getFinalAmount()
-
-      // 1. Criar participação ANTES de gerar o pagamento
-      let participationData = participation
-
-      if (!participationData) {
-        console.log('[CheckoutPage] Criando participação antes do pagamento...')
-        participationCreatedRef.current = true
-
-        participationData = await createParticipation({
-          contestId: contest.id,
-          numbers: selectedNumbers,
-          amount: finalAmount, // MODIFIQUEI AQUI - trava valor na participation
-        })
-
-        setParticipation(participationData)
-      }
-
-      // 2. Validar CPF antes de permitir pagamento Pix
-      if (!profile?.cpf || profile.cpf.length !== 11) {
-        setError('Para pagar via Pix, é necessário cadastrar seu CPF. Acesse "Minha Conta" nas configurações do seu perfil para adicionar o CPF, ou escolha pagamento em Dinheiro.')
-        setProcessing(false)
-        return
-      }
-
-      // 4. Criar pagamento Pix e gerar QR Code
+      // Pix: NÃO criar participação antes do pagamento - será criada pelo webhook quando o Pix for confirmado
       const pixData = await createPixPayment({
-        // MODIFIQUEI AQUI - enviar contestId para passar no body_validation da Edge Function
         contestId: contest.id,
         selectedNumbers: selectedNumbers,
-
-        participationId: participationData.id,
-        ticketCode: participationData.ticket_code || '',
+        participationId: '',
+        ticketCode: '',
         amount: finalAmount,
         description: 'Pedido de Compra',
         customerName: profile.name || 'Cliente',
         customerEmail: profile.email || undefined,
         customerPhone: profile.phone || undefined,
-        customerCpfCnpj: profile.cpf, // CPF normalizado (somente números)
+        customerCpfCnpj: cpfDigits,
+        discountCode: appliedDiscount?.code || undefined,
       })
 
       // 5. Se chegou aqui, tudo deu certo - exibir QR Code
@@ -424,12 +409,6 @@ export default function CheckoutPage() {
     } catch (err) {
       console.error('Erro ao processar pagamento Pix:', err)
       setError(err instanceof Error ? err.message : 'Erro ao gerar QR Code Pix')
-
-      // Se falhou após criar participação, resetar flag para permitir nova tentativa
-      if (participationCreatedRef.current) {
-        participationCreatedRef.current = false
-        setParticipation(null)
-      }
     } finally {
       setProcessing(false)
     }
@@ -847,17 +826,17 @@ export default function CheckoutPage() {
                 <label className="block text-sm font-semibold text-[#1F1F1F] mb-2">
                   Código Pix (Copia e Cola):
                 </label>
-                <div className="flex gap-2">
+                <div className="flex flex-col sm:flex-row gap-2">
                   <input
                     type="text"
                     readOnly
                     value={pixPayload}
-                    className="flex-1 px-4 py-2 border border-[#E5E5E5] rounded-lg font-mono text-sm bg-[#F9F9F9]"
+                    className="flex-1 min-w-0 px-4 py-2.5 sm:py-2 border border-[#E5E5E5] rounded-lg font-mono text-xs sm:text-sm bg-[#F9F9F9]"
                   />
                   <button
                     id="copy-pix-btn"
                     onClick={copyPixPayload}
-                    className="px-6 py-2 bg-[#1E7F43] text-white rounded-lg font-semibold hover:bg-[#3CCB7F] transition-colors"
+                    className="shrink-0 px-6 py-3 sm:py-2 bg-[#1E7F43] text-white rounded-lg font-semibold hover:bg-[#3CCB7F] transition-colors min-h-[44px] touch-manipulation"
                   >
                     Copiar
                   </button>
@@ -880,20 +859,23 @@ export default function CheckoutPage() {
                   </p>
                 )}
                 <p className="text-sm text-blue-800 mt-2">
-                  Após o pagamento, sua participação será ativada automaticamente.
+                  Após a confirmação do pagamento Pix, seus tickets aparecerão automaticamente em <strong>Meus Tickets</strong>.
+                </p>
+                <p className="text-sm text-blue-800 mt-1">
+                  Após o pagamento, suas participações serão ativadas automaticamente.
                 </p>
               </div>
 
-              <div className="flex gap-3 justify-center">
+              <div className="flex flex-col sm:flex-row gap-3 justify-center">
                 <Link
                   to={`/contests/${id}`}
-                  className="px-6 py-3 bg-[#1E7F43] text-white rounded-xl font-semibold hover:bg-[#3CCB7F] transition-colors"
+                  className="w-full sm:w-auto text-center px-6 py-3 bg-[#1E7F43] text-white rounded-xl font-semibold hover:bg-[#3CCB7F] transition-colors min-h-[44px] flex items-center justify-center touch-manipulation"
                 >
                   Voltar para o Concurso
                 </Link>
                 <Link
                   to="/my-tickets"
-                  className="px-6 py-3 bg-white border-2 border-[#1E7F43] text-[#1E7F43] rounded-xl font-semibold hover:bg-[#1E7F43]/5 transition-colors"
+                  className="w-full sm:w-auto text-center px-6 py-3 bg-white border-2 border-[#1E7F43] text-[#1E7F43] rounded-xl font-semibold hover:bg-[#1E7F43]/5 transition-colors min-h-[44px] flex items-center justify-center touch-manipulation"
                 >
                   Ver Meus Tickets
                 </Link>
