@@ -57,7 +57,7 @@ export default function CustomSelect({
         type="button"
         onClick={() => !disabled && setIsOpen((o) => !o)}
         disabled={disabled}
-        className={`w-full px-4 py-2 border border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43] focus:border-transparent text-left flex items-center justify-between bg-white disabled:opacity-50 disabled:cursor-not-allowed ${className}`}
+        className={`w-full px-4 py-2 min-h-[44px] border border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43] focus:border-transparent text-left flex items-center justify-between bg-white disabled:opacity-50 disabled:cursor-not-allowed touch-manipulation ${className}`}
         aria-haspopup="listbox"
         aria-expanded={isOpen}
       >

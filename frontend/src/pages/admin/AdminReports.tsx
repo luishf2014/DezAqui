@@ -580,8 +580,8 @@ export default function AdminReports() {
               <h3 className="text-xl font-bold text-[#1F1F1F] mb-4">
                 Lista de Participantes ({reportData.participations.length})
               </h3>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+              <div className="overflow-x-auto custom-scrollbar">
+                <table className="w-full text-sm min-w-[600px]">
                   <thead>
                     <tr className="border-b border-[#E5E5E5]">
                       <th className="text-left py-3 px-4 font-semibold text-[#1F1F1F]">Nome</th>

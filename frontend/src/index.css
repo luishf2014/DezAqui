@@ -9,6 +9,8 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* Melhora resposta ao toque em dispositivos móveis */
+  touch-action: manipulation;
 }
 
 /* Apenas mobile: evita layout de desktop e zoom */
@@ -22,6 +24,24 @@ body {
     overflow-x: hidden;
   }
 }
+
+/* Scrollbar customizada para tabelas e áreas scrolláveis em mobile/tablet */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #F9F9F9;
+  border-radius: 10px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #E5E5E5;
+  border-radius: 10px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #1E7F43;
+}
+
 
 code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',

@@ -31,6 +31,8 @@ export default function AdminFinance() {
   
   // Estados para edição de valores
   const [editingContestId, setEditingContestId] = useState<string | null>(null)
+  const [historioExpanded, setHistorioExpanded] = useState(false)
+  const [configValoresExpanded, setConfigValoresExpanded] = useState(false)
   const [editingValue, setEditingValue] = useState<string>('')
   const [savingValue, setSavingValue] = useState(false)
   
@@ -663,8 +665,8 @@ export default function AdminFinance() {
           <>
             {/* Estatísticas Financeiras */}
             {stats && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                <div className="bg-white rounded-2xl border border-[#E5E5E5] p-6 shadow-sm">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6">
+                <div className="bg-white rounded-2xl border border-[#E5E5E5] p-4 sm:p-6 shadow-sm">
                   <div className="flex items-center justify-between mb-2">
                     <h3 className="text-sm font-semibold text-[#1F1F1F]/70">Total Arrecadado</h3>
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-[#1E7F43]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -674,7 +676,7 @@ export default function AdminFinance() {
                   <p className="text-2xl font-bold text-[#1E7F43]">{formatCurrency(stats.totalRevenue)}</p>
                 </div>
 
-                <div className="bg-white rounded-2xl border border-[#E5E5E5] p-6 shadow-sm">
+                <div className="bg-white rounded-2xl border border-[#E5E5E5] p-4 sm:p-6 shadow-sm">
                   <div className="flex items-center justify-between mb-2">
                     <h3 className="text-sm font-semibold text-[#1F1F1F]/70">Total Pagamentos</h3>
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-[#3CCB7F]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -684,7 +686,7 @@ export default function AdminFinance() {
                   <p className="text-2xl font-bold text-[#3CCB7F]">{stats.totalPayments}</p>
                 </div>
 
-                <div className="bg-white rounded-2xl border border-[#E5E5E5] p-6 shadow-sm">
+                <div className="bg-white rounded-2xl border border-[#E5E5E5] p-4 sm:p-6 shadow-sm">
                   <div className="flex items-center justify-between mb-2">
                     <h3 className="text-sm font-semibold text-[#1F1F1F]/70">Ticket Médio</h3>
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-[#F4C430]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -694,7 +696,7 @@ export default function AdminFinance() {
                   <p className="text-2xl font-bold text-[#F4C430]">{formatCurrency(stats.averagePayment)}</p>
                 </div>
 
-                <div className="bg-white rounded-2xl border border-[#E5E5E5] p-6 shadow-sm">
+                <div className="bg-white rounded-2xl border border-[#E5E5E5] p-4 sm:p-6 shadow-sm">
                   <div className="flex items-center justify-between mb-2">
                     <h3 className="text-sm font-semibold text-[#1F1F1F]/70">Pix</h3>
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-[#3CCB7F]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -707,9 +709,9 @@ export default function AdminFinance() {
             )}
 
             {/* Filtros */}
-            <div className="bg-white rounded-2xl border border-[#E5E5E5] p-6 shadow-sm mb-6">
+            <div className="bg-white rounded-2xl border border-[#E5E5E5] p-4 sm:p-6 shadow-sm mb-6">
               <h2 className="text-xl font-bold text-[#1F1F1F] mb-4">Filtros</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                 <div>
                   <label htmlFor="contest-filter" className="block text-sm font-semibold text-[#1F1F1F] mb-2">
                     Concurso
@@ -766,7 +768,7 @@ export default function AdminFinance() {
                     type="date"
                     value={startDate}
                     onChange={(e) => setStartDate(e.target.value)}
-                    className="w-full px-4 py-2 border border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43] focus:border-transparent"
+                    className="w-full px-4 py-2.5 sm:py-2 border border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43] focus:border-transparent min-h-[44px] touch-manipulation"
                   />
                 </div>
 
@@ -779,17 +781,154 @@ export default function AdminFinance() {
                     type="date"
                     value={endDate}
                     onChange={(e) => setEndDate(e.target.value)}
-                    className="w-full px-4 py-2 border border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43] focus:border-transparent"
+                    className="w-full px-4 py-2.5 sm:py-2 border border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43] focus:border-transparent min-h-[44px] touch-manipulation"
                   />
                 </div>
               </div>
             </div>
 
+            {/* Histórico Financeiro */}
+            <div className="bg-white rounded-2xl border border-[#E5E5E5] shadow-md overflow-hidden mb-6">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 p-4 sm:p-5 border-b border-[#E5E5E5] bg-[#F9F9F9]/50">
+                <h2 className="text-lg sm:text-xl font-bold text-[#1F1F1F]">Histórico Financeiro</h2>
+                <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                  <span className="px-3 py-1.5 rounded-full text-sm font-semibold bg-[#1E7F43]/15 text-[#1E7F43]">
+                    {payments.length} pagamento{payments.length !== 1 ? 's' : ''}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-[#1F1F1F]/60">Pagos</span>
+                    <span className="text-lg font-bold text-[#1E7F43]">{payments.filter(p => p.status === 'paid').length}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-[#1F1F1F]/60">Pendentes</span>
+                    <span className="text-lg font-bold text-[#F4C430]">{payments.filter(p => p.status === 'pending').length}</span>
+                  </div>
+                  <button
+                    onClick={() => setHistorioExpanded(!historioExpanded)}
+                    className="min-h-[44px] min-w-[44px] flex items-center justify-center p-2 -m-1 text-[#1E7F43] hover:bg-[#1E7F43]/10 rounded-lg transition-colors touch-manipulation"
+                    aria-label={historioExpanded ? 'Minimizar' : 'Expandir'}
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      className={`h-5 w-5 transition-transform ${historioExpanded ? '' : 'rotate-180'}`}
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              {historioExpanded && (
+              <div className="p-4 sm:p-6 overflow-x-auto">
+              {payments.length === 0 ? (
+                <div className="text-center py-12 text-[#1F1F1F]/70">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mx-auto mb-4 text-[#1F1F1F]/30" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  <p>Nenhum pagamento encontrado com os filtros selecionados</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto custom-scrollbar">
+                  <table className="w-full min-w-[600px]">
+                    <thead>
+                      <tr className="border-b border-[#E5E5E5]">
+                        <th className="text-left py-3 px-3 sm:px-4 text-xs sm:text-sm font-semibold text-[#1F1F1F]">Data</th>
+                        <th className="text-left py-3 px-4 text-sm font-semibold text-[#1F1F1F]">Concurso</th>
+                        <th className="text-left py-3 px-4 text-sm font-semibold text-[#1F1F1F]">Ticket</th>
+                        <th className="text-left py-3 px-4 text-sm font-semibold text-[#1F1F1F]">Valor</th>
+                        <th className="text-left py-3 px-4 text-sm font-semibold text-[#1F1F1F]">Método</th>
+                        <th className="text-left py-3 px-4 text-sm font-semibold text-[#1F1F1F]">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {payments.map((payment) => (
+                        <tr key={payment.id} className="border-b border-[#E5E5E5] hover:bg-[#F9F9F9]">
+                          <td className="py-3 px-4 text-sm text-[#1F1F1F]">
+                            {formatDate(payment.created_at)}
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="text-sm font-semibold text-[#1F1F1F]">
+                              {payment.contest?.name || 'N/A'}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4">
+                            {payment.participation?.ticket_code ? (
+                              <span className="px-2 py-1 bg-[#1E7F43] text-white rounded-lg font-mono text-xs font-bold">
+                                {payment.participation.ticket_code}
+                              </span>
+                            ) : (
+                              <span className="text-sm text-[#1F1F1F]/50">N/A</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="text-sm font-bold text-[#1E7F43]">
+                              {formatCurrency(payment.amount)}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className={`px-2 py-1 rounded-lg text-xs font-semibold ${getMethodBadgeClass(payment.payment_method)}`}>
+                              {payment.payment_method === 'pix' ? 'Pix' :
+                               payment.payment_method === 'cash' ? 'Dinheiro' :
+                               payment.payment_method === 'manual' ? 'Manual' : 'N/A'}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className={`px-2 py-1 rounded-lg text-xs font-semibold ${getStatusBadgeClass(payment.status)}`}>
+                              {payment.status === 'paid' ? 'Pago' :
+                               payment.status === 'pending' ? 'Pendente' :
+                               payment.status === 'cancelled' ? 'Cancelado' :
+                               payment.status === 'refunded' ? 'Reembolsado' : payment.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              </div>
+              )}
+            </div>
+
             {/* Configuração de Valores por Concurso */}
-            <div className="bg-white rounded-2xl border border-[#E5E5E5] p-6 shadow-sm mb-6">
-              <h2 className="text-xl font-bold text-[#1F1F1F] mb-4">Configuração de Valores por Concurso</h2>
-              <div className="overflow-x-auto">
-                <table className="w-full">
+            <div className="bg-white rounded-2xl border border-[#E5E5E5] shadow-md overflow-hidden mb-6">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 p-4 sm:p-5 border-b border-[#E5E5E5] bg-[#F9F9F9]/50">
+                <h2 className="text-lg sm:text-xl font-bold text-[#1F1F1F]">Configuração de Valores por Concurso</h2>
+                <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                  <span className="px-3 py-1.5 rounded-full text-sm font-semibold bg-[#1E7F43]/15 text-[#1E7F43]">
+                    {contests.length} concurso{contests.length !== 1 ? 's' : ''}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-[#1F1F1F]/60">Ativos</span>
+                    <span className="text-lg font-bold text-[#1E7F43]">{contests.filter(c => c.status === 'active').length}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-[#1F1F1F]/60">Finalizados</span>
+                    <span className="text-lg font-bold text-[#F4C430]">{contests.filter(c => c.status === 'finished').length}</span>
+                  </div>
+                  <button
+                    onClick={() => setConfigValoresExpanded(!configValoresExpanded)}
+                    className="min-h-[44px] min-w-[44px] flex items-center justify-center p-2 -m-1 text-[#1E7F43] hover:bg-[#1E7F43]/10 rounded-lg transition-colors touch-manipulation"
+                    aria-label={configValoresExpanded ? 'Minimizar' : 'Expandir'}
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      className={`h-5 w-5 transition-transform ${configValoresExpanded ? '' : 'rotate-180'}`}
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              {configValoresExpanded && (
+              <div className="p-4 sm:p-6 overflow-x-auto">
+              <div className="overflow-x-auto custom-scrollbar">
+                <table className="w-full min-w-[500px]">
                   <thead>
                     <tr className="border-b border-[#E5E5E5]">
                       <th className="text-left py-3 px-4 text-sm font-semibold text-[#1F1F1F]">Concurso</th>
@@ -856,11 +995,11 @@ export default function AdminFinance() {
                             </span>
                           )}
                         </td>
-                        <td className="py-3 px-4">
+                        <td className="py-3 px-3 sm:px-4">
                           {editingContestId !== contest.id && (
                             <button
                               onClick={() => handleEditValue(contest)}
-                              className="px-4 py-2 bg-[#1E7F43] text-white rounded-lg hover:bg-[#3CCB7F] transition-colors text-sm font-semibold"
+                              className="px-4 py-2.5 sm:py-2 min-h-[44px] bg-[#1E7F43] text-white rounded-lg hover:bg-[#3CCB7F] transition-colors text-sm font-semibold touch-manipulation"
                             >
                               Editar Valor
                             </button>
@@ -871,86 +1010,17 @@ export default function AdminFinance() {
                   </tbody>
                 </table>
               </div>
-            </div>
-
-            {/* Histórico Financeiro */}
-            <div className="bg-white rounded-2xl border border-[#E5E5E5] p-6 shadow-sm mb-6">
-              <h2 className="text-xl font-bold text-[#1F1F1F] mb-4">Histórico Financeiro</h2>
-              {payments.length === 0 ? (
-                <div className="text-center py-12 text-[#1F1F1F]/70">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mx-auto mb-4 text-[#1F1F1F]/30" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                  <p>Nenhum pagamento encontrado com os filtros selecionados</p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b border-[#E5E5E5]">
-                        <th className="text-left py-3 px-4 text-sm font-semibold text-[#1F1F1F]">Data</th>
-                        <th className="text-left py-3 px-4 text-sm font-semibold text-[#1F1F1F]">Concurso</th>
-                        <th className="text-left py-3 px-4 text-sm font-semibold text-[#1F1F1F]">Ticket</th>
-                        <th className="text-left py-3 px-4 text-sm font-semibold text-[#1F1F1F]">Valor</th>
-                        <th className="text-left py-3 px-4 text-sm font-semibold text-[#1F1F1F]">Método</th>
-                        <th className="text-left py-3 px-4 text-sm font-semibold text-[#1F1F1F]">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {payments.map((payment) => (
-                        <tr key={payment.id} className="border-b border-[#E5E5E5] hover:bg-[#F9F9F9]">
-                          <td className="py-3 px-4 text-sm text-[#1F1F1F]">
-                            {formatDate(payment.created_at)}
-                          </td>
-                          <td className="py-3 px-4">
-                            <span className="text-sm font-semibold text-[#1F1F1F]">
-                              {payment.contest?.name || 'N/A'}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4">
-                            {payment.participation?.ticket_code ? (
-                              <span className="px-2 py-1 bg-[#1E7F43] text-white rounded-lg font-mono text-xs font-bold">
-                                {payment.participation.ticket_code}
-                              </span>
-                            ) : (
-                              <span className="text-sm text-[#1F1F1F]/50">N/A</span>
-                            )}
-                          </td>
-                          <td className="py-3 px-4">
-                            <span className="text-sm font-bold text-[#1E7F43]">
-                              {formatCurrency(payment.amount)}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4">
-                            <span className={`px-2 py-1 rounded-lg text-xs font-semibold ${getMethodBadgeClass(payment.payment_method)}`}>
-                              {payment.payment_method === 'pix' ? 'Pix' :
-                               payment.payment_method === 'cash' ? 'Dinheiro' :
-                               payment.payment_method === 'manual' ? 'Manual' : 'N/A'}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4">
-                            <span className={`px-2 py-1 rounded-lg text-xs font-semibold ${getStatusBadgeClass(payment.status)}`}>
-                              {payment.status === 'paid' ? 'Pago' :
-                               payment.status === 'pending' ? 'Pendente' :
-                               payment.status === 'cancelled' ? 'Cancelado' :
-                               payment.status === 'refunded' ? 'Reembolsado' : payment.status}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+              </div>
               )}
             </div>
 
             {/* Gestão de Descontos e Promoções (MODIFIQUEI AQUI) */}
-            <div className="bg-white rounded-2xl border border-[#E5E5E5] p-6 shadow-sm">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold text-[#1F1F1F]">Gestão de Descontos e Promoções</h2>
+            <div className="bg-white rounded-2xl border border-[#E5E5E5] p-4 sm:p-6 shadow-sm">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
+                <h2 className="text-lg sm:text-xl font-bold text-[#1F1F1F]">Gestão de Descontos e Promoções</h2>
                 <button
                   onClick={() => handleOpenDiscountModal()}
-                  className="px-4 py-2 bg-[#1E7F43] text-white rounded-lg hover:bg-[#3CCB7F] transition-colors font-semibold flex items-center gap-2"
+                  className="w-full sm:w-auto px-4 py-3 sm:py-2 min-h-[44px] bg-[#1E7F43] text-white rounded-lg hover:bg-[#3CCB7F] transition-colors font-semibold flex items-center justify-center gap-2 touch-manipulation"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -968,11 +1038,11 @@ export default function AdminFinance() {
                   <p className="text-sm mt-2">Clique em "Novo Desconto" para criar sua primeira promoção</p>
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full">
+                <div className="overflow-x-auto custom-scrollbar">
+                  <table className="w-full min-w-[800px]">
                     <thead>
                       <tr className="border-b border-[#E5E5E5]">
-                        <th className="text-left py-3 px-4 text-sm font-semibold text-[#1F1F1F]">Código</th>
+                        <th className="text-left py-3 px-3 sm:px-4 text-xs sm:text-sm font-semibold text-[#1F1F1F]">Código</th>
                         <th className="text-left py-3 px-4 text-sm font-semibold text-[#1F1F1F]">Nome</th>
                         <th className="text-left py-3 px-4 text-sm font-semibold text-[#1F1F1F]">Tipo</th>
                         <th className="text-left py-3 px-4 text-sm font-semibold text-[#1F1F1F]">Valor</th>

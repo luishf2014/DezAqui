@@ -140,8 +140,8 @@ export default function AdminDashboard() {
         )}
 
         {/* Cards de Estatísticas */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          <div className="bg-white rounded-2xl border border-[#E5E5E5] p-6 shadow-sm">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-8">
+          <div className="bg-white rounded-2xl border border-[#E5E5E5] p-4 sm:p-6 shadow-sm">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-sm font-semibold text-[#1F1F1F]/70">Total de Concursos</h3>
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-[#1E7F43]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -151,7 +151,7 @@ export default function AdminDashboard() {
             <p className="text-3xl font-bold text-[#1F1F1F]">{loading ? '...' : stats.total}</p>
           </div>
 
-          <div className="bg-white rounded-2xl border border-[#E5E5E5] p-6 shadow-sm">
+          <div className="bg-white rounded-2xl border border-[#E5E5E5] p-4 sm:p-6 shadow-sm">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-sm font-semibold text-[#1F1F1F]/70">Ativos</h3>
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-[#3CCB7F]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -171,7 +171,7 @@ export default function AdminDashboard() {
             <p className="text-3xl font-bold text-[#F4C430]">{loading ? '...' : stats.draft}</p>
           </div>
 
-          <div className="bg-white rounded-2xl border border-[#E5E5E5] p-6 shadow-sm">
+          <div className="bg-white rounded-2xl border border-[#E5E5E5] p-4 sm:p-6 shadow-sm">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-sm font-semibold text-[#1F1F1F]/70">Finalizados</h3>
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-[#1F1F1F]/50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -183,12 +183,12 @@ export default function AdminDashboard() {
         </div>
 
         {/* Ações Rápidas */}
-        <div className="bg-white rounded-2xl border border-[#E5E5E5] p-6 shadow-sm mb-8">
+        <div className="bg-white rounded-2xl border border-[#E5E5E5] p-4 sm:p-6 shadow-sm mb-8">
           <h2 className="text-xl font-bold text-[#1F1F1F] mb-4">Ações Rápidas</h2>
-          <div className="flex flex-wrap gap-4">
+          <div className="flex flex-col sm:flex-row flex-wrap gap-3 sm:gap-4">
             <Link
               to="/admin/contests/new"
-              className="px-6 py-3 bg-gradient-to-r from-[#1E7F43] to-[#3CCB7F] text-white rounded-xl font-semibold hover:shadow-lg transition-all flex items-center gap-2"
+              className="px-6 py-3 min-h-[44px] flex items-center justify-center gap-2 bg-gradient-to-r from-[#1E7F43] to-[#3CCB7F] text-white rounded-xl font-semibold hover:shadow-lg transition-all touch-manipulation"
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -197,7 +197,7 @@ export default function AdminDashboard() {
             </Link>
             <Link
               to="/admin/contests"
-              className="px-6 py-3 bg-white border-2 border-[#1E7F43] text-[#1E7F43] rounded-xl font-semibold hover:bg-[#F9F9F9] transition-all flex items-center gap-2"
+              className="px-6 py-3 min-h-[44px] flex items-center justify-center gap-2 bg-white border-2 border-[#1E7F43] text-[#1E7F43] rounded-xl font-semibold hover:bg-[#F9F9F9] transition-all touch-manipulation"
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />

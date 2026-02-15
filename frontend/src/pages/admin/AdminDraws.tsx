@@ -778,11 +778,11 @@ export default function AdminDraws() {
                   <p className="text-sm mt-2">Clique em "Novo Sorteio" para criar seu primeiro sorteio</p>
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full">
+                <div className="overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0">
+                  <table className="w-full min-w-[600px]">
                     <thead>
                       <tr className="border-b border-[#E5E5E5]">
-                        <th className="text-left py-3 px-4 text-sm font-semibold text-[#1F1F1F]">Código</th>
+                        <th className="text-left py-3 px-3 sm:px-4 text-xs sm:text-sm font-semibold text-[#1F1F1F]">Código</th>
                         <th className="text-left py-3 px-4 text-sm font-semibold text-[#1F1F1F]">Concurso</th>
                         <th className="text-left py-3 px-4 text-sm font-semibold text-[#1F1F1F]">Data/Hora</th>
                         <th className="text-left py-3 px-4 text-sm font-semibold text-[#1F1F1F]">Números Sorteados</th>
