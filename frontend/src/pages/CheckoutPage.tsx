@@ -8,7 +8,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate, useLocation, Link } from 'react-router-dom'
 import { getContestById } from '../services/contestsService'
 import { createParticipation } from '../services/participationsService'
-import { createPixPayment } from '../services/asaasService'
+import { createPixPayment } from '../services/mercadopagoService'
 import { checkPixPaymentStatus } from '../services/paymentsService'
 import { getDiscountByCode, calculateDiscountedPrice, incrementDiscountUses } from '../services/discountsService'
 import { Contest, Participation, Discount } from '../types'
@@ -213,6 +213,33 @@ export default function CheckoutPage() {
 
     return () => clearInterval(interval)
   }, [pixPaymentId, pixConfirmed])
+
+  // Redirecionar para página de sucesso ao invés de mostrar inline
+  useEffect(() => {
+    if (!success || !id) return
+
+    if (paymentMethod === 'cash' && participation?.ticket_code) {
+      navigate('/compra/sucesso', {
+        replace: true,
+        state: {
+          paymentMethod: 'cash',
+          ticketCodes: [participation.ticket_code],
+          contestId: id,
+          fromCart: false,
+        },
+      })
+    } else if (paymentMethod === 'pix' && pixConfirmed?.ticketCodes?.length) {
+      navigate('/compra/sucesso', {
+        replace: true,
+        state: {
+          paymentMethod: 'pix',
+          ticketCodes: pixConfirmed.ticketCodes,
+          contestId: pixConfirmed.contestId || id,
+          fromCart: false,
+        },
+      })
+    }
+  }, [success, paymentMethod, participation?.ticket_code, pixConfirmed, id, navigate])
 
   const handlePaymentMethodSelect = (method: 'pix' | 'cash') => {
     setPaymentMethod(method)
@@ -793,80 +820,14 @@ export default function CheckoutPage() {
           </div>
         )}
 
-        {/* Mensagem de sucesso para pagamento em dinheiro */}
-        {success && paymentMethod === 'cash' && (
+        {/* Redirecionando para página de sucesso (cash ou pix confirmado) */}
+        {success &&
+          ((paymentMethod === 'cash' && participation?.ticket_code) ||
+            (paymentMethod === 'pix' && pixConfirmed?.ticketCodes?.length)) && (
           <div className="bg-white rounded-2xl shadow-lg p-6 border border-[#E5E5E5]">
-            <div className="text-center space-y-4">
-              <div className="text-6xl mb-4">✅</div>
-              <h2 className="text-2xl font-bold text-[#1F1F1F] mb-2">
-                Participação Criada com Sucesso!
-              </h2>
-              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 max-w-md mx-auto">
-                <p className="text-blue-800 text-sm mb-2">
-                  <strong>Código do Ticket:</strong>
-                </p>
-                <p className="font-mono font-bold text-lg text-blue-900 mb-3">
-                  {participation?.ticket_code || 'N/A'}
-                </p>
-                <p className="text-blue-700 text-sm">
-                  Sua participação está <strong>pendente</strong>. Um administrador registrará o pagamento em dinheiro e ativará sua participação.
-                </p>
-              </div>
-              <div className="flex gap-3 justify-center pt-4">
-                <Link
-                  to={`/contests/${id}`}
-                  className="px-6 py-3 bg-[#1E7F43] text-white rounded-xl font-semibold hover:bg-[#3CCB7F] transition-colors"
-                >
-                  Voltar para o Concurso
-                </Link>
-                <Link
-                  to="/my-tickets"
-                  className="px-6 py-3 bg-white border-2 border-[#1E7F43] text-[#1E7F43] rounded-xl font-semibold hover:bg-[#1E7F43]/5 transition-colors"
-                >
-                  Ver Meus Tickets
-                </Link>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Pix confirmado - Card de sucesso (como na imagem) */}
-        {success && paymentMethod === 'pix' && pixConfirmed && (
-          <div className="bg-white rounded-2xl shadow-lg p-6 border border-[#E5E5E5]">
-            <div className="text-center space-y-4">
-              <div className="w-16 h-16 mx-auto rounded-xl bg-[#1E7F43] flex items-center justify-center">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-              </div>
-              <h2 className="text-2xl font-bold text-[#1F1F1F] mb-2">
-                Participação Criada com Sucesso!
-              </h2>
-              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 max-w-md mx-auto">
-                <p className="text-blue-800 text-sm mb-2">
-                  <strong>Código do Ticket:</strong>
-                </p>
-                <p className="font-mono font-bold text-lg text-blue-900 mb-3">
-                  {pixConfirmed.ticketCodes[0] || 'N/A'}
-                </p>
-                <p className="text-blue-700 text-sm">
-                  Seu pagamento Pix foi confirmado e sua participação está ativa!
-                </p>
-              </div>
-              <div className="flex gap-3 justify-center pt-4">
-                <Link
-                  to={pixConfirmed.contestId ? `/contests/${pixConfirmed.contestId}` : `/contests/${id}`}
-                  className="px-6 py-3 bg-[#1E7F43] text-white rounded-xl font-semibold hover:bg-[#3CCB7F] transition-colors"
-                >
-                  Voltar para o Concurso
-                </Link>
-                <Link
-                  to="/my-tickets"
-                  className="px-6 py-3 bg-white border-2 border-[#1E7F43] text-[#1E7F43] rounded-xl font-semibold hover:bg-[#1E7F43]/5 transition-colors"
-                >
-                  Ver Meus Tickets
-                </Link>
-              </div>
+            <div className="text-center py-8">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#1E7F43] mx-auto mb-4"></div>
+              <p className="text-[#1F1F1F]/70">Redirecionando para página de sucesso...</p>
             </div>
           </div>
         )}

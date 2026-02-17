@@ -8,7 +8,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { useCart } from '../contexts/CartContext'
 import { createParticipation } from '../services/participationsService'
-import { createPixPayment } from '../services/asaasService'
+import { createPixPayment } from '../services/mercadopagoService'
 import { checkPixPaymentStatus } from '../services/paymentsService'
 import { listActiveContests } from '../services/contestsService'
 import { Contest } from '../types'
@@ -160,6 +160,31 @@ export default function CartPage() {
 
     return () => clearInterval(interval)
   }, [pixPaymentId, pixConfirmed])
+
+  // Redirecionar para página de sucesso ao invés de mostrar inline
+  useEffect(() => {
+    if (!success) return
+
+    if (paymentMethod === 'pix' && pixConfirmed?.ticketCodes?.length) {
+      navigate('/compra/sucesso', {
+        replace: true,
+        state: {
+          paymentMethod: 'pix',
+          ticketCodes: pixConfirmed.ticketCodes,
+          fromCart: true,
+        },
+      })
+    } else if (paymentMethod === 'cash' && createdTicketCodes.length > 0) {
+      navigate('/compra/sucesso', {
+        replace: true,
+        state: {
+          paymentMethod: 'cash',
+          ticketCodes: createdTicketCodes,
+          fromCart: true,
+        },
+      })
+    }
+  }, [success, paymentMethod, pixConfirmed, createdTicketCodes, navigate])
 
   // MODIFIQUEI AQUI - Recarregar carrinho do localStorage quando o usuário fizer login
   useEffect(() => {
@@ -421,53 +446,21 @@ export default function CartPage() {
     }
   }
 
-  // Tela de sucesso após checkout
+  // Tela de sucesso após checkout - redireciona para /compra/sucesso (ou mostra QR Pix enquanto aguarda)
   if (success) {
+    const shouldRedirect =
+      (paymentMethod === 'pix' && pixConfirmed?.ticketCodes?.length) ||
+      (paymentMethod === 'cash' && createdTicketCodes.length > 0)
+
     return (
       <div className="min-h-screen bg-[#F9F9F9] flex flex-col">
         <Header />
         <main className="flex-1 container mx-auto px-4 py-8 max-w-4xl">
-          {/* Pix confirmado - Card de sucesso (como na imagem) */}
-          {paymentMethod === 'pix' && pixConfirmed ? (
+          {shouldRedirect ? (
             <div className="bg-white rounded-2xl shadow-lg p-6 border border-[#E5E5E5]">
-              <div className="text-center space-y-4">
-                <div className="w-16 h-16 mx-auto rounded-xl bg-[#1E7F43] flex items-center justify-center">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                </div>
-                <h2 className="text-2xl font-bold text-[#1F1F1F] mb-2">
-                  Participações Criadas com Sucesso!
-                </h2>
-                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 max-w-md mx-auto">
-                  <p className="text-blue-800 text-sm mb-2">
-                    <strong>Códigos dos Tickets:</strong>
-                  </p>
-                  <div className="space-y-1 mb-3">
-                    {pixConfirmed.ticketCodes.map((code, idx) => (
-                      <p key={idx} className="font-mono font-bold text-lg text-blue-900">
-                        {code}
-                      </p>
-                    ))}
-                  </div>
-                  <p className="text-blue-700 text-sm">
-                    Seu pagamento Pix foi confirmado e suas participações estão ativas!
-                  </p>
-                </div>
-                <div className="flex flex-col sm:flex-row gap-3 justify-center pt-4">
-                  <Link
-                    to="/contests"
-                    className="w-full sm:w-auto text-center px-6 py-3 bg-[#1E7F43] text-white rounded-xl font-semibold hover:bg-[#3CCB7F] transition-colors min-h-[44px] flex items-center justify-center touch-manipulation"
-                  >
-                    Ver Concursos
-                  </Link>
-                  <Link
-                    to="/my-tickets"
-                    className="w-full sm:w-auto text-center px-6 py-3 bg-white border-2 border-[#1E7F43] text-[#1E7F43] rounded-xl font-semibold hover:bg-[#1E7F43]/5 transition-colors min-h-[44px] flex items-center justify-center touch-manipulation"
-                  >
-                    Ver Meus Tickets
-                  </Link>
-                </div>
+              <div className="text-center py-8">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#1E7F43] mx-auto mb-4"></div>
+                <p className="text-[#1F1F1F]/70">Redirecionando para página de sucesso...</p>
               </div>
             </div>
           ) : paymentMethod === 'pix' && pixQrCode ? (
@@ -539,40 +532,9 @@ export default function CartPage() {
             </div>
           ) : (
             <div className="bg-white rounded-2xl shadow-lg p-6 border border-[#E5E5E5]">
-              <div className="text-center space-y-4">
-                <div className="text-6xl mb-4">✅</div>
-                <h2 className="text-2xl font-bold text-[#1F1F1F] mb-2">
-                  Participacoes Criadas com Sucesso!
-                </h2>
-                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 max-w-md mx-auto">
-                  <p className="text-blue-800 text-sm mb-2">
-                    <strong>Codigos dos Tickets:</strong>
-                  </p>
-                  <div className="space-y-1">
-                    {createdTicketCodes.map((code, idx) => (
-                      <p key={idx} className="font-mono font-bold text-lg text-blue-900">
-                        {code}
-                      </p>
-                    ))}
-                  </div>
-                  <p className="text-blue-700 text-sm mt-3">
-                    Suas participacoes estao <strong>pendentes</strong>. Um administrador registrara o pagamento em dinheiro e ativara suas participacoes.
-                  </p>
-                </div>
-                <div className="flex flex-col sm:flex-row gap-3 justify-center pt-4">
-                  <Link
-                    to="/contests"
-                    className="w-full sm:w-auto text-center px-6 py-3 bg-[#1E7F43] text-white rounded-xl font-semibold hover:bg-[#3CCB7F] transition-colors min-h-[44px] flex items-center justify-center touch-manipulation"
-                  >
-                    Ver Concursos
-                  </Link>
-                  <Link
-                    to="/my-tickets"
-                    className="w-full sm:w-auto text-center px-6 py-3 bg-white border-2 border-[#1E7F43] text-[#1E7F43] rounded-xl font-semibold hover:bg-[#1E7F43]/5 transition-colors min-h-[44px] flex items-center justify-center touch-manipulation"
-                  >
-                    Ver Meus Tickets
-                  </Link>
-                </div>
+              <div className="text-center py-8">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#1E7F43] mx-auto mb-4"></div>
+                <p className="text-[#1F1F1F]/70">Redirecionando para página de sucesso...</p>
               </div>
             </div>
           )}

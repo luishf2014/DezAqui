@@ -1,15 +1,16 @@
 /**
- * Edge Function: asaas-webhook
+ * Edge Function: mercadopago-webhook
  *
  * Responsabilidade:
- * - Receber webhooks do Asaas
- * - Validar token de segurança
- * - Confirmar pagamento PIX
+ * - Receber webhooks do Mercado Pago
+ * - (Opcional) Validar token/segredo simples (igual Asaas)
+ * - Buscar detalhes do pagamento na API do Mercado Pago (fonte da verdade)
+ * - Confirmar pagamento PIX quando status = approved
  * - Atualizar pagamento como "paid"
  * - Ativar participação automaticamente
  *
  * Segurança:
- * - Validação de token do webhook (ASAAS)
+ * - Token simples via header (MERCADOPAGO_WEBHOOK_TOKEN) (opcional, mas recomendado)
  * - Uso de Service Role (bypass RLS)
  * - Idempotência garantida
  */
@@ -20,7 +21,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 const corsHeaders: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'content-type, asaas-access-token, access_token',
+  'Access-Control-Allow-Headers': 'content-type, mp-access-token, x-mp-token, authorization',
 }
 
 function jsonResponse(body: unknown, status = 200) {
@@ -30,16 +31,25 @@ function jsonResponse(body: unknown, status = 200) {
   })
 }
 
-interface AsaasWebhookEvent {
-  event?: string
-  payment?: {
-    id?: string
-    status?: string
-    paymentDate?: string
-  }
+type MPWebhookBody = {
+  type?: string
+  action?: string
+  data?: { id?: string }
+  // alguns envios podem vir com "id" direto
   id?: string
-  status?: string
-  paymentDate?: string
+}
+
+async function fetchMpPayment(paymentId: string, accessToken: string) {
+  const res = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+  })
+
+  const data = await res.json().catch(() => ({}))
+  return { ok: res.ok, status: res.status, data }
 }
 
 serve(async (req) => {
@@ -48,42 +58,67 @@ serve(async (req) => {
   }
 
   try {
-    // 🔐 Token do webhook (ASAAS)
-    const webhookToken = Deno.env.get('ASAAS_WEBHOOK_TOKEN')
-
+    // 🔐 (Opcional, mas recomendado) token simples do webhook, igual seu padrão do Asaas
+    const webhookToken = Deno.env.get('MERCADOPAGO_WEBHOOK_TOKEN')
     const receivedToken =
-      req.headers.get('asaas-access-token') ||
-      req.headers.get('access_token')
+      req.headers.get('mp-access-token') ||
+      req.headers.get('x-mp-token') ||
+      (req.headers.get('authorization')?.replace('Bearer ', '') ?? null)
 
-    if (!webhookToken || receivedToken !== webhookToken) {
-      console.warn('[asaas-webhook] token inválido')
+    if (webhookToken && receivedToken !== webhookToken) {
+      console.warn('[mercadopago-webhook] token inválido')
       return jsonResponse({ error: 'Webhook não autorizado' }, 401)
     }
 
-    const webhookData: AsaasWebhookEvent = await req.json()
-
-    const paymentId = webhookData.payment?.id || webhookData.id
-    const paymentStatus = webhookData.payment?.status || webhookData.status
-    const paymentDate =
-      webhookData.payment?.paymentDate ||
-      webhookData.paymentDate ||
-      new Date().toISOString()
-
-    if (!paymentId || !paymentStatus) {
-      return jsonResponse({ error: 'Webhook inválido: dados incompletos' }, 400)
+    // Mercado Pago pode enviar body, mas também pode vir como query em alguns modos (IPN antigo)
+    let body: MPWebhookBody = {}
+    try {
+      body = (await req.json()) as MPWebhookBody
+    } catch {
+      body = {}
     }
 
-    console.log('[asaas-webhook] recebido:', {
-      event: webhookData.event,
+    const url = new URL(req.url)
+    const qpId = url.searchParams.get('id') || url.searchParams.get('data.id') || null
+
+    const paymentId = body.data?.id || body.id || qpId
+
+    if (!paymentId) {
+      return jsonResponse({ error: 'Webhook inválido: paymentId ausente' }, 400)
+    }
+
+    console.log('[mercadopago-webhook] recebido:', {
+      type: body.type,
+      action: body.action,
       paymentId,
-      paymentStatus,
     })
 
-    // ✅ Status válidos para confirmar pagamento PIX
-    const validStatuses = ['RECEIVED', 'CONFIRMED', 'CREDITED']
+    // 🔑 Token do Mercado Pago (para consultar o pagamento e confirmar status real)
+    const mpAccessToken = Deno.env.get('MERCADOPAGO_ACCESS_TOKEN')
+    if (!mpAccessToken) {
+      return jsonResponse({ error: 'MERCADOPAGO_ACCESS_TOKEN não configurado' }, 500)
+    }
 
-    if (!validStatuses.includes(paymentStatus)) {
-      return jsonResponse({ message: 'Evento ignorado' }, 200)
+    // ✅ Confirma status real na API do Mercado Pago
+    const mp = await fetchMpPayment(paymentId, mpAccessToken)
+
+    if (!mp.ok) {
+      console.error('[mercadopago-webhook] erro ao consultar payment no MP:', mp.status, mp.data)
+      // responde 200 pra evitar retry infinito; e você investiga via logs
+      return jsonResponse({ message: 'Pagamento não confirmado (consulta MP falhou)' }, 200)
+    }
+
+    const mpStatus = mp.data?.status // approved, pending, rejected, cancelled...
+    const mpDate =
+      mp.data?.date_approved ||
+      mp.data?.date_last_updated ||
+      new Date().toISOString()
+
+    // ✅ Status válido para considerar pago
+    const validStatuses = ['approved']
+
+    if (!validStatuses.includes(mpStatus)) {
+      return jsonResponse({ message: 'Evento ignorado (status não aprovado)', status: mpStatus }, 200)
     }
 
     // Supabase Admin
@@ -99,19 +134,20 @@ serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, serviceRoleKey)
 
+    // 🔎 Busca pagamento(s) vinculados a esse paymentId do MP
     const { data: payments, error: payFindErr } = await supabase
       .from('payments')
       .select('id, participation_id, intent_id, status')
       .eq('external_id', paymentId)
 
     if (payFindErr) {
-      console.error('[asaas-webhook] erro find payment:', payFindErr)
+      console.error('[mercadopago-webhook] erro find payment:', payFindErr)
       return jsonResponse({ error: 'Falha ao buscar pagamento' }, 500)
     }
 
     const paymentList = payments || []
     if (paymentList.length === 0) {
-      console.log('[asaas-webhook] pagamento não encontrado:', paymentId)
+      console.log('[mercadopago-webhook] pagamento não encontrado:', paymentId)
       return jsonResponse({ message: 'Pagamento não encontrado' }, 200)
     }
 
@@ -122,7 +158,7 @@ serve(async (req) => {
 
       let participationId = payment.participation_id
 
-      // Se não tem participação (fluxo Pix com intent - CheckoutPage), criar a partir do intent
+      // MODIFIQUEI AQUI - Mesmo fluxo do Asaas: se veio por intent, cria a participação
       if (!participationId && payment.intent_id) {
         const { data: intent, error: intentErr } = await supabase
           .from('pix_payment_intents')
@@ -131,7 +167,7 @@ serve(async (req) => {
           .maybeSingle()
 
         if (intentErr || !intent) {
-          console.error('[asaas-webhook] intent não encontrado:', payment.intent_id, intentErr)
+          console.error('[mercadopago-webhook] intent não encontrado:', payment.intent_id, intentErr)
           return jsonResponse({ error: 'Intent não encontrado' }, 500)
         }
 
@@ -156,7 +192,7 @@ serve(async (req) => {
           .single()
 
         if (partInsertErr || !newPart) {
-          console.error('[asaas-webhook] erro ao criar participação:', partInsertErr)
+          console.error('[mercadopago-webhook] erro ao criar participação:', partInsertErr)
           return jsonResponse({ error: 'Erro ao criar participação' }, 500)
         }
 
@@ -176,13 +212,13 @@ serve(async (req) => {
         .from('payments')
         .update({
           status: 'paid',
-          paid_at: paymentDate,
+          paid_at: mpDate,
           participation_id: participationId,
         })
         .eq('id', payment.id)
 
       if (payRes) {
-        console.error('[asaas-webhook] erro update payment:', payRes)
+        console.error('[mercadopago-webhook] erro update payment:', payRes)
         return jsonResponse({ error: 'Erro ao atualizar pagamento' }, 500)
       }
     }
@@ -196,7 +232,7 @@ serve(async (req) => {
 
     return jsonResponse({ message: 'Pagamento confirmado com sucesso' }, 200)
   } catch (error) {
-    console.error('[asaas-webhook] erro inesperado:', error)
+    console.error('[mercadopago-webhook] erro inesperado:', error)
     return jsonResponse({ error: 'Erro interno do servidor' }, 500)
   }
 })

@@ -18,6 +18,7 @@ import RegulamentoPage from './pages/RegulamentoPage'
 import CentralDeAjudaPage from './pages/CentraldeAjudaPage'
 import TermosDeUsoPage from './pages/TermosDeUsoPage'
 import NotificationsPage from './pages/NotificationsPage'
+import PurchaseSuccessPage from './pages/PurchaseSuccessPage'
 
 // Importações do guard e páginas admin
 import RequireAdmin from './routes/RequireAdmin'
@@ -48,6 +49,8 @@ function App() {
             <Route path="/contests/:id/checkout" element={<CheckoutPage />} />
             {/* Rota do carrinho */}
             <Route path="/cart" element={<CartPage />} />
+            {/* Página de sucesso de compra */}
+            <Route path="/compra/sucesso" element={<PurchaseSuccessPage />} />
             {/* Rota de Ranking */}
             <Route path="/contests/:id/ranking" element={<RankingPage />} />
             {/* Rota de Rankings Gerais */}
