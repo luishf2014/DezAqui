@@ -627,9 +627,86 @@ export function generateReportHTML(
         .warning-box,
         .results-section,
         .prize-category,
-        .final-banner {
+        .final-banner,
+        .draws-history-card {
           page-break-inside: avoid;
           break-inside: avoid;
+        }
+
+        /* Histórico de Sorteios - estilo como nas imagens */
+        .draws-history-section {
+          background: #fff;
+          border: 2px solid #E5E5E5;
+          border-radius: 12px;
+          padding: 20px;
+          margin-bottom: 30px;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+        .draws-history-section h2 {
+          color: #1E7F43;
+          font-size: 18px;
+          font-weight: 700;
+          margin-bottom: 16px;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+        .draws-history-card {
+          background: #fff;
+          border: 1px solid #E5E5E5;
+          border-radius: 10px;
+          padding: 14px 18px;
+          margin-bottom: 12px;
+        }
+        .draws-history-card:last-child {
+          margin-bottom: 0;
+        }
+        .draws-history-header {
+          display: flex;
+          align-items: flex-start;
+          gap: 12px;
+          margin-bottom: 10px;
+        }
+        .draws-history-badge {
+          background: #F4C430;
+          color: #1F1F1F;
+          font-weight: 800;
+          font-size: 13px;
+          padding: 4px 12px;
+          border-radius: 8px;
+          flex-shrink: 0;
+        }
+        .draws-history-dates .draw-date {
+          font-weight: 700;
+          font-size: 14px;
+          color: #1F1F1F;
+          margin-bottom: 2px;
+        }
+        .draws-history-dates .draw-created {
+          font-size: 11px;
+          color: #888;
+        }
+        .draws-history-numbers-label {
+          font-size: 11px;
+          font-weight: 700;
+          color: #666;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+          margin-bottom: 8px;
+        }
+        .draws-history-numbers {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+        }
+        .draws-history-number-pill {
+          background: #F4C430;
+          color: #1F1F1F;
+          font-weight: 700;
+          font-size: 14px;
+          padding: 6px 14px;
+          border-radius: 8px;
+          min-width: 40px;
+          text-align: center;
         }
 
         @media print {
@@ -805,6 +882,43 @@ export function generateReportHTML(
 
       html += htmlGanhadores
     }
+  }
+
+  // Histórico de Sorteios - box abaixo do Resumo final do bolão (apenas relatório completo)
+  if (reportType === 'full' && reportData.draws.length > 0) {
+    const drawsSorted = [...reportData.draws].sort(
+      (a, b) => new Date(b.draw_date).getTime() - new Date(a.draw_date).getTime()
+    )
+    let drawsHistoryHtml = `
+      <div class="draws-history-section">
+        <h2>Histórico de Sorteios</h2>
+    `
+    drawsSorted.forEach((draw, idx) => {
+      const seqNum = drawsSorted.length - idx
+      const drawDateFormatted = formatDateTime(draw.draw_date)
+      const createdFormatted = formatDateTime(draw.created_at)
+      const numbersHtml = (draw.numbers || [])
+        .sort((a, b) => a - b)
+        .map((n) => `<span class="draws-history-number-pill">${n.toString().padStart(2, '0')}</span>`)
+        .join('')
+      drawsHistoryHtml += `
+        <div class="draws-history-card">
+          <div class="draws-history-header">
+            <span class="draws-history-badge">#${seqNum}</span>
+            <div class="draws-history-dates">
+              <div class="draw-date">Sorteio realizado em ${drawDateFormatted}</div>
+              <div class="draw-created">Criado em ${createdFormatted}</div>
+            </div>
+          </div>
+          <div class="draws-history-numbers-label">NÚMEROS SORTEADOS</div>
+          <div class="draws-history-numbers">${numbersHtml}</div>
+        </div>
+      `
+    })
+    drawsHistoryHtml += `
+      </div>
+    `
+    html += drawsHistoryHtml
   }
 
   // tabela - MODIFIQUEI AQUI: adicionado page-break-before para evitar corte
