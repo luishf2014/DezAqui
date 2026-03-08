@@ -196,7 +196,7 @@ export default function CheckoutPage() {
 
   // Polling para verificar confirmação do Pix
   useEffect(() => {
-    if (!pixPaymentId || pixConfirmed) return
+    if (!pixPaymentId || pixConfirmed || !id) return
 
     const checkStatus = async () => {
       const result = await checkPixPaymentStatus(pixPaymentId)
@@ -205,6 +205,16 @@ export default function CheckoutPage() {
           ticketCodes: result.ticketCodes,
           contestId: result.contestId,
         })
+        // Redirecionar imediatamente para página de sucesso
+        navigate('/compra/sucesso', {
+          replace: true,
+          state: {
+            paymentMethod: 'pix',
+            ticketCodes: result.ticketCodes,
+            contestId: result.contestId || id,
+            fromCart: false,
+          },
+        })
       }
     }
 
@@ -212,7 +222,7 @@ export default function CheckoutPage() {
     checkStatus()
 
     return () => clearInterval(interval)
-  }, [pixPaymentId, pixConfirmed])
+  }, [pixPaymentId, pixConfirmed, id, navigate])
 
   // Redirecionar para página de sucesso ao invés de mostrar inline
   useEffect(() => {
@@ -414,7 +424,7 @@ export default function CheckoutPage() {
       return
     }
 
-    if (finalAmount < 1) {
+    if (finalAmount <= 0) {
       setError('O valor do pedido deve ser maior que zero.')
       return
     }
@@ -524,9 +534,12 @@ export default function CheckoutPage() {
             <p className="text-[#1F1F1F]/70 mb-4">{error}</p>
             <Link
               to="/contests"
-              className="text-[#1E7F43] hover:text-[#3CCB7F] underline font-semibold"
+              className="inline-flex items-center gap-2 text-[#1E7F43] hover:text-[#3CCB7F] font-semibold transition-colors"
             >
-              Voltar para lista de concursos
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+              Voltar para concursos
             </Link>
           </div>
         </div>
@@ -561,15 +574,18 @@ export default function CheckoutPage() {
       <main className="flex-1 container mx-auto px-4 py-8 max-w-4xl">
         {/* Cabeçalho */}
         <div className="mb-6">
-          <Link
-            to={`/contests/${id}/join`}
-            className="text-[#1E7F43] hover:text-[#3CCB7F] font-semibold flex items-center gap-2 mb-4 transition-colors"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-            Voltar para seleção de números
-          </Link>
+          <nav className="flex flex-col sm:flex-row sm:items-center sm:gap-4 gap-2 mb-4">
+            <Link
+              to={`/contests/${id}/join`}
+              className="inline-flex items-center gap-2 text-[#1E7F43] hover:text-[#3CCB7F] font-semibold transition-colors"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+              <span className="hidden sm:inline">Voltar para seleção de números</span>
+              <span className="sm:hidden">Voltar para números</span>
+            </Link>
+          </nav>
 
           <h1 className="text-3xl font-extrabold text-[#1F1F1F] mb-2">
             Finalizar Participação
@@ -843,7 +859,7 @@ export default function CheckoutPage() {
                 <img
                   src={`data:image/png;base64,${pixQrCode}`}
                   alt="QR Code Pix"
-                  className="border-2 border-[#E5E5E5] rounded-xl p-4 bg-white"
+                  className="w-[300px] h-[300px] object-contain border-2 border-[#E5E5E5] rounded-xl p-3 bg-white"
                 />
               </div>
 
@@ -895,8 +911,11 @@ export default function CheckoutPage() {
               <div className="flex flex-col sm:flex-row gap-3 justify-center">
                 <Link
                   to={`/contests/${id}`}
-                  className="w-full sm:w-auto text-center px-6 py-3 bg-[#1E7F43] text-white rounded-xl font-semibold hover:bg-[#3CCB7F] transition-colors min-h-[44px] flex items-center justify-center touch-manipulation"
+                  className="w-full sm:w-auto text-center px-6 py-3 bg-[#1E7F43] text-white rounded-xl font-semibold hover:bg-[#3CCB7F] transition-colors min-h-[44px] flex items-center justify-center gap-2 touch-manipulation"
                 >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
                   Voltar para o Concurso
                 </Link>
                 <Link

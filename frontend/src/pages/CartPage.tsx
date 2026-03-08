@@ -92,6 +92,7 @@ export default function CartPage() {
   const [paymentMethod, setPaymentMethod] = useState<'pix' | 'cash' | null>(null)
   const [createdTicketCodes, setCreatedTicketCodes] = useState<string[]>([])
   const [paidAmount, setPaidAmount] = useState<number>(0) // Valor pago (salvo antes de limpar carrinho)
+  const [pixCartItemsForDisplay, setPixCartItemsForDisplay] = useState<Array<{ contestName: string; contestCode?: string; selectedNumbers: number[]; price: number }>>([]) // Itens salvos para exibir no box quando Pix
   const processingRef = useRef(false)
 
   // MODIFIQUEI AQUI - Estados para o box de última compra
@@ -152,6 +153,15 @@ export default function CartPage() {
       const result = await checkPixPaymentStatus(pixPaymentId)
       if (result.paid && result.ticketCodes.length > 0) {
         setPixConfirmed({ ticketCodes: result.ticketCodes })
+        // Redirecionar imediatamente para página de sucesso
+        navigate('/compra/sucesso', {
+          replace: true,
+          state: {
+            paymentMethod: 'pix',
+            ticketCodes: result.ticketCodes,
+            fromCart: true,
+          },
+        })
       }
     }
 
@@ -159,7 +169,7 @@ export default function CartPage() {
     checkStatus()
 
     return () => clearInterval(interval)
-  }, [pixPaymentId, pixConfirmed])
+  }, [pixPaymentId, pixConfirmed, navigate])
 
   // Redirecionar para página de sucesso ao invés de mostrar inline
   useEffect(() => {
@@ -420,6 +430,18 @@ export default function CartPage() {
         saveLastPurchaseFromCart({ contestId, selections })
       }
 
+      // Salvar itens para exibir no box "Informações da Participação" quando Pix (antes de limpar)
+      if (paymentMethod === 'pix') {
+        setPixCartItemsForDisplay(
+          items.map((it) => ({
+            contestName: it.contestName,
+            contestCode: it.contestCode,
+            selectedNumbers: it.selectedNumbers,
+            price: it.price,
+          }))
+        )
+      }
+
       // Limpar carrinho após sucesso
       clearCart()
       setSuccess(true)
@@ -464,16 +486,63 @@ export default function CartPage() {
               </div>
             </div>
           ) : paymentMethod === 'pix' && pixQrCode ? (
-            <div className="bg-white rounded-2xl shadow-lg p-6 border border-[#E5E5E5]">
-              <h2 className="text-xl font-bold text-[#1F1F1F] mb-4">Pagamento via Pix</h2>
+            <>
+              {/* Informações da Participação - visível ao lado do QR Pix */}
+              {pixCartItemsForDisplay.length > 0 && (
+                <div className="bg-white rounded-2xl shadow-lg p-6 mb-6 border border-[#E5E5E5]">
+                  <h2 className="text-xl font-bold text-[#1F1F1F] mb-4">Informações da Participação</h2>
+                  <div className="space-y-4">
+                    {pixCartItemsForDisplay.map((item, idx) => (
+                      <div key={idx} className={idx > 0 ? 'pt-4 border-t border-[#E5E5E5]' : ''}>
+                        <div>
+                          <span className="text-sm text-[#1F1F1F]/60">Concurso:</span>
+                          <p className="font-semibold text-[#1F1F1F]">{item.contestName}</p>
+                          {item.contestCode && (
+                            <p className="text-xs text-[#1F1F1F]/70 mt-1 font-mono">
+                              Código do Concurso: {item.contestCode}
+                            </p>
+                          )}
+                        </div>
+                        <div className="mt-3">
+                          <span className="text-sm text-[#1F1F1F]/60">Números Selecionados:</span>
+                          <div className="flex flex-wrap gap-2 mt-2">
+                            {[...item.selectedNumbers].sort((a, b) => a - b).map((num) => (
+                              <span
+                                key={num}
+                                className="px-3 py-1 bg-[#1E7F43] text-white rounded-lg font-bold text-sm"
+                              >
+                                {num.toString().padStart(2, '0')}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="flex justify-between items-center pt-3 mt-3 border-t border-[#E5E5E5]">
+                          <span className="text-[#1F1F1F]/70">Valor:</span>
+                          <span className="font-semibold text-[#1F1F1F]">{formatCurrency(item.price)}</span>
+                        </div>
+                      </div>
+                    ))}
+                    <div className="flex justify-between items-center pt-4 border-t-2 border-[#E5E5E5]">
+                      <span className="text-lg font-semibold text-[#1F1F1F]">Valor Total:</span>
+                      <span className="text-2xl font-extrabold text-[#1E7F43]">{formatCurrency(paidAmount)}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
 
-              <div className="text-center space-y-4">
+              <div className="bg-white rounded-2xl shadow-lg p-6 border border-[#E5E5E5]">
+                <h2 className="text-xl font-bold text-[#1F1F1F] mb-4">Pagamento via Pix</h2>
+
+                <div className="text-center space-y-4">
+                {/* QR Code - container fixo para anular max-width:100% do Tailwind preflight */}
                 <div className="flex justify-center">
-                  <img
-                    src={`data:image/png;base64,${pixQrCode}`}
-                    alt="QR Code Pix"
-                    className="border-2 border-[#E5E5E5] rounded-xl p-4 bg-white"
-                  />
+                  <div className="w-[300px] h-[300px] shrink-0 border-2 border-[#E5E5E5] rounded-xl p-3 bg-white flex items-center justify-center">
+                    <img
+                      src={`data:image/png;base64,${pixQrCode}`}
+                      alt="QR Code Pix"
+                      className="w-full h-full object-contain"
+                    />
+                  </div>
                 </div>
 
                 <div>
@@ -530,6 +599,7 @@ export default function CartPage() {
                 </div>
               </div>
             </div>
+            </>
           ) : (
             <div className="bg-white rounded-2xl shadow-lg p-6 border border-[#E5E5E5]">
               <div className="text-center py-8">
@@ -553,7 +623,7 @@ export default function CartPage() {
         <div className="mb-6">
           <Link
             to="/contests"
-            className="text-[#1E7F43] hover:text-[#3CCB7F] font-semibold flex items-center gap-2 mb-4 transition-colors"
+            className="inline-flex items-center gap-2 text-[#1E7F43] hover:text-[#3CCB7F] font-semibold mb-4 transition-colors"
           >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />

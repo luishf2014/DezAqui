@@ -354,8 +354,14 @@ export default function RankingPage() {
           <div className="text-center">
             <div className="text-red-600 text-xl mb-2">⚠️ Erro</div>
             <p className="text-[#1F1F1F]/70 mb-4">{error || 'Concurso não encontrado'}</p>
-            <Link to="/contests" className="text-[#1E7F43] hover:text-[#3CCB7F] underline font-semibold">
-              Voltar para lista de concursos
+            <Link
+              to="/contests"
+              className="inline-flex items-center gap-2 text-[#1E7F43] hover:text-[#3CCB7F] font-semibold transition-colors"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+              Voltar para concursos
             </Link>
           </div>
         </div>
@@ -400,12 +406,13 @@ export default function RankingPage() {
           <div className="flex items-center justify-between mb-4">
             <Link
               to={`/contests/${contest.id}`}
-              className="text-[#1E7F43] hover:text-[#3CCB7F] font-semibold flex items-center gap-2 transition-colors"
+              className="inline-flex items-center gap-2 text-[#1E7F43] hover:text-[#3CCB7F] font-semibold transition-colors"
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
-              Voltar para detalhes do concurso
+              <span className="hidden sm:inline">Voltar para detalhes do concurso</span>
+              <span className="sm:hidden">Voltar</span>
             </Link>
           </div>
 

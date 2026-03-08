@@ -358,6 +358,12 @@ verify_jwt = false
 [functions.asaas-webhook]
 verify_jwt = false
 
+[functions.mercadopago-create-pix]
+verify_jwt = false
+
+[functions.mercadopago-webhook]
+verify_jwt = false
+
 [edge_runtime]
 enabled = true
 # Supported request policies: `oneshot`, `per_worker`.

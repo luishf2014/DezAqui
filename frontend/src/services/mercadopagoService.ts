@@ -39,8 +39,8 @@ export interface CreatePixPaymentResponse {
  * Cria pagamento PIX via Mercado Pago
  *
  * Fluxo:
- * - Chama Edge Function mercadopago-create-pix
- * - Recebe QR Code direto na criação
+ * - Chama Edge Function mercadopago-create-pix via supabase.functions.invoke
+ * - O cliente Supabase inclui automaticamente o JWT da sessão
  * - Webhook confirma pagamento e ativa participação
  */
 export async function createPixPayment(
@@ -55,43 +55,8 @@ export async function createPixPayment(
     throw new Error('Usuário não autenticado. Faça login novamente.')
   }
 
-  const { data: sessionData, error: sessionError } =
-    await supabase.auth.refreshSession()
-
-  if (sessionError || !sessionData?.session?.access_token) {
-    throw new Error('Sessão expirada. Faça login novamente.')
-  }
-
-  const accessToken = sessionData.session.access_token
-
-  const supabaseUrl =
-    (import.meta as any).env?.VITE_SUPABASE_URL ||
-    (import.meta as any).env?.SUPABASE_URL
-
-  const anonKey =
-    (import.meta as any).env?.VITE_SUPABASE_ANON_KEY ||
-    (import.meta as any).env?.SUPABASE_ANON_KEY
-
-  if (!supabaseUrl || !anonKey) {
-    throw new Error('Supabase env não configurado')
-  }
-
-  // MODIFIQUEI AQUI - endpoint Mercado Pago
-  const url = `${supabaseUrl.replace(/\/$/, '')}/functions/v1/mercadopago-create-pix`
-
-  console.log('[createPixPayment][MP] chamando Edge Function:', {
-    url,
-    contestId: params.contestId,
-  })
-
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${accessToken}`,
-      'apikey': anonKey,
-    },
-    body: JSON.stringify({
+  const { data, error } = await supabase.functions.invoke('mercadopago-create-pix', {
+    body: {
       contestId: params.contestId,
       selectedNumbers: params.selectedNumbers,
       amount: params.amount,
@@ -102,38 +67,32 @@ export async function createPixPayment(
       customerCpfCnpj: params.customerCpfCnpj,
       discountCode: params.discountCode,
       cartItems: params.cartItems,
-    }),
+    },
   })
 
-  const text = await res.text()
-  let data: any = null
-  try {
-    data = text ? JSON.parse(text) : null
-  } catch {
-    data = { raw: text }
+  if (error) {
+    console.error('[createPixPayment][MP] erro:', error)
+    throw new Error(error.message || 'Erro ao criar pagamento PIX')
   }
 
-  if (!res.ok) {
-    console.error('[createPixPayment][MP] erro:', data)
-    throw new Error(
-      data?.error || data?.message || 'Erro ao criar pagamento PIX'
-    )
+  const response = (data ?? {}) as any
+  if (response?.error) {
+    throw new Error(response.error)
   }
-
-  if (!data?.id || !data?.qrCode) {
-    console.error('[createPixPayment][MP] resposta inválida:', data)
-    throw new Error('Resposta inválida do servidor')
+  if (!response?.id || !response?.qrCode) {
+    console.error('[createPixPayment][MP] resposta inválida:', response)
+    throw new Error(response?.message || 'Resposta inválida do servidor')
   }
 
   return {
-    id: data.id,
-    status: data.status || 'pending',
-    expirationDate: data.expirationDate || data.qrCode.expirationDate,
+    id: response.id,
+    status: response.status || 'pending',
+    expirationDate: response.expirationDate || response.qrCode?.expirationDate,
     qrCode: {
-      payload: data.qrCode.payload,
-      encodedImage: data.qrCode.encodedImage,
+      payload: response.qrCode.payload,
+      encodedImage: response.qrCode.encodedImage,
       expirationDate:
-        data.qrCode.expirationDate || data.expirationDate || '',
+        response.qrCode.expirationDate || response.expirationDate || '',
     },
   }
 }

@@ -140,8 +140,11 @@ export default function MyTicketsPage() {
             <p className="text-[#1F1F1F]/70">{error}</p>
             <Link
               to="/contests"
-              className="mt-4 inline-block text-[#1E7F43] hover:text-[#3CCB7F] underline font-semibold"
+              className="mt-4 inline-flex items-center gap-2 text-[#1E7F43] hover:text-[#3CCB7F] font-semibold transition-colors"
             >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
               Voltar para concursos
             </Link>
           </div>

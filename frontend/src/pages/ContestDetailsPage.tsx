@@ -148,9 +148,12 @@ export default function ContestDetailsPage() {
             <p className="text-[#1F1F1F]/70 mb-4">{error || 'Concurso não encontrado'}</p>
             <Link
               to="/contests"
-              className="text-[#1E7F43] hover:text-[#3CCB7F] underline font-semibold"
+              className="inline-flex items-center gap-2 text-[#1E7F43] hover:text-[#3CCB7F] font-semibold transition-colors"
             >
-              Voltar para lista de concursos
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+              Voltar para concursos
             </Link>
           </div>
         </div>
@@ -176,9 +179,9 @@ export default function ContestDetailsPage() {
         <nav className="mb-4 sm:mb-6">
           <Link
             to="/contests"
-            className="inline-flex items-center gap-2 text-[#1E7F43] hover:text-[#3CCB7F] font-semibold transition-colors text-sm sm:text-base"
+            className="inline-flex items-center gap-2 text-[#1E7F43] hover:text-[#3CCB7F] font-semibold transition-colors"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
             <span className="hidden sm:inline">Voltar para concursos</span>

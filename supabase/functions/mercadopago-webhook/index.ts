@@ -58,16 +58,20 @@ serve(async (req) => {
   }
 
   try {
-    // 🔐 (Opcional, mas recomendado) token simples do webhook, igual seu padrão do Asaas
+    // 🔐 Validação opcional por token do webhook (não Authorization header)
     const webhookToken = Deno.env.get('MERCADOPAGO_WEBHOOK_TOKEN')
-    const receivedToken =
-      req.headers.get('mp-access-token') ||
-      req.headers.get('x-mp-token') ||
-      (req.headers.get('authorization')?.replace('Bearer ', '') ?? null)
+    
+    // Mercado Pago não envia Authorization header - validar apenas se webhook token estiver configurado
+    if (webhookToken) {
+      const receivedToken =
+        req.headers.get('mp-access-token') ||
+        req.headers.get('x-mp-token') ||
+        null
 
-    if (webhookToken && receivedToken !== webhookToken) {
-      console.warn('[mercadopago-webhook] token inválido')
-      return jsonResponse({ error: 'Webhook não autorizado' }, 401)
+      if (receivedToken !== webhookToken) {
+        console.warn('[mercadopago-webhook] token inválido')
+        return jsonResponse({ error: 'Webhook não autorizado' }, 401)
+      }
     }
 
     // Mercado Pago pode enviar body, mas também pode vir como query em alguns modos (IPN antigo)
@@ -134,22 +138,33 @@ serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, serviceRoleKey)
 
-    // 🔎 Busca pagamento(s) vinculados a esse paymentId do MP
-    const { data: payments, error: payFindErr } = await supabase
+    console.log(`[mercadopago-webhook] 🔒 TENTATIVA DE PROCESSAMENTO: ${paymentId}`)
+
+    // 🔥 LOCK ATÔMICO: Tentar "claim" o pagamento em uma operação atômica
+    // Isso garante que apenas UM webhook consegue processar o pagamento
+    const { data: claimedPayments, error: claimError } = await supabase
       .from('payments')
-      .select('id, participation_id, intent_id, status')
+      .update({ 
+        status: 'paid',
+        updated_at: new Date().toISOString()
+      })
       .eq('external_id', paymentId)
+      .eq('status', 'pending') // Só atualiza se ainda estiver pending
+      .select('id, participation_id, intent_id')
 
-    if (payFindErr) {
-      console.error('[mercadopago-webhook] erro find payment:', payFindErr)
-      return jsonResponse({ error: 'Falha ao buscar pagamento' }, 500)
+    if (claimError) {
+      console.error('[mercadopago-webhook] erro ao fazer claim do pagamento:', claimError)
+      return jsonResponse({ error: 'Falha ao processar pagamento' }, 500)
     }
 
-    const paymentList = payments || []
-    if (paymentList.length === 0) {
-      console.log('[mercadopago-webhook] pagamento não encontrado:', paymentId)
-      return jsonResponse({ message: 'Pagamento não encontrado' }, 200)
+    // Se não conseguiu fazer claim de nenhum payment, significa que já foi processado
+    if (!claimedPayments || claimedPayments.length === 0) {
+      console.log(`[mercadopago-webhook] ⚠️ PAGAMENTO JÁ PROCESSADO - ${paymentId} (claim falhou)`)
+      return jsonResponse({ message: 'Pagamento já foi processado por outro webhook' }, 200)
     }
+
+    const paymentList = claimedPayments
+    console.log(`[mercadopago-webhook] ✅ CLAIM SUCCESSFUL - Processando ${paymentList.length} payment(s) para ${paymentId}`)
 
     const participationIdsToActivate: string[] = []
 
@@ -158,8 +173,8 @@ serve(async (req) => {
 
       let participationId = payment.participation_id
 
-      // MODIFIQUEI AQUI - Mesmo fluxo do Asaas: se veio por intent, cria a participação
-      if (!participationId && payment.intent_id) {
+        // 🚀 PROCESSAMENTO ATÔMICO: Só processar se ainda não tem participação
+        if (!participationId && payment.intent_id) {
         const { data: intent, error: intentErr } = await supabase
           .from('pix_payment_intents')
           .select('id, user_id, contest_id, selected_numbers, amount')
@@ -171,32 +186,56 @@ serve(async (req) => {
           return jsonResponse({ error: 'Intent não encontrado' }, 500)
         }
 
-        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-        let randomPart = ''
-        for (let i = 0; i < 6; i++) {
-          randomPart += chars.charAt(Math.floor(Math.random() * chars.length))
-        }
-        const ticketCode = `TK-${randomPart}`
+        // Como já fizemos lock, podemos criar a participação diretamente
+          const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+          let randomPart = ''
+          for (let i = 0; i < 6; i++) {
+            randomPart += chars.charAt(Math.floor(Math.random() * chars.length))
+          }
+          const ticketCode = `TK-${randomPart}`
 
-        const { data: newPart, error: partInsertErr } = await supabase
-          .from('participations')
-          .insert({
-            contest_id: intent.contest_id,
-            user_id: intent.user_id,
-            numbers: intent.selected_numbers,
-            amount: Number(intent.amount),
-            status: 'active',
-            ticket_code: ticketCode,
-          })
-          .select('id')
-          .single()
+          try {
+            const { data: newPart, error: partInsertErr } = await supabase
+              .from('participations')
+              .insert({
+                contest_id: intent.contest_id,
+                user_id: intent.user_id,
+                numbers: intent.selected_numbers,
+                amount: Number(intent.amount),
+                status: 'active',
+                ticket_code: ticketCode,
+              })
+              .select('id')
+              .single()
 
-        if (partInsertErr || !newPart) {
-          console.error('[mercadopago-webhook] erro ao criar participação:', partInsertErr)
-          return jsonResponse({ error: 'Erro ao criar participação' }, 500)
-        }
+            if (partInsertErr || !newPart) {
+              console.error('[mercadopago-webhook] erro ao criar participação:', partInsertErr)
+              return jsonResponse({ error: 'Erro ao criar participação' }, 500)
+            }
 
-        participationId = newPart.id
+            participationId = newPart.id
+          } catch (duplicateError) {
+            console.log('[mercadopago-webhook] Possível tentativa de criação duplicada, verificando participação existente...')
+            
+            // Se deu erro, pode ser duplicata. Buscar participação existente
+            const { data: existingPart } = await supabase
+              .from('participations')
+              .select('id')
+              .eq('user_id', intent.user_id)
+              .eq('contest_id', intent.contest_id)
+              .eq('status', 'active')
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .maybeSingle()
+
+            if (existingPart) {
+              console.log('[mercadopago-webhook] Usando participação existente:', existingPart.id)
+              participationId = existingPart.id
+            } else {
+              console.error('[mercadopago-webhook] Erro inesperado ao criar participação:', duplicateError)
+              return jsonResponse({ error: 'Erro ao processar participação' }, 500)
+            }
+          }
 
         await supabase
           .from('pix_payment_intents')

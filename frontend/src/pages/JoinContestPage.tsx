@@ -123,7 +123,7 @@ export default function JoinContestPage() {
       try {
         setLoading(true)
         setError(null)
-        
+
         // MODIFIQUEI AQUI - Carregar concurso e sorteios em paralelo para verificar se há sorteios
         const [contestData, drawsData] = await Promise.all([
           getContestById(id),
@@ -297,12 +297,15 @@ export default function JoinContestPage() {
         <div className="flex items-center justify-center flex-1 px-4">
           <div className="text-center">
             <div className="text-red-600 text-xl mb-2">⚠️ Erro</div>
-            <p className="text-[#1F1FF]/70 mb-4">{error}</p>
+            <p className="text-[#1F1F1F]/70 mb-4">{error}</p>
             <Link
               to="/contests"
-              className="text-[#1E7F43] hover:text-[#3CCB7F] underline font-semibold"
+              className="inline-flex items-center gap-2 text-[#1E7F43] hover:text-[#3CCB7F] font-semibold transition-colors"
             >
-              Voltar para lista de concursos
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+              Voltar para concursos
             </Link>
           </div>
         </div>
@@ -323,9 +326,12 @@ export default function JoinContestPage() {
             </p>
             <Link
               to="/contests"
-              className="text-[#1E7F43] hover:text-[#3CCB7F] underline font-semibold"
+              className="inline-flex items-center gap-2 text-[#1E7F43] hover:text-[#3CCB7F] font-semibold transition-colors"
             >
-              Voltar para lista de concursos
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+              Voltar para concursos
             </Link>
           </div>
         </div>
@@ -342,10 +348,13 @@ export default function JoinContestPage() {
       <div className="container mx-auto px-2 sm:px-4 py-4 sm:py-6 md:py-8 flex-1 max-w-4xl">
         <Link
           to={`/contests/${id}`}
-          className="text-[#1E7F43] hover:text-[#3CCB7F] mb-4 inline-block font-semibold transition-colors text-sm sm:text-base"
+          className="inline-flex items-center gap-2 text-[#1E7F43] hover:text-[#3CCB7F] mb-4 font-semibold transition-colors"
         >
-          <span className="hidden sm:inline">← Voltar para o concurso</span>
-          <span className="sm:hidden">← Voltar</span>
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+          <span className="hidden sm:inline">Voltar para o concurso</span>
+          <span className="sm:hidden">Voltar</span>
         </Link>
 
         <div className="rounded-2xl sm:rounded-3xl border border-[#E5E5E5] bg-white p-4 sm:p-6 mb-6 shadow-xl">
@@ -383,8 +392,8 @@ export default function JoinContestPage() {
               <div>
                 <span className="text-[#1F1F1F]/60">Status:</span>
                 <span className="ml-2">
-                  <ContestStatusBadge 
-                    contest={contest} 
+                  <ContestStatusBadge
+                    contest={contest}
                     hasDraws={draws.length > 0}
                     variant="compact"
                   />
@@ -395,7 +404,7 @@ export default function JoinContestPage() {
         </div>
 
         <form onSubmit={handleSubmit} className="rounded-2xl sm:rounded-3xl border border-[#E5E5E5] bg-white p-4 sm:p-6 shadow-xl">
-          
+
           <h2 className="text-xl sm:text-2xl font-extrabold text-[#1F1F1F] mb-4">
             Escolha seus números
           </h2>
@@ -442,10 +451,9 @@ export default function JoinContestPage() {
               disabled={selectedNumbers.length !== contest.numbers_per_participation}
               className={`
                 w-full sm:flex-1 py-3 px-6 rounded-xl font-semibold transition-colors shadow-lg text-sm sm:text-base flex items-center justify-center gap-2
-                ${
-                  selectedNumbers.length !== contest.numbers_per_participation
-                    ? 'bg-[#E5E5E5] text-[#1F1F1F]/60 cursor-not-allowed'
-                    : 'bg-[#F4C430] text-[#1F1F1F] hover:bg-[#F4C430]/80'
+                ${selectedNumbers.length !== contest.numbers_per_participation
+                  ? 'bg-[#E5E5E5] text-[#1F1F1F]/60 cursor-not-allowed'
+                  : 'bg-[#F4C430] text-[#1F1F1F] hover:bg-[#F4C430]/80'
                 }
               `}
             >
@@ -461,10 +469,9 @@ export default function JoinContestPage() {
               disabled={selectedNumbers.length !== contest.numbers_per_participation}
               className={`
                 w-full sm:flex-1 py-3 px-6 rounded-xl font-semibold transition-colors shadow-lg text-sm sm:text-base
-                ${
-                  selectedNumbers.length !== contest.numbers_per_participation
-                    ? 'bg-[#E5E5E5] text-[#1F1F1F]/60 cursor-not-allowed'
-                    : 'bg-[#1E7F43] text-white hover:bg-[#3CCB7F]'
+                ${selectedNumbers.length !== contest.numbers_per_participation
+                  ? 'bg-[#E5E5E5] text-[#1F1F1F]/60 cursor-not-allowed'
+                  : 'bg-[#1E7F43] text-white hover:bg-[#3CCB7F]'
                 }
               `}
             >

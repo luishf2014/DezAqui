@@ -9,7 +9,7 @@ import { createMpPixPayment } from './helpers/mercadopagoCreatePayment.ts'
 const corsHeaders: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'authorization, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info',
 }
 
 function jsonResponse(body: unknown, status = 200) {
@@ -50,7 +50,10 @@ serve(async (req) => {
     const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
     const MP_ACCESS_TOKEN = Deno.env.get('MERCADOPAGO_ACCESS_TOKEN') || ''
     const MP_BASE_URL = Deno.env.get('MERCADOPAGO_BASE_URL') || 'https://api.mercadopago.com'
-    const MP_NOTIFICATION_URL = Deno.env.get('MERCADOPAGO_NOTIFICATION_URL') || '' // opcional
+    // Para Pix/QR Code, a URL de notificação DEVE ser passada na criação do pagamento
+    const MP_NOTIFICATION_URL =
+      Deno.env.get('MERCADOPAGO_NOTIFICATION_URL') ||
+      `${SUPABASE_URL.replace(/\/$/, '')}/functions/v1/mercadopago-webhook`
 
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SERVICE_ROLE_KEY || !MP_ACCESS_TOKEN) {
       return jsonResponse({ error: 'Variáveis de ambiente ausentes' }, 500)
@@ -187,7 +190,7 @@ serve(async (req) => {
         description: body.description,
         externalReference: intentIds[0],
         payer: { name: customerName, email: customerEmail, cpf: normalizedCpf },
-        notificationUrl: MP_NOTIFICATION_URL || undefined,
+        notificationUrl: MP_NOTIFICATION_URL,
 
         //idempotência por checkout (1 Pix)
         idempotencyKey: intentIds[0],
@@ -201,22 +204,33 @@ serve(async (req) => {
         await admin
           .from('pix_payment_intents')
           .update({
-            mercadopago_payment_id: payment.id, // MODIFIQUEI AQUI - novo campo (ou use o mesmo campo se preferir)
+            asaas_payment_id: payment.id, // ID do pagamento MP (coluna reutilizada)
             updated_at: new Date().toISOString(),
           })
           .eq('id', intentIds[i])
       }
 
+      // Salvar payments de forma idempotente (evita duplicatas se usuário recarregar)
       try {
         for (let i = 0; i < cartItems.length; i++) {
-          await admin.from('payments').insert({
-            participation_id: null,
-            amount: cartItems[i].amount,
-            status: 'pending',
-            payment_method: 'pix',
-            external_id: payment.id, // payment_id do MP
-            intent_id: intentIds[i],
-          })
+          // Verificar se já existe payment para este external_id + intent
+          const { data: existingPayment } = await admin
+            .from('payments')
+            .select('id')
+            .eq('external_id', payment.id)
+            .eq('intent_id', intentIds[i])
+            .maybeSingle()
+
+          if (!existingPayment) {
+            await admin.from('payments').insert({
+              participation_id: null,
+              amount: cartItems[i].amount,
+              status: 'pending',
+              payment_method: 'pix',
+              external_id: payment.id,
+              intent_id: intentIds[i],
+            })
+          }
         }
       } catch (err) {
         console.error('[mercadopago-create-pix] Erro ao salvar payments (cart):', err)
@@ -278,24 +292,34 @@ serve(async (req) => {
     await admin
       .from('pix_payment_intents')
       .update({
-        mercadopago_payment_id: payment.id, // MODIFIQUEI AQUI - novo campo (ou use o mesmo campo se preferir)
+        asaas_payment_id: payment.id, // ID do pagamento MP (coluna reutilizada)
         updated_at: new Date().toISOString(),
       })
       .eq('id', intent.id)
 
+    // Salvar payment de forma idempotente
     try {
-      await admin.from('payments').insert({
-        participation_id: null,
-        amount,
-        status: 'pending',
-        payment_method: 'pix',
-        external_id: payment.id,
-        intent_id: intent.id,
-        contest_id: contestId,
-        user_id: user.id,
-      })
+      const { data: existingPayment } = await admin
+        .from('payments')
+        .select('id')
+        .eq('external_id', payment.id)
+        .eq('intent_id', intent.id)
+        .maybeSingle()
+
+      if (!existingPayment) {
+        await admin.from('payments').insert({
+          participation_id: null,
+          amount,
+          status: 'pending',
+          payment_method: 'pix',
+          external_id: payment.id,
+          intent_id: intent.id,
+          contest_id: contestId,
+          user_id: user.id,
+        })
+      }
     } catch (err) {
-      console.error('[mercadopago-create-pix] Aviso: não foi possível salvar em payments (compat):', err)
+      console.error('[mercadopago-create-pix] Aviso: erro ao salvar payment:', err)
     }
 
     return jsonResponse({
