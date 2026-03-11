@@ -41,6 +41,9 @@ export default function PurchaseSuccessPage() {
   const { paymentMethod, ticketCodes, contestId, fromCart } = data
   const isMultiple = ticketCodes.length > 1
 
+  // 🐛 DEBUG TEMPORÁRIO - remover depois de testar
+  console.log('PurchaseSuccessPage - ticketCodes recebidos:', ticketCodes)
+
   const title = isMultiple ? 'Participações Criadas com Sucesso!' : 'Participação Criada com Sucesso!'
   const ticketLabel = isMultiple ? 'Códigos dos Tickets:' : 'Código do Ticket:'
   const primaryButtonLabel = fromCart ? 'Ver Concursos' : 'Voltar para o Concurso'

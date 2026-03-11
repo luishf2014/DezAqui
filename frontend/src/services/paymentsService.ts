@@ -280,6 +280,8 @@ export async function checkPixPaymentStatus(
     return { paid: false, ticketCodes: [] }
   }
 
+  console.log('[checkPixPaymentStatus] 🔍 Verificando pagamento:', externalId)
+
   const { data: payments, error } = await supabase
     .from('payments')
     .select(
@@ -301,17 +303,32 @@ export async function checkPixPaymentStatus(
   }
 
   const list = (payments || []) as any[]
+  console.log('[checkPixPaymentStatus] 📊 Total payments encontrados:', list.length, list.map(p => ({ id: p.id, status: p.status, hasParticipation: !!p.participation_id })))
+  
   const paidPayments = list.filter((p) => p.status === 'paid')
+  console.log('[checkPixPaymentStatus] 💰 Payments pagos:', paidPayments.length)
 
   if (paidPayments.length === 0) {
+    return { paid: false, ticketCodes: [] }
+  }
+
+  // 🔍 VERIFICAÇÃO CRUCIAL: Todos os payments pagos devem ter participação criada
+  const paymentsWithParticipation = paidPayments.filter(p => p.participation_id && p.participations)
+  console.log('[checkPixPaymentStatus] 🎫 Payments com participação:', paymentsWithParticipation.length, 'de', paidPayments.length)
+
+  // Se nem todos os payments pagos têm participação ainda, aguardar mais
+  if (paymentsWithParticipation.length < paidPayments.length) {
+    console.log('[checkPixPaymentStatus] ⏳ Aguardando criação de todas as participações...')
     return { paid: false, ticketCodes: [] }
   }
 
   const ticketCodes: string[] = []
   let contestId: string | undefined
 
-  for (const p of paidPayments) {
+  for (const p of paymentsWithParticipation) {
     const part = Array.isArray(p.participations) ? p.participations[0] : p.participations
+    console.log('[checkPixPaymentStatus] 🎫 Processando payment:', p.id, 'participation:', part)
+    
     if (part?.ticket_code) {
       ticketCodes.push(part.ticket_code)
       if (!contestId && part.contest_id) {
@@ -319,6 +336,8 @@ export async function checkPixPaymentStatus(
       }
     }
   }
+
+  console.log('[checkPixPaymentStatus] ✅ Resultado final:', { paid: true, ticketCodes, contestId })
 
   return {
     paid: true,

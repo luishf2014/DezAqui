@@ -168,9 +168,10 @@ serve(async (req) => {
 
     const participationIdsToActivate: string[] = []
 
-    for (const payment of paymentList) {
-      if (payment.status === 'paid') continue
+    console.log(`[mercadopago-webhook] 🔄 PROCESSANDO ${paymentList.length} payments:`, paymentList.map(p => ({ id: p.id, has_participation: !!p.participation_id })))
 
+    for (const payment of paymentList) {
+      // 🔥 IMPORTANTE: Não pular - todos os payments retornados pelo claim são 'paid' e precisam ser processados
       let participationId = payment.participation_id
 
         // 🚀 PROCESSAMENTO ATÔMICO: Só processar se ainda não tem participação
@@ -260,7 +261,11 @@ serve(async (req) => {
         console.error('[mercadopago-webhook] erro update payment:', payRes)
         return jsonResponse({ error: 'Erro ao atualizar pagamento' }, 500)
       }
+
+      console.log(`[mercadopago-webhook] ✅ Payment ${payment.id} vinculado à participação ${participationId}`)
     }
+
+    console.log(`[mercadopago-webhook] 🎯 Ativando ${participationIdsToActivate.length} participações:`, participationIdsToActivate)
 
     for (const pid of participationIdsToActivate) {
       await supabase
@@ -269,7 +274,13 @@ serve(async (req) => {
         .eq('id', pid)
     }
 
-    return jsonResponse({ message: 'Pagamento confirmado com sucesso' }, 200)
+    console.log(`[mercadopago-webhook] ✅ SUCESSO TOTAL - Processados ${paymentList.length} payments, criadas ${participationIdsToActivate.length} participações para ${paymentId}`)
+    
+    return jsonResponse({ 
+      message: 'Pagamento confirmado com sucesso',
+      processed_payments: paymentList.length,
+      created_participations: participationIdsToActivate.length
+    }, 200)
   } catch (error) {
     console.error('[mercadopago-webhook] erro inesperado:', error)
     return jsonResponse({ error: 'Erro interno do servidor' }, 500)
