@@ -50,10 +50,29 @@ export default function LoginPage() {
     return cpfValue.replace(/\D/g, '')
   }
 
-  // Função para validar formato básico de CPF (11 dígitos)
+  // Função para validar CPF completo (11 dígitos e dígitos verificadores)
   const validateCpf = (cpfValue: string): boolean => {
     const cleanCpf = normalizeCpf(cpfValue)
-    return cleanCpf.length === 11
+    if (cleanCpf.length !== 11) return false
+    if (/^(\d)\1+$/.test(cleanCpf)) return false // CPFs com todos dígitos iguais
+
+    let sum = 0
+    for (let i = 0; i < 9; i++) {
+      sum += parseInt(cleanCpf[i]) * (10 - i)
+    }
+    let remainder = (sum * 10) % 11
+    if (remainder === 10 || remainder === 11) remainder = 0
+    if (remainder !== parseInt(cleanCpf[9])) return false
+
+    sum = 0
+    for (let i = 0; i < 10; i++) {
+      sum += parseInt(cleanCpf[i]) * (11 - i)
+    }
+    remainder = (sum * 10) % 11
+    if (remainder === 10 || remainder === 11) remainder = 0
+    if (remainder !== parseInt(cleanCpf[10])) return false
+
+    return true
   }
 
   // Função para formatar CPF (000.000.000-00)
@@ -177,9 +196,15 @@ export default function LoginPage() {
       return
     }
 
-    // Validar CPF somente se fornecido (agora é opcional)
-    if (cpf.trim() && !validateCpf(cpf)) {
-      setError('CPF inválido. Informe 11 dígitos ou deixe em branco.')
+    // MODIFIQUEI AQUI - Validar CPF obrigatório
+    if (!cpf.trim()) {
+      setError('Por favor, informe seu CPF')
+      setLoading(false)
+      return
+    }
+
+    if (!validateCpf(cpf)) {
+      setError('CPF inválido. Verifique os números digitados.')
       setLoading(false)
       return
     }
@@ -200,19 +225,16 @@ export default function LoginPage() {
         name: name.trim(),
         phone: cleanPhone,
         email: email.trim(),
-        cpf: normalizedCpf || '(não informado)',
+        cpf: normalizedCpf,
         cpfLength: normalizedCpf.length,
       })
 
-      // Montar metadados (CPF é opcional)
+      // Montar metadados (CPF é obrigatório)
       const userMetadata: Record<string, string> = {
         name: name.trim(),
         phone: cleanPhone,
         email: email.trim(),
-      }
-      // Só incluir CPF se foi informado
-      if (normalizedCpf) {
-        userMetadata.cpf = normalizedCpf
+        cpf: normalizedCpf,
       }
 
       const { data, error: signUpError } = await supabase.auth.signUp({
@@ -381,13 +403,14 @@ export default function LoginPage() {
                 {isSignUp && (
                   <div>
                     <label htmlFor="cpf" className="text-xs font-semibold uppercase tracking-[0.2em] text-[#1F1F1F]/60">
-                      CPF <span className="text-[#1F1F1F]/40">(opcional)</span>
+                      CPF <span className="text-red-500">*</span>
                     </label>
                     <input
                       id="cpf"
                       name="cpf"
                       type="text"
                       autoComplete="off"
+                      required
                       value={cpf}
                       onChange={(e) => {
                         const value = e.target.value.replace(/\D/g, '')
@@ -400,7 +423,7 @@ export default function LoginPage() {
                       maxLength={14}
                     />
                     <p className="mt-1 text-xs text-[#1F1F1F]/50">
-                      Necessário para pagamento via Pix
+                      CPF obrigatório e deve ser válido para pagamentos via Pix
                     </p>
                   </div>
                 )}
@@ -498,7 +521,7 @@ export default function LoginPage() {
                   if (isSignUp) {
                     setEmail('') // MODIFIQUEI AQUI - Limpar e-mail apenas ao sair do cadastro
                     setName('') // MODIFIQUEI AQUI - Limpar nome apenas ao sair do cadastro
-                    setCpf('') // Limpar CPF ao sair do cadastro
+                    setCpf('') // Limpar CPF obrigatório ao sair do cadastro
                   }
                   navigate(newSignUp ? '/login?signup=true' : '/login', { replace: true })
                 }}

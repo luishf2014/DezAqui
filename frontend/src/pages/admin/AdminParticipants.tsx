@@ -10,8 +10,10 @@ import Header from '../../components/Header'
 import Footer from '../../components/Footer'
 import CustomSelect from '../../components/CustomSelect'
 import { listAllParticipations } from '../../services/participationsService'
-import { Participation, Contest } from '../../types'
+import { Participation, Contest, User } from '../../types'
 import { listAllContests } from '../../services/contestsService'
+import { listAllUsers } from '../../services/profilesService'
+import { formatPhoneBR, navigateToTop, formatDate as formatDateUtil } from '../../utils/formatters'
 
 interface ParticipationWithDetails extends Participation {
   contest: Contest | null
@@ -22,6 +24,7 @@ interface UserParticipations {
   userId: string
   userName: string
   userEmail: string
+  userPhone?: string
   participations: ParticipationWithDetails[]
 }
 
@@ -29,6 +32,7 @@ export default function AdminParticipants() {
   const navigate = useNavigate()
   const [participations, setParticipations] = useState<ParticipationWithDetails[]>([])
   const [contests, setContests] = useState<Contest[]>([])
+  const [users, setUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   
@@ -46,12 +50,14 @@ export default function AdminParticipants() {
     try {
       setLoading(true)
       setError(null)
-      const [participationsData, contestsData] = await Promise.all([
+      const [participationsData, contestsData, usersData] = await Promise.all([
         listAllParticipations(),
         listAllContests(),
+        listAllUsers(),
       ])
       setParticipations(participationsData)
       setContests(contestsData)
+      setUsers(usersData)
     } catch (err) {
       console.error('Erro ao carregar dados:', err)
       setError(err instanceof Error ? err.message : 'Erro ao carregar participantes')
@@ -60,48 +66,83 @@ export default function AdminParticipants() {
     }
   }
 
-  // MODIFIQUEI AQUI - Agrupar participações por usuário
+  // MODIFIQUEI AQUI - Agrupar participações por usuário, incluindo usuários sem participações
   const groupedByUser = (): UserParticipations[] => {
-    const filtered = participations.filter(p => {
+    // Filtrar participações primeiro
+    const filteredParticipations = participations.filter(p => {
       // Filtro por concurso
       if (filterContestId !== 'all' && p.contest_id !== filterContestId) return false
       
       // Filtro por status
       if (filterStatus !== 'all' && p.status !== filterStatus) return false
       
-      // Busca por nome, email ou código/ticket
-      if (searchQuery.trim()) {
-        const query = searchQuery.toLowerCase().trim()
-        const matchesName = p.user?.name?.toLowerCase().includes(query)
-        const matchesEmail = p.user?.email?.toLowerCase().includes(query)
-        const matchesTicket = p.ticket_code?.toLowerCase().includes(query)
-        if (!matchesName && !matchesEmail && !matchesTicket) return false
-      }
-      
       return true
     })
 
-    // Agrupar por usuário
+    // Criar mapa de usuários com suas participações
     const grouped = new Map<string, UserParticipations>()
     
-    filtered.forEach(participation => {
+    // Se não há filtro de status, mostrar todos os usuários (mesmo sem participações)
+    if (filterStatus === 'all') {
+      users.forEach(user => {
+        grouped.set(user.id, {
+          userId: user.id,
+          userName: user.name,
+          userEmail: user.email,
+          userPhone: user.phone,
+          participations: [],
+        })
+      })
+    }
+    
+    // Adicionar as participações filtradas aos usuários correspondentes
+    filteredParticipations.forEach(participation => {
       if (!participation.user) return
       
       const userId = participation.user.id
+      
+      // Se não existe o usuário no mapa, criar (acontece quando há filtro de status)
       if (!grouped.has(userId)) {
-        grouped.set(userId, {
-          userId,
-          userName: participation.user.name,
-          userEmail: participation.user.email,
-          participations: [],
-        })
+        const user = users.find(u => u.id === userId)
+        if (user) {
+          grouped.set(userId, {
+            userId: user.id,
+            userName: user.name,
+            userEmail: user.email,
+            userPhone: user.phone,
+            participations: [],
+          })
+        }
       }
       
-      grouped.get(userId)!.participations.push(participation)
+      // Adicionar a participação
+      if (grouped.has(userId)) {
+        grouped.get(userId)!.participations.push(participation)
+      }
     })
 
+    // Aplicar filtro de busca por nome, email, telefone ou código/ticket
+    let result = Array.from(grouped.values())
+    
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim()
+      result = result.filter(userGroup => {
+        // Busca por dados do usuário
+        const matchesName = userGroup.userName?.toLowerCase().includes(query)
+        const matchesEmail = userGroup.userEmail?.toLowerCase().includes(query)
+        const matchesPhone = userGroup.userPhone?.toLowerCase().includes(query)
+        
+        // Busca por código de ticket nas participações
+        const matchesTicket = userGroup.participations.some(p => 
+          p.ticket_code?.toLowerCase().includes(query)
+        )
+        
+        return matchesName || matchesEmail || matchesPhone || matchesTicket
+      })
+    }
+
     // Ordenar por número de participações (maior primeiro) e depois por nome
-    return Array.from(grouped.values()).sort((a, b) => {
+    return result.sort((a, b) => {
       if (b.participations.length !== a.participations.length) {
         return b.participations.length - a.participations.length
       }
@@ -109,7 +150,7 @@ export default function AdminParticipants() {
     })
   }
 
-  const formatDate = (dateString: string) => {
+  const formatDateWithTime = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('pt-BR', {
       day: '2-digit',
       month: '2-digit',
@@ -148,7 +189,7 @@ export default function AdminParticipants() {
         {/* Cabeçalho */}
         <div className="mb-6">
           <button
-            onClick={() => navigate('/admin')}
+            onClick={() => navigateToTop(navigate, '/admin')}
             className="text-[#1E7F43] hover:text-[#3CCB7F] font-semibold mb-4 flex items-center gap-2"
           >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -173,7 +214,7 @@ export default function AdminParticipants() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
               </svg>
             </div>
-            <p className="text-3xl font-bold text-[#1E7F43]">{loading ? '...' : userGroups.length}</p>
+            <p className="text-3xl font-bold text-[#1E7F43]">{loading ? '...' : users.length}</p>
           </div>
 
           <div className="bg-white rounded-2xl border border-[#E5E5E5] p-6 shadow-sm">
@@ -235,21 +276,20 @@ export default function AdminParticipants() {
                 options={[
                   { value: 'all', label: 'Todos os Status' },
                   { value: 'pending', label: 'Pendente' },
-                  { value: 'active', label: 'Ativa' },
-                  { value: 'cancelled', label: 'Cancelada' },
+                  { value: 'active', label: 'Ativa' }
                 ]}
               />
             </div>
             <div>
               <label htmlFor="search" className="block text-sm font-semibold text-[#1F1F1F] mb-2">
-                Buscar (Nome, Email ou Código/Ticket)
+                Buscar (Nome, Email, Telefone ou Código/Ticket)
               </label>
               <input
                 id="search"
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Ex: João Silva, joao@email.com ou TK-A1B2C3"
+                placeholder="Ex: João Silva, joao@email.com, (11) 99999-9999 ou TK-A1B2C3"
                 className="w-full px-4 py-2 border border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43] focus:border-transparent"
               />
             </div>
@@ -267,18 +307,18 @@ export default function AdminParticipants() {
         {loading ? (
           <div className="bg-white rounded-2xl border border-[#E5E5E5] p-12 text-center">
             <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-[#1E7F43]"></div>
-            <p className="mt-4 text-[#1F1F1F]/70">Carregando participantes...</p>
+            <p className="mt-4 text-[#1F1F1F]/70">Carregando usuários e participações...</p>
           </div>
         ) : userGroups.length === 0 ? (
           <div className="bg-white rounded-2xl border border-[#E5E5E5] p-12 text-center shadow-sm">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 text-[#1F1F1F]/30 mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
             </svg>
-            <h2 className="text-xl font-bold text-[#1F1F1F] mb-2">Nenhum Participante Encontrado</h2>
+            <h2 className="text-xl font-bold text-[#1F1F1F] mb-2">Nenhum Usuário Encontrado</h2>
             <p className="text-[#1F1F1F]/70">
               {searchQuery || filterContestId !== 'all' || filterStatus !== 'all'
-                ? 'Nenhum participante corresponde aos filtros aplicados.'
-                : 'Ainda não há participantes cadastrados no sistema.'}
+                ? 'Nenhum usuário corresponde aos filtros aplicados.'
+                : 'Ainda não há usuários cadastrados no sistema.'}
             </p>
           </div>
         ) : (
@@ -304,14 +344,36 @@ export default function AdminParticipants() {
                         </span>
                       </div>
                       <p className="text-sm text-[#1F1F1F]/70">{userGroup.userEmail}</p>
+                      {userGroup.userPhone && (
+                        <p className="text-sm text-[#1F1F1F]/70">{formatPhoneBR(userGroup.userPhone)}</p>
+                      )}
                     </div>
                     <div className="flex items-center gap-4">
-                      <div className="text-right">
-                        <p className="text-xs text-[#1F1F1F]/60">Ativas</p>
-                        <p className="text-lg font-bold text-[#3CCB7F]">
-                          {userGroup.participations.filter(p => p.status === 'active').length}
-                        </p>
-                      </div>
+                      {(() => {
+                        const pendingCount = userGroup.participations.filter(p => p.status === 'pending').length
+                        const activeCount = userGroup.participations.filter(p => p.status === 'active').length
+                        
+                        return (
+                          <div className="flex items-center gap-4">
+                            {pendingCount > 0 && (
+                              <div className="text-right">
+                                <p className="text-xs text-[#1F1F1F]/60">Pendentes</p>
+                                <p className="text-lg font-bold text-[#F4C430]">
+                                  {pendingCount}
+                                </p>
+                              </div>
+                            )}
+                            {activeCount > 0 && (
+                              <div className="text-right">
+                                <p className="text-xs text-[#1F1F1F]/60">Ativas</p>
+                                <p className="text-lg font-bold text-[#3CCB7F]">
+                                  {activeCount}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })()}
                       <button className="text-[#1E7F43] hover:text-[#3CCB7F] transition-colors">
                         <svg
                           xmlns="http://www.w3.org/2000/svg"
@@ -330,17 +392,63 @@ export default function AdminParticipants() {
                 {/* Lista de Participações (Expandida) */}
                 {expandedUserId === userGroup.userId && (
                   <div className="border-t border-[#E5E5E5] p-6 space-y-4">
-                    {userGroup.participations.map((participation) => (
-                      <div
+                    {(() => {
+                      // Separar participações por status
+                      const pendingParticipations = userGroup.participations.filter(p => p.status === 'pending')
+                      const activeParticipations = userGroup.participations.filter(p => p.status === 'active')
+                      const totalParticipations = userGroup.participations.length
+                      
+                      // Se não há participações
+                      if (totalParticipations === 0) {
+                        return (
+                          <div className="text-center py-6">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-[#1F1F1F]/20 mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                            <p className="text-sm text-[#1F1F1F]/60">Nenhuma participação encontrada</p>
+                          </div>
+                        )
+                      }
+                      
+                      return (
+                        <div className="space-y-6">
+                          {/* Seção de Participações Pendentes */}
+                          {pendingParticipations.length > 0 && (
+                            <div>
+                              <div className="flex items-center gap-2 mb-4 pb-2 border-b border-[#E5E5E5]">
+                                <h5 className="text-sm font-bold text-[#1F1F1F] uppercase tracking-[0.1em]">
+                                  {pendingParticipations.length} Participaç{pendingParticipations.length === 1 ? 'ão' : 'ões'} Pendente{pendingParticipations.length === 1 ? '' : 's'}
+                                </h5>
+                                <span className="px-2 py-1 bg-[#F4C430]/20 text-[#F4C430] rounded-full text-xs font-semibold">
+                                  Clique para ativar
+                                </span>
+                              </div>
+                              <div className="space-y-4">
+                                {pendingParticipations.map((participation) => (
+                        <div
                         key={participation.id}
-                        className="bg-[#F9F9F9] rounded-xl p-4 hover:bg-[#F5F5F5] transition-colors"
+                        className={`bg-[#F9F9F9] rounded-xl p-4 transition-colors ${
+                          participation.status === 'pending' 
+                            ? 'hover:bg-[#F4C430]/10 cursor-pointer border-2 border-transparent hover:border-[#F4C430]/20' 
+                            : 'hover:bg-[#F5F5F5]'
+                        }`}
+                        onClick={() => {
+                          if (participation.status === 'pending') {
+                            navigateToTop(navigate, '/admin/activations')
+                          }
+                        }}
                       >
                         <div className="flex items-start justify-between mb-3">
                           <div className="flex-1">
                             <div className="flex items-center gap-3 mb-2">
                               <div className="flex-1">
-                                <h4 className="font-semibold text-[#1F1F1F]">
+                                <h4 className="font-semibold text-[#1F1F1F] flex items-center gap-2">
                                   {participation.contest?.name || 'Concurso não encontrado'}
+                                  {participation.status === 'pending' && (
+                                    <span className="text-xs bg-[#F4C430]/20 text-[#F4C430] px-2 py-1 rounded-full font-normal">
+                                      Clique para ativar
+                                    </span>
+                                  )}
                                 </h4>
                                 {/* MODIFIQUEI AQUI - Exibir código do concurso */}
                                 {participation.contest?.contest_code && (
@@ -358,7 +466,12 @@ export default function AdminParticipants() {
                             )}
                           </div>
                           <button
-                            onClick={() => participation.contest && navigate(`/contests/${participation.contest_id}`)}
+            onClick={(e) => {
+              e.stopPropagation()
+              if (participation.contest) {
+                navigateToTop(navigate, `/contests/${participation.contest_id}`)
+              }
+            }}
                             className="text-[#1E7F43] hover:text-[#3CCB7F] transition-colors"
                           >
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -388,7 +501,7 @@ export default function AdminParticipants() {
                         {/* Informações Adicionais */}
                         <div className="flex flex-wrap gap-4 text-xs text-[#1F1F1F]/70">
                           <span>
-                            Criada em: {formatDate(participation.created_at)}
+                            Criada em: {formatDateWithTime(participation.created_at)}
                           </span>
                           {participation.current_score > 0 && (
                             <span className="font-semibold text-[#1E7F43]">
@@ -397,7 +510,98 @@ export default function AdminParticipants() {
                           )}
                         </div>
                       </div>
-                    ))}
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Seção de Participações Ativas */}
+                          {activeParticipations.length > 0 && (
+                            <div>
+                              <div className="flex items-center gap-2 mb-4 pb-2 border-b border-[#E5E5E5]">
+                                <h5 className="text-sm font-bold text-[#1F1F1F] uppercase tracking-[0.1em]">
+                                  {activeParticipations.length} Participaç{activeParticipations.length === 1 ? 'ão' : 'ões'} Ativa{activeParticipations.length === 1 ? '' : 's'}
+                                </h5>
+                              </div>
+                              <div className="space-y-4">
+                                {activeParticipations.map((participation) => (
+                                  <div
+                                    key={participation.id}
+                                    className="bg-[#F9F9F9] rounded-xl p-4 hover:bg-[#F5F5F5] transition-colors"
+                                  >
+                                    <div className="flex items-start justify-between mb-3">
+                                      <div className="flex-1">
+                                        <div className="flex items-center gap-3 mb-2">
+                                          <div className="flex-1">
+                                            <h4 className="font-semibold text-[#1F1F1F]">
+                                              {participation.contest?.name || 'Concurso não encontrado'}
+                                            </h4>
+                                            {participation.contest?.contest_code && (
+                                              <p className="text-xs text-[#1F1F1F]/60 mt-1 font-mono">
+                                                Código do Concurso: {participation.contest.contest_code}
+                                              </p>
+                                            )}
+                                          </div>
+                                          {getStatusBadge(participation.status)}
+                                        </div>
+                                        {participation.ticket_code && (
+                                          <p className="text-xs text-[#1F1F1F]/60 mb-2">
+                                            Código: <span className="font-mono font-semibold">{participation.ticket_code}</span>
+                                          </p>
+                                        )}
+                                      </div>
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          if (participation.contest) {
+                                            navigateToTop(navigate, `/contests/${participation.contest_id}`)
+                                          }
+                                        }}
+                                        className="text-[#1E7F43] hover:text-[#3CCB7F] transition-colors"
+                                      >
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                        </svg>
+                                      </button>
+                                    </div>
+
+                                    {/* Números Escolhidos */}
+                                    <div className="mb-3">
+                                      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#1F1F1F]/60 mb-2">
+                                        Números Escolhidos
+                                      </p>
+                                      <div className="flex flex-wrap gap-2">
+                                        {participation.numbers.map((num, idx) => (
+                                          <span
+                                            key={idx}
+                                            className="px-3 py-1 bg-[#F4C430] text-[#1F1F1F] rounded-lg font-bold text-sm"
+                                          >
+                                            {num.toString().padStart(2, '0')}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    </div>
+
+                                    {/* Informações Adicionais */}
+                                    <div className="flex flex-wrap gap-4 text-xs text-[#1F1F1F]/70">
+                                      <span>
+                                        Criada em: {formatDateWithTime(participation.created_at)}
+                                      </span>
+                                      {participation.current_score > 0 && (
+                                        <span className="font-semibold text-[#1E7F43]">
+                                          Pontuação: {participation.current_score}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })()}
                   </div>
                 )}
               </div>

@@ -137,3 +137,37 @@ export async function isCurrentUserAdmin(): Promise<boolean> {
   const profile = await getCurrentUserProfile()
   return profile?.is_admin ?? false
 }
+
+/**
+ * Busca todos os usuários cadastrados no sistema
+ * Função para administradores listarem todos os perfis
+ */
+export async function listAllUsers(): Promise<User[]> {
+  try {
+    console.log('[profilesService] Buscando todos os usuários...')
+    
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, email, name, phone, cpf, is_admin, created_at, updated_at')
+      .order('name')
+    
+    if (error) {
+      console.error('[profilesService] Erro ao buscar todos os usuários:', error)
+      throw new Error(`Erro ao carregar usuários: ${error.message}`)
+    }
+    
+    // Normalizar is_admin para todos os usuários
+    const normalizedUsers = (data || []).map(user => ({
+      ...user,
+      is_admin: typeof user.is_admin === 'string' 
+        ? user.is_admin.toLowerCase() === 'true' 
+        : Boolean(user.is_admin)
+    }))
+    
+    console.log('[profilesService] ✅ Usuários carregados:', normalizedUsers.length)
+    return normalizedUsers
+  } catch (error) {
+    console.error('[profilesService] Erro inesperado ao buscar todos os usuários:', error)
+    throw error
+  }
+}

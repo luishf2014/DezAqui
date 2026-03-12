@@ -46,6 +46,7 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  const [showCpf, setShowCpf] = useState(false)
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -68,6 +69,13 @@ export default function SettingsPage() {
   const maskCpf = (cpfValue?: string): string => {
     if (!cpfValue || cpfValue.length !== 11) return 'Não informado'
     return `${cpfValue.slice(0, 3)}.***.***-${cpfValue.slice(9, 11)}`
+  }
+
+  // Função para mascarar CPF completamente (***.***.***-**)
+  const maskCpfFully = (cpfValue?: string): string => {
+    if (!cpfValue || cpfValue.length === 0) return ''
+    if (cpfValue.length !== 11) return formatCpfInput(cpfValue) // Se incompleto, mostra o que foi digitado
+    return '***.***.***-**'
   }
 
   // Função para validar CPF
@@ -176,8 +184,8 @@ export default function SettingsPage() {
         updated_at: new Date().toISOString(),
       }
 
-      // Se não tem CPF salvo e usuário preencheu, validar e incluir
-      if (!hasCpfSaved && cpf) {
+      // Se usuário preencheu CPF, validar e incluir (permite edição mesmo se já salvo)
+      if (cpf) {
         const cleanCpf = cpf.replace(/\D/g, '')
         if (cleanCpf.length > 0) {
           if (!validateCpf(cleanCpf)) {
@@ -199,7 +207,7 @@ export default function SettingsPage() {
         throw updateError
       }
 
-      // Se salvou CPF, marcar como salvo (não pode mais editar)
+      // Se salvou CPF, marcar como salvo (para ajustar a mensagem de ajuda)
       if (updateData.cpf) {
         setHasCpfSaved(true)
       }
@@ -494,33 +502,46 @@ export default function SettingsPage() {
 
                   <div>
                     <label className="block text-sm font-semibold text-[#1F1F1F] mb-2">
-                      CPF {!hasCpfSaved && <span className="text-[#F4C430]">(necessário para Pix)</span>}
+                      CPF <span className="text-[#F4C430]">(necessário para Pix)</span>
                     </label>
-                    {hasCpfSaved ? (
-                      <>
-                        <div className="w-full px-4 py-3 border border-[#E5E5E5] rounded-xl bg-[#F9F9F9] text-[#1F1F1F]">
-                          {maskCpf(cpf)}
-                        </div>
-                        <p className="mt-1 text-xs text-[#1F1F1F]/50">
-                          CPF não pode ser alterado após o cadastro
-                        </p>
-                      </>
-                    ) : (
-                      <>
-                        <input
-                          id="cpf"
-                          type="text"
-                          value={formatCpfInput(cpf)}
-                          onChange={(e) => setCpf(e.target.value.replace(/\D/g, ''))}
-                          className="w-full px-4 py-3 border border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43] focus:border-transparent"
-                          placeholder="000.000.000-00"
-                          maxLength={14}
-                        />
-                        <p className="mt-1 text-xs text-[#F4C430]">
-                          Informe seu CPF para realizar pagamentos via Pix. Após salvar, não poderá ser alterado.
-                        </p>
-                      </>
-                    )}
+                    <div className="relative">
+                      <input
+                        id="cpf"
+                        type="text"
+                        value={showCpf || !cpf ? formatCpfInput(cpf) : maskCpfFully(cpf)}
+                        onChange={(e) => setCpf(e.target.value.replace(/\D/g, ''))}
+                        className="w-full px-4 py-3 pr-12 border border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43] focus:border-transparent"
+                        placeholder={showCpf || !cpf ? "000.000.000-00" : "***.***.***-**"}
+                        maxLength={14}
+                        readOnly={!showCpf && cpf.length > 0}
+                      />
+                      {cpf && cpf.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setShowCpf(!showCpf)}
+                          className="absolute right-3 top-1/2 transform -translate-y-1/2 text-[#1F1F1F]/60 hover:text-[#1E7F43] transition-colors"
+                          title={showCpf ? "Ocultar CPF" : "Mostrar CPF"}
+                          aria-label={showCpf ? "Ocultar CPF" : "Mostrar CPF"}
+                        >
+                          {showCpf ? (
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L8.464 8.464m1.414 1.414L8.464 8.464m5.656 5.656l1.415 1.414M14.828 14.828L16.243 16.243m-1.415-1.415l-2.828-2.828m1.414-1.414l2.828 2.828M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                            </svg>
+                          ) : (
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                            </svg>
+                          )}
+                        </button>
+                      )}
+                    </div>
+                    <p className="mt-1 text-xs text-[#F4C430]">
+                      {cpf && cpf.length === 11
+                        ? `CPF ${showCpf ? 'visível' : 'oculto'}. Clique no ícone ${showCpf ? 'para ocultar' : 'para visualizar e editar'}.`
+                        : 'Informe seu CPF para realizar pagamentos via Pix.'
+                      }
+                    </p>
                   </div>
 
                   <div className="pt-4 border-t border-[#E5E5E5]">

@@ -42,6 +42,8 @@ export default function AdminActivations() {
 
   useEffect(() => {
     loadData()
+    // Garantir que a página sempre inicie no topo
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }, [])
 
   const loadData = async () => {
@@ -327,7 +329,10 @@ export default function AdminActivations() {
         <div className="mb-6">
           <div className="mb-6 relative flex flex-col sm:flex-row sm:items-center">
             <button
-            onClick={() => navigate('/admin')}
+            onClick={() => {
+              window.scrollTo({ top: 0, behavior: 'smooth' })
+              setTimeout(() => navigate('/admin'), 100)
+            }}
             className="text-[#1E7F43] hover:text-[#3CCB7F] font-semibold mb-4 flex items-center gap-2"
           >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -571,7 +576,10 @@ export default function AdminActivations() {
                     )}
                     {participation.contest && (
                       <button
-                        onClick={() => navigate(`/contests/${participation.contest_id}`)}
+                        onClick={() => {
+                          window.scrollTo({ top: 0, behavior: 'smooth' })
+                          setTimeout(() => navigate(`/contests/${participation.contest_id}`), 100)
+                        }}
                         className="px-6 py-3 bg-white border-2 border-[#1E7F43] text-[#1E7F43] rounded-xl font-semibold hover:bg-[#F9F9F9] transition-all flex items-center justify-center gap-2"
                       >
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
