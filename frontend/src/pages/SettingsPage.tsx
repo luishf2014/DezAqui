@@ -4,7 +4,7 @@
  * 
  * Permite que usuários configurem perfil, preferências e segurança
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
@@ -47,19 +47,37 @@ export default function SettingsPage() {
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [showCpf, setShowCpf] = useState(false)
+  const [dataLoaded, setDataLoaded] = useState(false)
 
+  // Efeito para redirecionamento de autenticação
   useEffect(() => {
     if (!authLoading && !user) {
       navigate('/login')
-      return
     }
+  }, [user, authLoading, navigate])
 
-    if (user && profile) {
+  // Resetar estado quando o usuário mudar
+  useEffect(() => {
+    if (user?.id) {
+      setDataLoaded(false)
+      setLoading(false)
+    }
+  }, [user?.id])
+
+  // Efeito para carregar dados quando disponível
+  useEffect(() => {
+    if (user && profile && !loading && !dataLoaded) {
+      console.log('[SettingsPage] Carregando dados do usuário...', { 
+        hasUser: !!user, 
+        hasProfile: !!profile, 
+        loading, 
+        dataLoaded 
+      })
       loadUserData()
     }
-  }, [user, profile, authLoading, navigate])
+  }, [user, profile, loadUserData, dataLoaded])
 
-  // MODIFIQUEI AQUI - Limpar mensagens ao trocar de seção
+  // Limpar mensagens ao trocar de seção
   useEffect(() => {
     setError(null)
     setSuccess(null)
@@ -112,16 +130,20 @@ export default function SettingsPage() {
     return `${cleanValue.slice(0, 3)}.${cleanValue.slice(3, 6)}.${cleanValue.slice(6, 9)}-${cleanValue.slice(9)}`
   }
 
-  const loadUserData = async () => {
+  const loadUserData = useCallback(async () => {
+    // Evitar carregar múltiplas vezes se já está carregando ou já foi carregado
+    if (loading || dataLoaded) return
+    
     try {
       setLoading(true)
+      setError(null)
 
       // Carregar dados do perfil
       if (profile) {
         setName(profile.name || '')
         setPhone(profile.phone || '')
         setEmail(profile.email || '')
-        // CPF: se já existe, marca como salvo (não pode editar)
+        // CPF: se já existe, marca como salvo
         if (profile.cpf) {
           setCpf(profile.cpf)
           setHasCpfSaved(true)
@@ -129,46 +151,59 @@ export default function SettingsPage() {
           setCpf('')
           setHasCpfSaved(false)
         }
-      }
-
-      // MODIFIQUEI AQUI - Carregar último acesso (usando updated_at do perfil como aproximação)
-      if (profile?.updated_at) {
-        setLastAccess(new Date(profile.updated_at).toLocaleString('pt-BR'))
-      }
-
-      // MODIFIQUEI AQUI - Carregar preferências do Supabase (notification_preferences)
-      // (antes isso estava com await solto no corpo do componente e quebrava o build)
-      if (user?.id) {
-        const { data: prefs, error: prefsErr } = await supabase
-          .from('notification_preferences')
-          .select('enabled, notify_draw_done, notify_contest_finished')
-          .eq('user_id', user.id)
-          .maybeSingle()
-
-        // Se der erro (ex.: tabela ainda não existe / RLS), não quebra a página inteira
-        if (!prefsErr) {
-          setNotificationsEnabled(prefs?.enabled ?? true)
-          setNotifyDraws(prefs?.notify_draw_done ?? true)
-          setNotifyFinished(prefs?.notify_contest_finished ?? true)
-        } else {
-          console.warn('[SettingsPage] Não foi possível carregar notification_preferences:', prefsErr)
+        
+        // Carregar último acesso (usando updated_at do perfil como aproximação)
+        if (profile.updated_at) {
+          setLastAccess(new Date(profile.updated_at).toLocaleString('pt-BR'))
         }
       }
 
+      // Carregar preferências de notificação com timeout
+      if (user?.id) {
+        try {
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Timeout')), 10000)
+          )
+          
+          const prefsPromise = supabase
+            .from('notification_preferences')
+            .select('enabled, notify_draw_done, notify_contest_finished')
+            .eq('user_id', user.id)
+            .maybeSingle()
+
+          const { data: prefs, error: prefsErr } = await Promise.race([
+            prefsPromise,
+            timeoutPromise
+          ]) as any
+
+          if (!prefsErr && prefs) {
+            setNotificationsEnabled(prefs.enabled ?? true)
+            setNotifyDraws(prefs.notify_draw_done ?? true)
+            setNotifyFinished(prefs.notify_contest_finished ?? true)
+          }
+        } catch (prefsError) {
+          console.warn('[SettingsPage] Erro ao carregar preferências (timeout ou erro):', prefsError)
+          // Manter valores padrão se der erro ou timeout
+        }
+      }
+
+      setDataLoaded(true)
     } catch (err) {
       console.error('Erro ao carregar dados:', err)
-      setError('Erro ao carregar configurações')
+      setError('Erro ao carregar configurações. Recarregue a página se o problema persistir.')
+      setDataLoaded(false) // Permite nova tentativa
     } finally {
       setLoading(false)
     }
-  }
+  }, [profile, user?.id])
 
   const handleSaveProfile = async () => {
-    if (!user || !profile) return
+    if (!user || !profile || saving) return
 
     try {
       setSaving(true)
       setError(null)
+      setSuccess(null)
 
       // Preparar dados para atualização
       const updateData: {
@@ -323,14 +358,29 @@ export default function SettingsPage() {
     }
   }
 
-  if (authLoading || loading) {
+  if (authLoading) {
     return (
       <div className="min-h-screen bg-[#F9F9F9] flex flex-col">
         <Header />
         <div className="flex items-center justify-center flex-1">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#1E7F43] mx-auto"></div>
-            <p className="mt-4 text-[#1F1F1F]/70">Carregando configurações...</p>
+            <p className="mt-4 text-[#1F1F1F]/70">Verificando autenticação...</p>
+          </div>
+        </div>
+        <Footer />
+      </div>
+    )
+  }
+
+  if (loading && !dataLoaded) {
+    return (
+      <div className="min-h-screen bg-[#F9F9F9] flex flex-col">
+        <Header />
+        <div className="flex items-center justify-center flex-1">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#1E7F43] mx-auto"></div>
+            <p className="mt-4 text-[#1F1F1F]/70">Carregando suas configurações...</p>
           </div>
         </div>
         <Footer />
@@ -370,7 +420,19 @@ export default function SettingsPage() {
         {/* Mensagens de sucesso/erro */}
         {error && (
           <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl">
-            <p className="text-red-700 text-sm">{error}</p>
+            <div className="flex items-center justify-between">
+              <p className="text-red-700 text-sm">{error}</p>
+              <button
+                onClick={() => {
+                  setError(null)
+                  setDataLoaded(false)
+                  loadUserData()
+                }}
+                className="ml-4 px-3 py-1 bg-red-100 hover:bg-red-200 text-red-700 text-xs rounded-lg font-semibold transition-colors"
+              >
+                Tentar novamente
+              </button>
+            </div>
           </div>
         )}
 

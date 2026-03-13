@@ -4,7 +4,7 @@
  * 
  * Exibe lista de concursos disponíveis para participação
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { listActiveContests, listFinishedContests } from '../services/contestsService'
 import { listDrawsByContestId } from '../services/drawsService'
@@ -24,66 +24,174 @@ export default function ContestsListPage() {
   const [topWinnersByContest, setTopWinnersByContest] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [dataLoaded, setDataLoaded] = useState(false)
+  const [simpleMode, setSimpleMode] = useState(true) // Padrão: modo simples para teste
+
+  // Função helper para adicionar timeout a qualquer promise
+  const withTimeout = <T>(promise: Promise<T>, timeoutMs: number, errorMessage: string): Promise<T> => {
+    return Promise.race([
+      promise,
+      new Promise<never>((_, reject) => 
+        setTimeout(() => reject(new Error(errorMessage)), timeoutMs)
+      )
+    ])
+  }
+
+  // Carregamento super simples para teste
+  const loadContestsSimple = useCallback(async () => {
+    if (loading || dataLoaded) return
+
+    try {
+      setLoading(true)
+      setError(null)
+      console.log('[ContestsListPage] Modo simples - carregando apenas concursos básicos...')
+      
+      // Carregar apenas concursos, sem informações detalhadas
+      const activeData = await withTimeout(
+        listActiveContests(), 
+        5000, 
+        'Timeout ao carregar concursos ativos'
+      )
+      
+      const finishedData = await withTimeout(
+        listFinishedContests(), 
+        5000, 
+        'Timeout ao carregar concursos finalizados'
+      )
+      
+      console.log('[ContestsListPage] Modo simples - Concursos carregados!')
+      
+      setActiveContests(activeData)
+      setFinishedContests(finishedData)
+      setDataLoaded(true)
+    } catch (err) {
+      console.error('[ContestsListPage] Erro no modo simples:', err)
+      setError(err instanceof Error ? err.message : 'Erro ao carregar concursos')
+      setDataLoaded(false)
+    } finally {
+      setLoading(false)
+    }
+  }, [loading, dataLoaded])
+
+  const loadContests = useCallback(async () => {
+    // Evitar carregar múltiplas vezes
+    if (loading || dataLoaded) return
+
+    try {
+      setLoading(true)
+      setError(null)
+      console.log('[ContestsListPage] Carregando concursos...')
+      
+      // PASSO 1: Carregar concursos básicos com timeout curto
+      const contestsPromise = Promise.all([
+        withTimeout(listActiveContests(), 8000, 'Timeout ao carregar concursos ativos'),
+        withTimeout(listFinishedContests(), 8000, 'Timeout ao carregar concursos finalizados'),
+      ])
+      
+      const [activeData, finishedData] = await contestsPromise
+      console.log('[ContestsListPage] Concursos carregados - Ativos:', activeData.length, 'Finalizados:', finishedData.length)
+      
+      // Atualizar UI imediatamente com dados básicos
+      setActiveContests(activeData)
+      setFinishedContests(finishedData)
+      setDataLoaded(true)
+      setLoading(false)
+      
+      // PASSO 2: Carregar informações detalhadas em background (não bloquear UI)
+      setTimeout(async () => {
+        try {
+          console.log('[ContestsListPage] Carregando informações detalhadas...')
+          const drawsMap: Record<string, boolean> = {}
+          const topWinnersMap: Record<string, number> = {}
+          const allContests = [...activeData, ...finishedData]
+          
+          // Processar apenas 3 concursos por vez para evitar sobrecarga
+          const batchSize = 3
+          for (let i = 0; i < allContests.length; i += batchSize) {
+            const batch = allContests.slice(i, i + batchSize)
+            
+            const results = await Promise.allSettled(
+              batch.map(async (contest) => {
+                try {
+                  // Timeout específico para cada consulta
+                  const draws = await withTimeout(
+                    listDrawsByContestId(contest.id), 
+                    5000, 
+                    `Timeout ao verificar sorteios do concurso ${contest.id}`
+                  )
+                  drawsMap[contest.id] = draws.length > 0
+                  
+                  // Para concursos finalizados com sorteio, buscar contagem de ganhadores TOP
+                  if (contest.status === 'finished' && draws.length > 0) {
+                    try {
+                      const summary = await withTimeout(
+                        getDrawPayoutSummary(draws[0].id),
+                        5000,
+                        `Timeout ao carregar resumo de prêmios do sorteio ${draws[0].id}`
+                      )
+                      topWinnersMap[contest.id] = summary.categories.TOP?.winnersCount ?? 0
+                    } catch {
+                      topWinnersMap[contest.id] = 0
+                    }
+                  }
+                } catch (err) {
+                  console.warn(`Erro ao processar concurso ${contest.id}:`, err)
+                  drawsMap[contest.id] = false
+                }
+              })
+            )
+            
+            // Atualizar UI progressivamente
+            setContestsWithDraws({...drawsMap})
+            setTopWinnersByContest({...topWinnersMap})
+            
+            // Pequena pausa entre lotes para não sobrecarregar
+            if (i + batchSize < allContests.length) {
+              await new Promise(resolve => setTimeout(resolve, 500))
+            }
+          }
+          
+          console.log('[ContestsListPage] Informações detalhadas carregadas')
+        } catch (err) {
+          console.warn('[ContestsListPage] Erro ao carregar informações detalhadas:', err)
+          // Não mostrar erro para o usuário, pois os dados básicos já foram carregados
+        }
+      }, 100) // Pequeno delay para permitir que a UI seja atualizada primeiro
+      
+    } catch (err) {
+      console.error('[ContestsListPage] Erro ao carregar concursos:', err)
+      const errorMessage = err instanceof Error ? err.message : 'Erro ao carregar concursos'
+      setError(errorMessage)
+      setDataLoaded(false) // Permite nova tentativa
+      setLoading(false)
+    }
+  }, [loading, dataLoaded])
 
   useEffect(() => {
-    async function loadContests() {
-      try {
-        setLoading(true)
-        setError(null)
-        console.log('[ContestsListPage] MODIFIQUEI AQUI - Carregando concursos ativos e finalizados...')
-        
-        // MODIFIQUEI AQUI - Carregar concursos ativos e finalizados em paralelo
-        const [activeData, finishedData] = await Promise.all([
-          listActiveContests(),
-          listFinishedContests(),
-        ])
-        
-        console.log('[ContestsListPage] Concursos ativos:', activeData.length, 'Finalizados:', finishedData.length)
-        
-        // Verificar sorteios e contagem de ganhadores TOP para cada concurso
-        const drawsMap: Record<string, boolean> = {}
-        const topWinnersMap: Record<string, number> = {}
-        const allContests = [...activeData, ...finishedData]
-        
-        await Promise.all(
-          allContests.map(async (contest) => {
-            try {
-              const draws = await listDrawsByContestId(contest.id)
-              drawsMap[contest.id] = draws.length > 0
-              
-              // Para concursos finalizados com sorteio, buscar contagem de ganhadores TOP
-              if (contest.status === 'finished' && draws.length > 0) {
-                try {
-                  const summary = await getDrawPayoutSummary(draws[0].id)
-                  topWinnersMap[contest.id] = summary.categories.TOP?.winnersCount ?? 0
-                } catch {
-                  topWinnersMap[contest.id] = 0
-                }
-              }
-            } catch (err) {
-              console.error(`Erro ao verificar sorteios do concurso ${contest.id}:`, err)
-              drawsMap[contest.id] = false
-            }
-          })
-        )
-        
-        setActiveContests(activeData)
-        setFinishedContests(finishedData)
-        setContestsWithDraws(drawsMap)
-        setTopWinnersByContest(topWinnersMap)
-      } catch (err) {
-        console.error('[ContestsListPage] Erro ao carregar concursos:', err)
-        const errorMessage = err instanceof Error ? err.message : 'Erro ao carregar concursos'
-        setError(errorMessage)
-      } finally {
-        setLoading(false)
+    console.log('[ContestsListPage] useEffect - dataLoaded:', dataLoaded, 'loading:', loading, 'simpleMode:', simpleMode)
+    if (!dataLoaded && !loading) {
+      if (simpleMode) {
+        console.log('[ContestsListPage] Iniciando loadContestsSimple...')
+        loadContestsSimple()
+      } else {
+        console.log('[ContestsListPage] Iniciando loadContests completo...')
+        loadContests()
       }
     }
+  }, [loadContests, loadContestsSimple, dataLoaded, loading, simpleMode])
 
-    loadContests()
-  }, [])
+  // Reset quando alterar modo
+  useEffect(() => {
+    setDataLoaded(false)
+    setLoading(false)
+    setActiveContests([])
+    setFinishedContests([])
+    setContestsWithDraws({})
+    setTopWinnersByContest({})
+    setError(null)
+  }, [simpleMode])
 
-  if (loading) {
+  if (loading && !dataLoaded) {
     return (
       <div className="min-h-screen bg-[#F9F9F9] flex flex-col">
         <Header />
@@ -91,6 +199,7 @@ export default function ContestsListPage() {
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#1E7F43] mx-auto"></div>
             <p className="mt-4 text-[#1F1F1F]/70">Carregando concursos...</p>
+            <p className="mt-2 text-xs text-[#1F1F1F]/50">Isso pode levar alguns segundos</p>
           </div>
         </div>
         <Footer />
@@ -103,9 +212,36 @@ export default function ContestsListPage() {
       <div className="min-h-screen bg-[#F9F9F9] flex flex-col">
         <Header />
         <div className="flex items-center justify-center flex-1 px-4">
-          <div className="text-center">
-            <div className="text-red-600 text-xl mb-2">⚠️ Erro</div>
-            <p className="text-[#1F1F1F]/70">{error}</p>
+          <div className="text-center max-w-md">
+            <div className="text-red-600 text-4xl mb-4">⚠️</div>
+            <h2 className="text-xl font-bold text-[#1F1F1F] mb-2">Erro ao Carregar</h2>
+            <p className="text-[#1F1F1F]/70 mb-6">{error}</p>
+            <div className="flex gap-3 justify-center">
+              <button
+                onClick={() => {
+                  setError(null)
+                  setDataLoaded(false)
+                  if (simpleMode) {
+                    loadContestsSimple()
+                  } else {
+                    loadContests()
+                  }
+                }}
+                className="px-6 py-3 bg-[#1E7F43] text-white rounded-xl font-semibold hover:bg-[#3CCB7F] transition-colors"
+              >
+                Tentar Novamente
+              </button>
+              <button
+                onClick={() => {
+                  setSimpleMode(!simpleMode)
+                  setError(null)
+                  setDataLoaded(false)
+                }}
+                className="px-4 py-3 bg-yellow-500 text-white rounded-xl font-semibold hover:bg-yellow-600 transition-colors text-sm"
+              >
+                {simpleMode ? 'Modo Completo' : 'Modo Simples'}
+              </button>
+            </div>
           </div>
         </div>
         <Footer />
@@ -146,7 +282,7 @@ export default function ContestsListPage() {
         </div>
       </div>
 
-      {/* MODIFIQUEI AQUI - Abas para alternar entre Ativos e Histórico */}
+      {/* Abas para alternar entre Ativos e Histórico */}
       <div className="container mx-auto px-2 sm:px-4 mb-6 max-w-7xl">
         <div className="flex gap-2 bg-white rounded-xl p-1 shadow-lg border border-[#E5E5E5] max-w-md">
           <button
