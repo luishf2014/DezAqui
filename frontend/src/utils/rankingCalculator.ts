@@ -23,6 +23,7 @@ export interface RankingEntry {
   participationId: string
   userId: string
   userName: string
+  /** Preenchido quando o ranking inclui e-mail (ex.: visualização admin). */
   userEmail?: string
   ticketCode?: string
   numbers: number[]
@@ -46,7 +47,7 @@ export interface RankingEntry {
 
 export interface RankingConfig {
   contest: Contest
-  participations: Array<Participation & { user?: { id: string; name: string; email: string } | null }>
+  participations: Array<Participation & { user?: { id: string; name: string; email?: string } | null }>
   draws: Draw[]
   selectedDrawId?: string
   totalCollected: number

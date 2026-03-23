@@ -10,6 +10,7 @@ import { listActiveContests, listFinishedContests } from '../services/contestsSe
 import { listDrawsByContestId } from '../services/drawsService'
 import { getDrawPayoutSummary } from '../services/payoutsService'
 import { Contest } from '../types'
+import { supabase } from '../lib/supabase'
 import Header from '../components/Header'
 import Footer from '../components/Footer'
 import ContestStatusBadge from '../components/ContestStatusBadge'
@@ -26,6 +27,7 @@ export default function ContestsListPage() {
   const [error, setError] = useState<string | null>(null)
   const [dataLoaded, setDataLoaded] = useState(false)
   const [simpleMode, setSimpleMode] = useState(true) // Padrão: modo simples para teste
+  const [ultraSimple, setUltraSimple] = useState(false) // Modo ultra-simples para debug
 
   // Função helper para adicionar timeout a qualquer promise
   const withTimeout = <T>(promise: Promise<T>, timeoutMs: number, errorMessage: string): Promise<T> => {
@@ -37,6 +39,78 @@ export default function ContestsListPage() {
     ])
   }
 
+  // Teste de conexão com Supabase
+  const testConnection = useCallback(async () => {
+    console.log('[ContestsListPage] Testando conexão com Supabase...')
+    try {
+      const { data, error } = await supabase
+        .from('contests')
+        .select('count', { count: 'exact', head: true })
+      
+      if (error) {
+        console.error('[ContestsListPage] Erro na conexão:', error)
+        return false
+      }
+      
+      console.log('[ContestsListPage] Conexão OK. Total de concursos:', data)
+      return true
+    } catch (err) {
+      console.error('[ContestsListPage] Exceção na conexão:', err)
+      return false
+    }
+  }, [])
+
+  // Carregamento ULTRA simples - direto do Supabase
+  const loadContestsUltraSimple = useCallback(async () => {
+    if (loading || dataLoaded) return
+
+    try {
+      setLoading(true)
+      setError(null)
+      console.log('[ContestsListPage] Modo ULTRA simples - carregamento direto...')
+      
+      // Carregar diretamente do Supabase, sem services
+      console.log('[ContestsListPage] Fazendo consulta direta ao Supabase...')
+      
+      const { data: activeData, error: activeError } = await supabase
+        .from('contests')
+        .select('*')
+        .eq('status', 'active')
+        .limit(10) // Limitar para teste
+      
+      if (activeError) {
+        console.error('[ContestsListPage] Erro ao buscar ativos:', activeError)
+        throw new Error(`Erro ativos: ${activeError.message}`)
+      }
+      
+      const { data: finishedData, error: finishedError } = await supabase
+        .from('contests')
+        .select('*')
+        .eq('status', 'finished')
+        .limit(10) // Limitar para teste
+      
+      if (finishedError) {
+        console.error('[ContestsListPage] Erro ao buscar finalizados:', finishedError)
+        throw new Error(`Erro finalizados: ${finishedError.message}`)
+      }
+      
+      console.log('[ContestsListPage] ULTRA simples - Dados carregados:', {
+        ativos: activeData?.length || 0,
+        finalizados: finishedData?.length || 0
+      })
+      
+      setActiveContests(activeData || [])
+      setFinishedContests(finishedData || [])
+      setDataLoaded(true)
+    } catch (err) {
+      console.error('[ContestsListPage] Erro no modo ULTRA simples:', err)
+      setError(err instanceof Error ? err.message : 'Erro ao carregar concursos')
+      setDataLoaded(false)
+    } finally {
+      setLoading(false)
+    }
+  }, [loading, dataLoaded])
+
   // Carregamento super simples para teste
   const loadContestsSimple = useCallback(async () => {
     if (loading || dataLoaded) return
@@ -44,22 +118,32 @@ export default function ContestsListPage() {
     try {
       setLoading(true)
       setError(null)
-      console.log('[ContestsListPage] Modo simples - carregando apenas concursos básicos...')
+      console.log('[ContestsListPage] Modo simples iniciado...')
       
-      // Carregar apenas concursos, sem informações detalhadas
+      // Primeiro teste de conexão
+      const connectionOk = await testConnection()
+      if (!connectionOk) {
+        throw new Error('Falha na conexão com o banco de dados')
+      }
+      
+      console.log('[ContestsListPage] Carregando concursos ativos...')
       const activeData = await withTimeout(
         listActiveContests(), 
-        5000, 
+        8000, 
         'Timeout ao carregar concursos ativos'
       )
       
+      console.log('[ContestsListPage] Carregando concursos finalizados...')
       const finishedData = await withTimeout(
         listFinishedContests(), 
-        5000, 
+        8000, 
         'Timeout ao carregar concursos finalizados'
       )
       
-      console.log('[ContestsListPage] Modo simples - Concursos carregados!')
+      console.log('[ContestsListPage] Dados carregados:', {
+        ativos: activeData.length,
+        finalizados: finishedData.length
+      })
       
       setActiveContests(activeData)
       setFinishedContests(finishedData)
@@ -71,7 +155,7 @@ export default function ContestsListPage() {
     } finally {
       setLoading(false)
     }
-  }, [loading, dataLoaded])
+  }, [loading, dataLoaded, testConnection])
 
   const loadContests = useCallback(async () => {
     // Evitar carregar múltiplas vezes
@@ -168,9 +252,12 @@ export default function ContestsListPage() {
   }, [loading, dataLoaded])
 
   useEffect(() => {
-    console.log('[ContestsListPage] useEffect - dataLoaded:', dataLoaded, 'loading:', loading, 'simpleMode:', simpleMode)
+    console.log('[ContestsListPage] useEffect - dataLoaded:', dataLoaded, 'loading:', loading, 'ultraSimple:', ultraSimple, 'simpleMode:', simpleMode)
     if (!dataLoaded && !loading) {
-      if (simpleMode) {
+      if (ultraSimple) {
+        console.log('[ContestsListPage] Iniciando loadContestsUltraSimple...')
+        loadContestsUltraSimple()
+      } else if (simpleMode) {
         console.log('[ContestsListPage] Iniciando loadContestsSimple...')
         loadContestsSimple()
       } else {
@@ -178,7 +265,7 @@ export default function ContestsListPage() {
         loadContests()
       }
     }
-  }, [loadContests, loadContestsSimple, dataLoaded, loading, simpleMode])
+  }, [loadContests, loadContestsSimple, loadContestsUltraSimple, dataLoaded, loading, simpleMode, ultraSimple])
 
   // Reset quando alterar modo
   useEffect(() => {
@@ -189,7 +276,7 @@ export default function ContestsListPage() {
     setContestsWithDraws({})
     setTopWinnersByContest({})
     setError(null)
-  }, [simpleMode])
+  }, [simpleMode, ultraSimple])
 
   if (loading && !dataLoaded) {
     return (
@@ -221,7 +308,9 @@ export default function ContestsListPage() {
                 onClick={() => {
                   setError(null)
                   setDataLoaded(false)
-                  if (simpleMode) {
+                  if (ultraSimple) {
+                    loadContestsUltraSimple()
+                  } else if (simpleMode) {
                     loadContestsSimple()
                   } else {
                     loadContests()
@@ -233,13 +322,14 @@ export default function ContestsListPage() {
               </button>
               <button
                 onClick={() => {
-                  setSimpleMode(!simpleMode)
+                  setUltraSimple(true)
+                  setSimpleMode(false)
                   setError(null)
                   setDataLoaded(false)
                 }}
-                className="px-4 py-3 bg-yellow-500 text-white rounded-xl font-semibold hover:bg-yellow-600 transition-colors text-sm"
+                className="px-4 py-3 bg-red-500 text-white rounded-xl font-semibold hover:bg-red-600 transition-colors text-sm"
               >
-                {simpleMode ? 'Modo Completo' : 'Modo Simples'}
+                Ultra Simples
               </button>
             </div>
           </div>
@@ -252,6 +342,8 @@ export default function ContestsListPage() {
   return (
     <div className="min-h-screen bg-[#F9F9F9] flex flex-col">
       <Header />
+
+      
 
       {/* Header da Página com Gradiente */}
       <div className="relative rounded-2xl sm:rounded-3xl overflow-hidden mx-2 sm:mx-4 mt-4 sm:mt-6 mb-6 sm:mb-8 shadow-xl">

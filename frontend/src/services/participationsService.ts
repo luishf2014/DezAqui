@@ -421,22 +421,28 @@ export async function listAllParticipations(): Promise<Array<Participation & { c
   }))
 }
 
+/** Usuário no ranking: e-mail só vem quando `includeUserEmail` é true (ex.: admin). */
+export type ContestRankingParticipationUser = { id: string; name: string; email?: string }
+
 /**
  * Lista todas as participações ativas de um concurso ordenadas por ranking (pontuação)
- * MODIFIQUEI AQUI - Função para buscar ranking de um concurso
- * 
+ *
  * @param contestId ID do concurso
- * @returns Lista de participações ordenadas por pontuação (maior para menor)
+ * @param options.includeUserEmail Se true, busca e-mail do perfil (uso típico: administradores)
  */
-export async function getContestRanking(contestId: string): Promise<Array<Participation & { user: { id: string; name: string; email: string } | null }>> {
+export async function getContestRanking(
+  contestId: string,
+  options?: { includeUserEmail?: boolean }
+): Promise<Array<Participation & { user: ContestRankingParticipationUser | null }>> {
+  const includeEmail = options?.includeUserEmail === true
+
   const { data, error } = await supabase
     .from('participations')
     .select(`
       *,
       profiles:user_id (
         id,
-        name,
-        email
+        name${includeEmail ? ',\n        email' : ''}
       )
     `)
     .eq('contest_id', contestId)
@@ -453,10 +459,14 @@ export async function getContestRanking(contestId: string): Promise<Array<Partic
 
   return (data || []).map((item: any) => ({
     ...item,
-    user: item.profiles ? {
-      id: item.profiles.id,
-      name: item.profiles.name,
-      email: item.profiles.email,
-    } : null,
+    user: item.profiles
+      ? {
+          id: item.profiles.id,
+          name: item.profiles.name,
+          ...(includeEmail && item.profiles.email != null && item.profiles.email !== ''
+            ? { email: item.profiles.email as string }
+            : {}),
+        }
+      : null,
   }))
 }

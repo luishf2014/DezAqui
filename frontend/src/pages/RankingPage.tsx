@@ -21,13 +21,15 @@ import OfficialContestNumbersBadges from '../components/OfficialContestNumbersBa
 import Header from '../components/Header'
 import Footer from '../components/Footer'
 import CustomSelect from '../components/CustomSelect'
+import { useAuth } from '../contexts/AuthContext'
 
 interface ParticipationWithUser extends Participation {
-  user: { id: string; name: string; email: string } | null
+  user: { id: string; name: string; email?: string } | null
 }
 
 export default function RankingPage() {
   const { id } = useParams<{ id: string }>()
+  const { isAdmin, loading: authLoading } = useAuth()
   const [contest, setContest] = useState<Contest | null>(null)
   const [participations, setParticipations] = useState<ParticipationWithUser[]>([])
   const [draws, setDraws] = useState<Draw[]>([])
@@ -40,13 +42,16 @@ export default function RankingPage() {
   const [officialRefs, setOfficialRefs] = useState<ContestOfficialRef[]>([])
 
   useEffect(() => {
-    async function loadRankingData() {
-      if (!id) {
-        setError('ID do concurso não fornecido')
-        setLoading(false)
-        return
-      }
+    if (!id) {
+      setError('ID do concurso não fornecido')
+      setLoading(false)
+      return
+    }
+    if (authLoading) {
+      return
+    }
 
+    async function loadRankingData() {
       try {
         setLoading(true)
         setError(null)
@@ -55,7 +60,7 @@ export default function RankingPage() {
 
         const [contestData, rankingData, drawsData, refsData] = await Promise.all([
           getContestById(id),
-          getContestRanking(id),
+          getContestRanking(id, { includeUserEmail: isAdmin }),
           listDrawsByContestId(id),
           listOfficialRefsByContestId(id).catch(() => []),
         ])
@@ -119,7 +124,7 @@ export default function RankingPage() {
 
     loadRankingData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id])
+  }, [id, authLoading, isAdmin])
 
   const loadDrawPayouts = async (drawId: string) => {
     try {
@@ -1058,7 +1063,9 @@ export default function RankingPage() {
                                       </span>
                                     )}
                                   </div>
-                                  {participation.user?.email && <div className="text-sm text-[#1F1F1F]/60">{participation.user.email}</div>}
+                                  {isAdmin && participation.user?.email && (
+                                    <div className="text-sm text-[#1F1F1F]/60">{participation.user.email}</div>
+                                  )}
                                 </div>
                               </td>
 

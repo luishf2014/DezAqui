@@ -25,13 +25,13 @@ import Header from '../components/Header'
 import Footer from '../components/Footer'
 
 interface ParticipationWithUser extends Participation {
-  user: { id: string; name: string; email: string } | null
+  user: { id: string; name: string; email?: string } | null
 }
 
 type TabType = 'active' | 'history'
 
 export default function RankingsPage() {
-  const { user, loading: authLoading } = useAuth()
+  const { user, loading: authLoading, isAdmin } = useAuth()
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState<TabType>('active')
   const [activeContests, setActiveContests] = useState<Contest[]>([])
@@ -116,6 +116,10 @@ export default function RankingsPage() {
         return
       }
 
+      if (authLoading) {
+        return
+      }
+
       try {
         setLoadingRanking(true)
         setError(null)
@@ -131,7 +135,7 @@ export default function RankingsPage() {
 
         // Buscar ranking, sorteios, refs oficiais e payouts do concurso selecionado
         const [rankingData, drawsData, refsData] = await Promise.all([
-          getContestRanking(selectedContestId),
+          getContestRanking(selectedContestId, { includeUserEmail: isAdmin }),
           listDrawsByContestId(selectedContestId),
           listOfficialRefsByContestId(selectedContestId).catch(() => []),
         ])
@@ -176,7 +180,7 @@ export default function RankingsPage() {
     }
 
     loadRanking()
-  }, [selectedContestId, selectedDrawId]) // MODIFIQUEI AQUI - inclui selectedDrawId para recarregar payouts ao trocar sorteio
+  }, [selectedContestId, selectedDrawId, authLoading, isAdmin]) // MODIFIQUEI AQUI - inclui selectedDrawId para recarregar payouts ao trocar sorteio
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('pt-BR', {
@@ -935,7 +939,7 @@ export default function RankingsPage() {
                                     </span>
                                   )}
                                 </div>
-                                {userEmail && (
+                                {isAdmin && userEmail && (
                                   <div className="text-xs text-[#1F1F1F]/60 truncate">{userEmail}</div>
                                 )}
                                 {/* MODIFIQUEI AQUI - Mostrar código do ticket */}

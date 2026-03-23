@@ -22,7 +22,7 @@ import OfficialContestNumbersBadges from '../components/OfficialContestNumbersBa
 export default function ContestDetailsPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const { user } = useAuth()
+  const { user, isAdmin, loading: authLoading } = useAuth()
   const [contest, setContest] = useState<Contest | null>(null)
   const [draws, setDraws] = useState<Draw[]>([])
   const [participations, setParticipations] = useState<Participation[]>([])
@@ -77,11 +77,14 @@ export default function ContestDetailsPage() {
       setParticipations([])
       return
     }
+    if (authLoading) {
+      return
+    }
     const latestDraw = draws[0]
     Promise.all([
       getDrawPayoutSummary(latestDraw.id),
       getPayoutsByDraw(latestDraw.id),
-      getContestRanking(id),
+      getContestRanking(id, { includeUserEmail: isAdmin }),
     ])
       .then(([summary, drawPayouts, rankingData]) => {
         const count = summary.categories.TOP?.winnersCount ?? 0
@@ -98,7 +101,7 @@ export default function ContestDetailsPage() {
         setPayouts({})
         setParticipations([])
       })
-  }, [draws, id])
+  }, [draws, id, authLoading, isAdmin])
 
   // MODIFIQUEI AQUI - Atualizar estado do botão quando a data de início chegar
   useEffect(() => {
