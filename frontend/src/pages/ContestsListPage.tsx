@@ -30,7 +30,8 @@ export default function ContestsListPage() {
   const [ultraSimple, setUltraSimple] = useState(false) // Modo ultra-simples para debug
 
   // Função helper para adicionar timeout a qualquer promise
-  const withTimeout = <T>(promise: Promise<T>, timeoutMs: number, errorMessage: string): Promise<T> => {
+  // `<T,>` evita que o parser TSX interprete `<T>` como tag JSX
+  const withTimeout = <T,>(promise: Promise<T>, timeoutMs: number, errorMessage: string): Promise<T> => {
     return Promise.race([
       promise,
       new Promise<never>((_, reject) => 
