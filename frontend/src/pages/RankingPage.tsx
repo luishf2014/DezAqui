@@ -16,6 +16,7 @@ import { getAllHitNumbers } from '../utils/rankingHelpers'
 // MODIFIQUEI AQUI - Não usar getPayoutCategory para medalha/categoria/prêmio (agora é por SCORE)
 // import { getPayoutCategory } from '../utils/payoutCategoryHelpers'
 import { getContestState } from '../utils/contestHelpers'
+import { getPrizePoolTotalForContest } from '../utils/contestPrizePool'
 import { formatOfficialRefDate } from '../utils/contestOfficialRefUtils'
 import OfficialContestNumbersBadges from '../components/OfficialContestNumbersBadges'
 import Header from '../components/Header'
@@ -235,7 +236,7 @@ export default function RankingPage() {
   }, [participations, selectedDrawId, draws, drawsSortedAsc])
 
   // MODIFIQUEI AQUI - total arrecadado (summary se existir, senão fallback)
-  const getTotalCollected = () => {
+  const getBaseArrecadado = () => {
     const fromSummary =
       payoutSummary?.totalCollected ??
       payoutSummary?.total_amount ??
@@ -252,6 +253,9 @@ export default function RankingPage() {
     const value = Number((contest as any)?.participation_value || 0)
     return Number.isFinite(value) ? participations.length * value : 0
   }
+
+  /** MODIFIQUEI AQUI - Base dos % = arrecadação + extra fixo (se ativo no concurso) */
+  const getTotalCollected = () => getPrizePoolTotalForContest(getBaseArrecadado(), contest ?? undefined)
 
   // MODIFIQUEI AQUI - ler % do concurso (campos reais do schema)
   const getCategoryPercent = (category: 'TOP' | 'SECOND' | 'LOWEST') => {
@@ -501,6 +505,25 @@ export default function RankingPage() {
                 <div className="text-3xl font-bold">{maxScoreToDisplay}</div>
               </div>
             </div>
+            {/* MODIFIQUEI AQUI - Transparência: arrecadação + extra = base dos % */}
+            {contest?.has_extra_prize && Number(contest.extra_prize_amount) > 0 && (
+              <p className="text-sm text-[#1F1F1F]/70 mt-3">
+                Arrecadação (estimada):{' '}
+                <span className="font-semibold text-[#1F1F1F]">
+                  {getBaseArrecadado().toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                </span>
+                {' · '}
+                Valor adicional:{' '}
+                <span className="font-semibold text-[#1F1F1F]">
+                  {Number(contest.extra_prize_amount).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                </span>
+                {' · '}
+                Premiação total (base dos %):{' '}
+                <span className="font-semibold text-[#1E7F43]">
+                  {getTotalCollected().toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                </span>
+              </p>
+            )}
           </div>
         </div>
 

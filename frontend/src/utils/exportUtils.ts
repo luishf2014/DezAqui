@@ -5,6 +5,7 @@
  * Funções para exportar relatórios em diferentes formatos
  */
 import { ReportData } from '../services/reportsService'
+import { getPrizePoolTotalForContest, getExtraPrizeDisplayAmount } from './contestPrizePool'
 // @ts-ignore - html2pdf.js não tem tipos TypeScript
 import html2pdf from 'html2pdf.js'
 
@@ -198,18 +199,27 @@ export function generateReportHTML(
   const secondPercent = toNumber(contest?.second_place_pct) || 10
   const lowestPercent = toNumber(contest?.lowest_place_pct) || 7
 
-  const totalArrecadado = toNumber((reportData as any)?.totalRevenue || 0)
+  // MODIFIQUEI AQUI - Arrecadação = só pagamentos; premiação total = pool dos % (pode incluir extra)
+  const arrecadacaoPagamentos = toNumber((reportData as any)?.totalRevenue || 0)
+  const premiacaoTotalBase = getPrizePoolTotalForContest(arrecadacaoPagamentos, reportData.contest)
+  const valorAdicionalExtra = getExtraPrizeDisplayAmount(reportData.contest)
 
-  // Percentuais aplicados sobre o TOTAL (igual rateioCalculator) - não desconta admin antes
-  const adminAmount = (totalArrecadado * adminPercent) / 100
-  const totalTop = (totalArrecadado * topPercent) / 100
-  const totalSecond = (totalArrecadado * secondPercent) / 100
-  const totalLowest = (totalArrecadado * lowestPercent) / 100
+  // Percentuais aplicados sobre premiação total (igual rateioCalculator / reprocessService)
+  const adminAmount = (premiacaoTotalBase * adminPercent) / 100
+  const totalTop = (premiacaoTotalBase * topPercent) / 100
+  const totalSecond = (premiacaoTotalBase * secondPercent) / 100
+  const totalLowest = (premiacaoTotalBase * lowestPercent) / 100
+
+  const linhaBreakdownExtra =
+    valorAdicionalExtra > 0
+      ? `<p style="font-size: 11px; color: #555; margin: 0 0 12px 0;">Arrecadação (pagamentos): R$ ${money(arrecadacaoPagamentos)} · Valor adicional: R$ ${money(valorAdicionalExtra)} · <strong>Premiação total (base dos %): R$ ${money(premiacaoTotalBase)}</strong></p>`
+      : ''
 
   // Completo: TOP/2º/MENOR sem % e sem Admin | Arrecadação: TOP/2º/MENOR/ADMIN com %
   const financeHtmlFull = `
 <div class="finance-mini">
   <h3>Resumo Financeiro</h3>
+  ${linhaBreakdownExtra}
   <div class="finance-grid" style="grid-template-columns: 1fr 1fr 1fr;">
     <div class="finance-card">
       <div class="finance-label">TOP (🥇)</div>
@@ -229,6 +239,7 @@ export function generateReportHTML(
   const financeHtmlRevenue = `
 <div class="finance-mini">
   <h3>Resumo Financeiro</h3>
+  ${linhaBreakdownExtra}
   <div class="finance-grid">
     <div class="finance-card">
       <div class="finance-label">TOP (🥇)</div>

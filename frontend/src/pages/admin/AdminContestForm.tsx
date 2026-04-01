@@ -35,6 +35,9 @@ export default function AdminContestForm() {
     second_place_pct: 10,
     lowest_place_pct: 7,
     admin_fee_pct: 18,
+    // MODIFIQUEI AQUI - Prêmio adicional fixo (desativado por padrão)
+    has_extra_prize: false,
+    extra_prize_amount: 0,
   })
   const [currentContest, setCurrentContest] = useState<{ contest_code?: string | null } | null>(null)
 
@@ -74,6 +77,9 @@ export default function AdminContestForm() {
         second_place_pct: contest.second_place_pct || 10,
         lowest_place_pct: contest.lowest_place_pct || 7,
         admin_fee_pct: contest.admin_fee_pct || 18,
+        // MODIFIQUEI AQUI
+        has_extra_prize: !!contest.has_extra_prize,
+        extra_prize_amount: contest.extra_prize_amount ?? 0,
       })
       // MODIFIQUEI AQUI - Armazenar dados do concurso para exibir código
       setCurrentContest(contest)
@@ -128,6 +134,14 @@ export default function AdminContestForm() {
         throw new Error(`A soma dos percentuais de premiação deve ser 100%. Atual: ${totalPercent.toFixed(2)}%`)
       }
 
+      // MODIFIQUEI AQUI - Prêmio adicional fixo
+      if (formData.has_extra_prize) {
+        const extra = Number(formData.extra_prize_amount)
+        if (!Number.isFinite(extra) || extra < 0) {
+          throw new Error('Informe um valor adicional válido (maior ou igual a zero)')
+        }
+      }
+
       if (isEditing && id) {
         const updateData: UpdateContestInput = {
           name: formData.name,
@@ -144,10 +158,18 @@ export default function AdminContestForm() {
           second_place_pct: secondPct,
           lowest_place_pct: lowestPct,
           admin_fee_pct: adminPct,
+          // MODIFIQUEI AQUI
+          has_extra_prize: !!formData.has_extra_prize,
+          extra_prize_amount: formData.has_extra_prize ? Number(formData.extra_prize_amount) || 0 : 0,
         }
         await updateContest(id, updateData)
       } else {
-        await createContest(formData)
+        await createContest({
+          ...formData,
+          // MODIFIQUEI AQUI
+          has_extra_prize: !!formData.has_extra_prize,
+          extra_prize_amount: formData.has_extra_prize ? Number(formData.extra_prize_amount) || 0 : 0,
+        })
       }
 
       navigate('/admin/contests')
@@ -164,7 +186,8 @@ export default function AdminContestForm() {
     setFormData(prev => ({
       ...prev,
       [name]: name === 'min_number' || name === 'max_number' || name === 'numbers_per_participation' || name === 'participation_value' || 
-               name === 'first_place_pct' || name === 'second_place_pct' || name === 'lowest_place_pct' || name === 'admin_fee_pct'
+               name === 'first_place_pct' || name === 'second_place_pct' || name === 'lowest_place_pct' || name === 'admin_fee_pct' ||
+               name === 'extra_prize_amount'
         ? value === '' ? undefined : Number(value)
         : value,
     }))
@@ -398,11 +421,57 @@ export default function AdminContestForm() {
             </div>
           </div>
 
+          {/* MODIFIQUEI AQUI - Prêmio adicional fixo (opcional) */}
+          <div className="mb-6 p-4 rounded-xl border border-[#E5E5E5] bg-[#F9F9F9]/80">
+            <div className="flex items-start gap-3">
+              <input
+                type="checkbox"
+                id="has_extra_prize"
+                checked={!!formData.has_extra_prize}
+                onChange={(e) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    has_extra_prize: e.target.checked,
+                    extra_prize_amount: e.target.checked ? prev.extra_prize_amount ?? 0 : 0,
+                  }))
+                }
+                className="mt-1 h-4 w-4 rounded border-[#E5E5E5] text-[#1E7F43] focus:ring-[#1E7F43]"
+              />
+              <div className="flex-1 min-w-0">
+                <label htmlFor="has_extra_prize" className="block text-sm font-semibold text-[#1F1F1F] cursor-pointer">
+                  Incluir valor adicional fixo na premiação total
+                </label>
+                <p className="text-xs text-[#1F1F1F]/60 mt-1">
+                  Quando ativo, a base dos percentuais de premiação passa a ser: arrecadação das participações pagas + valor abaixo.
+                </p>
+                {formData.has_extra_prize && (
+                  <div className="mt-3">
+                    <label htmlFor="extra_prize_amount" className="block text-sm font-semibold text-[#1F1F1F] mb-2">
+                      Valor adicional (R$) <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      id="extra_prize_amount"
+                      name="extra_prize_amount"
+                      value={formData.extra_prize_amount ?? ''}
+                      onChange={handleChange}
+                      min="0"
+                      step="0.01"
+                      required={!!formData.has_extra_prize}
+                      className="w-full max-w-xs px-4 py-3 border border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43] focus:border-transparent bg-white"
+                      placeholder="0.00"
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
           {/* MODIFIQUEI AQUI - Seção de Percentuais de Premiação */}
           <div className="mb-6">
             <h3 className="text-lg font-bold text-[#1F1F1F] mb-4">Percentuais de Premiação</h3>
             <p className="text-sm text-[#1F1F1F]/70 mb-4">
-              Configure como o valor arrecadado será distribuído entre os ganhadores. A soma deve ser 100%.
+              Configure como o valor total da premiação (arrecadação{formData.has_extra_prize ? ' + valor adicional' : ''}) será distribuído entre os ganhadores. A soma deve ser 100%.
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div>

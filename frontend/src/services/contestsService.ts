@@ -127,6 +127,9 @@ export interface CreateContestInput {
   second_place_pct?: number
   lowest_place_pct?: number
   admin_fee_pct?: number
+  // MODIFIQUEI AQUI - Prêmio adicional fixo opcional
+  has_extra_prize?: boolean
+  extra_prize_amount?: number
   // MODIFIQUEI AQUI - Campos informativos do concurso oficial
   official_contest_name?: string | null
   official_contest_code?: string | null
@@ -208,6 +211,9 @@ export interface UpdateContestInput {
   second_place_pct?: number
   lowest_place_pct?: number
   admin_fee_pct?: number
+  // MODIFIQUEI AQUI - Prêmio adicional fixo opcional
+  has_extra_prize?: boolean
+  extra_prize_amount?: number
   // MODIFIQUEI AQUI - Campos informativos do concurso oficial
   official_contest_name?: string | null
   official_contest_code?: string | null

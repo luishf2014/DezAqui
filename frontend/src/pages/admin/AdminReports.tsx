@@ -10,6 +10,7 @@ import Header from '../../components/Header'
 import Footer from '../../components/Footer'
 import CustomSelect from '../../components/CustomSelect'
 import { listAllContests } from '../../services/contestsService'
+import { getPrizePoolTotalForContest, getExtraPrizeDisplayAmount } from '../../utils/contestPrizePool'
 import { listDrawsByContestId } from '../../services/drawsService'
 import { getReportData, getRevenueByPeriod, ReportData } from '../../services/reportsService'
 import { getDrawPayoutSummary, getPayoutsByDraw } from '../../services/payoutsService'
@@ -496,21 +497,30 @@ export default function AdminReports() {
               </div>
 
               {/* Resumo Financeiro (TOP, 2º, Menor, Taxa Admin com %) - apenas no Arrecadação */}
+              {/* MODIFIQUEI AQUI - % sobre premiação total (arrecadação + extra), não confundir com card Arrecadado */}
               {reportType === 'revenue' && (() => {
                 const contest = reportData.contest as { admin_fee_pct?: number; first_place_pct?: number; second_place_pct?: number; lowest_place_pct?: number }
                 const adminPct = Number(contest?.admin_fee_pct) || 18
                 const topPct = Number(contest?.first_place_pct) || 65
                 const secondPct = Number(contest?.second_place_pct) || 10
                 const lowestPct = Number(contest?.lowest_place_pct) || 7
-                const total = reportData.totalRevenue || 0
-                const adminAmount = (total * adminPct) / 100
-                const totalTop = (total * topPct) / 100
-                const totalSecond = (total * secondPct) / 100
-                const totalLowest = (total * lowestPct) / 100
+                const arrecadacaoPagamentos = reportData.totalRevenue || 0
+                const premiacaoTotalBase = getPrizePoolTotalForContest(arrecadacaoPagamentos, reportData.contest)
+                const valorAdicional = getExtraPrizeDisplayAmount(reportData.contest)
+                const adminAmount = (premiacaoTotalBase * adminPct) / 100
+                const totalTop = (premiacaoTotalBase * topPct) / 100
+                const totalSecond = (premiacaoTotalBase * secondPct) / 100
+                const totalLowest = (premiacaoTotalBase * lowestPct) / 100
                 const fmt = (v: number) => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
                 return (
                   <div className="p-6 border-t border-[#E5E5E5]">
                     <h3 className="text-lg font-bold text-[#1F1F1F] mb-4">Resumo Financeiro</h3>
+                    {valorAdicional > 0 && (
+                      <p className="text-xs text-[#1F1F1F]/70 mb-3">
+                        Arrecadação (pagamentos): R$ {fmt(arrecadacaoPagamentos)} · Valor adicional: R$ {fmt(valorAdicional)} ·{' '}
+                        <span className="font-semibold text-[#1E7F43]">Premiação total (base dos %): R$ {fmt(premiacaoTotalBase)}</span>
+                      </p>
+                    )}
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                       <div className="bg-[#F9F9F9] rounded-xl p-4 border border-[#E5E5E5]">
                         <p className="text-xs text-[#1F1F1F]/70 mb-1">TOP 🥇</p>

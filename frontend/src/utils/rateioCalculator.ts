@@ -72,7 +72,7 @@ export interface DrawPayoutResult {
  * MODIFIQUEI AQUI - Função para calcular rateio
  * 
  * @param participations Participações com pontuação
- * @param totalRevenue Total arrecadado
+ * @param totalRevenue Pool para os % (arrecadação ou arrecadação + extra) — MODIFIQUEI AQUI
  * @param config Configuração de percentuais (padrão do README)
  */
 export function calculateRateio(
@@ -235,7 +235,7 @@ export function calculateRateio(
  * - current_score ja vem calculado como numeros unicos acertados
  *
  * @param participations Participacoes com numeros, data de criacao e pontuacao acumulada
- * @param totalRevenue Total arrecadado (pool)
+ * @param totalRevenue Pool base para os % (arrecadação paga; ou arrecadação + extra fixo se o concurso tiver has_extra_prize) — MODIFIQUEI AQUI
  * @param config Configuracao de percentuais
  * @param numbersPerParticipation Quantidade de numeros por participacao (ex: 10)
  * @param draws Array de sorteios com numeros e data

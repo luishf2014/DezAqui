@@ -14,6 +14,7 @@ import { supabase } from '../lib/supabase'
 import Header from '../components/Header'
 import Footer from '../components/Footer'
 import ContestStatusBadge from '../components/ContestStatusBadge'
+import ContestPrizePoolInfo from '../components/ContestPrizePoolInfo'
 
 type TabType = 'active' | 'history'
 
@@ -499,6 +500,8 @@ export default function ContestsListPage() {
                       : `${topWinnersByContest[contest.id]} ${topWinnersByContest[contest.id] === 1 ? 'pessoa atingiu' : 'pessoas atingiram'} a pontuação máxima do sorteio`}
                   </p>
                 )}
+
+                <ContestPrizePoolInfo contest={contest} variant="compact" />
 
                 {/* Botão */}
                 <Link

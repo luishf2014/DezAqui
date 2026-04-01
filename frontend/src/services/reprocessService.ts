@@ -9,6 +9,7 @@ import { supabase } from '../lib/supabase'
 import { listDrawsByContestId, getDrawById } from './drawsService'
 import { getAllHitNumbers } from '../utils/rankingHelpers'
 import { calculateRateio, calculateDrawPayouts, RateioConfig } from '../utils/rateioCalculator'
+import { getPrizePoolTotalForContest } from '../utils/contestPrizePool'
 
 /**
  * Reprocessa um concurso após mudanças em sorteios
@@ -57,7 +58,9 @@ export async function reprocessContestAfterDraw(contestId: string): Promise<void
     // 3. Buscar informações do concurso (para percentuais de premiação)
     const { data: contest, error: contestError } = await supabase
       .from('contests')
-      .select('id, first_place_pct, second_place_pct, lowest_place_pct, admin_fee_pct, participation_value, numbers_per_participation')
+      .select(
+        'id, first_place_pct, second_place_pct, lowest_place_pct, admin_fee_pct, participation_value, numbers_per_participation, has_extra_prize, extra_prize_amount'
+      )
       .eq('id', contestId)
       .single()
 
@@ -170,8 +173,13 @@ export async function reprocessContestAfterDraw(contestId: string): Promise<void
         ? payments.reduce((sum, p) => sum + Number(p.amount), 0)
         : 0
 
-      if (totalArrecadado > 0) {
-        console.log(`[reprocessService] Calculando rateio para ${participationsWithScore.length} participações com pontuação. Total arrecadado: R$ ${totalArrecadado.toFixed(2)}`)
+      // MODIFIQUEI AQUI - Pool = arrecadação + extra fixo (se ativo); senão só arrecadação
+      const prizePoolTotal = getPrizePoolTotalForContest(totalArrecadado, contest ?? undefined)
+
+      if (prizePoolTotal > 0) {
+        console.log(
+          `[reprocessService] Calculando rateio para ${participationsWithScore.length} participações com pontuação. Arrecadação: R$ ${totalArrecadado.toFixed(2)} | Pool premiação: R$ ${prizePoolTotal.toFixed(2)}`
+        )
         // Preparar configuração de rateio (usar valores do concurso ou padrão)
         const rateioConfig: RateioConfig = {
           maiorPontuacao: contest?.first_place_pct || 65,
@@ -194,8 +202,8 @@ export async function reprocessContestAfterDraw(contestId: string): Promise<void
           }
         })
 
-        // Calcular rateio
-        const rateioResult = calculateRateio(participationsForRateio, totalArrecadado, rateioConfig)
+        // Calcular rateio (base = prizePoolTotal)
+        const rateioResult = calculateRateio(participationsForRateio, prizePoolTotal, rateioConfig)
 
         // Salvar snapshot do rateio (usar o último sorteio como referência)
         const lastDraw = draws[draws.length - 1]
@@ -223,7 +231,7 @@ export async function reprocessContestAfterDraw(contestId: string): Promise<void
           console.log(`[reprocessService] Snapshot de rateio salvo com sucesso para sorteio ${lastDraw.id}`)
         }
       } else {
-        console.log(`[reprocessService] Rateio não calculado: total arrecadado é zero (R$ 0,00)`)
+        console.log(`[reprocessService] Rateio não calculado: pool de premiação é zero (R$ 0,00)`)
       }
     } else {
       if (participationsWithScore.length === 0) {
@@ -262,7 +270,9 @@ export async function reprocessDrawResults(drawId: string, cumulativeDraws?: Arr
     // 2. Buscar informações do concurso
     const { data: contest, error: contestError } = await supabase
       .from('contests')
-      .select('id, first_place_pct, second_place_pct, lowest_place_pct, admin_fee_pct, participation_value, numbers_per_participation')
+      .select(
+        'id, first_place_pct, second_place_pct, lowest_place_pct, admin_fee_pct, participation_value, numbers_per_participation, has_extra_prize, extra_prize_amount'
+      )
       .eq('id', draw.contest_id)
       .single()
 
@@ -333,6 +343,9 @@ export async function reprocessDrawResults(drawId: string, cumulativeDraws?: Arr
       ? payments.reduce((sum, p) => sum + Number(p.amount), 0)
       : 0
 
+    // MODIFIQUEI AQUI - Pool para % de prêmios = arrecadação + extra fixo quando ativo
+    const prizePoolTotal = getPrizePoolTotalForContest(totalArrecadado, contest)
+
     // 6. Calcular prêmios usando a nova função
     const rateioConfig: RateioConfig = {
       maiorPontuacao: contest.first_place_pct || 65,
@@ -344,7 +357,7 @@ export async function reprocessDrawResults(drawId: string, cumulativeDraws?: Arr
     // MODIFIQUEI AQUI - Passar numbers_per_participation e draws para cálculo correto de TOP/SECOND
     const payoutResult = calculateDrawPayouts(
       participationsWithScore,
-      totalArrecadado,
+      prizePoolTotal,
       rateioConfig,
       contest.numbers_per_participation,
       drawsForScore

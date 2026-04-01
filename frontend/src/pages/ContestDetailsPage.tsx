@@ -18,6 +18,7 @@ import Footer from '../components/Footer'
 import { getContestState } from '../utils/contestHelpers'
 import { formatOfficialRefDate } from '../utils/contestOfficialRefUtils'
 import OfficialContestNumbersBadges from '../components/OfficialContestNumbersBadges'
+import ContestPrizePoolInfo from '../components/ContestPrizePoolInfo'
 
 export default function ContestDetailsPage() {
   const { id } = useParams<{ id: string }>()
@@ -69,24 +70,27 @@ export default function ContestDetailsPage() {
     loadContestData()
   }, [id])
 
-  // Carregar participações e payouts do sorteio mais recente (para exibir números vencedores TOP)
+  // Participações ativas (ranking) — necessário antes do sorteio para premiação estimada e bloco de resultado
+  useEffect(() => {
+    if (!id || authLoading) return
+    getContestRanking(id, { includeUserEmail: isAdmin })
+      .then(setParticipations)
+      .catch(() => setParticipations([]))
+  }, [id, authLoading, isAdmin])
+
+  // Payouts do sorteio mais recente (números vencedores TOP / contagem)
   useEffect(() => {
     if (draws.length === 0 || !id) {
       setTopWinnersCount(0)
       setPayouts({})
-      setParticipations([])
       return
     }
     if (authLoading) {
       return
     }
     const latestDraw = draws[0]
-    Promise.all([
-      getDrawPayoutSummary(latestDraw.id),
-      getPayoutsByDraw(latestDraw.id),
-      getContestRanking(id, { includeUserEmail: isAdmin }),
-    ])
-      .then(([summary, drawPayouts, rankingData]) => {
+    Promise.all([getDrawPayoutSummary(latestDraw.id), getPayoutsByDraw(latestDraw.id)])
+      .then(([summary, drawPayouts]) => {
         const count = summary.categories.TOP?.winnersCount ?? 0
         setTopWinnersCount(count)
         const payoutsMap: Record<string, { category: string; amount_won: number }> = {}
@@ -94,14 +98,12 @@ export default function ContestDetailsPage() {
           payoutsMap[p.participation_id] = { category: p.category, amount_won: p.amount_won }
         })
         setPayouts(payoutsMap)
-        setParticipations(rankingData)
       })
       .catch(() => {
         setTopWinnersCount(0)
         setPayouts({})
-        setParticipations([])
       })
-  }, [draws, id, authLoading, isAdmin])
+  }, [draws, id, authLoading])
 
   // MODIFIQUEI AQUI - Atualizar estado do botão quando a data de início chegar
   useEffect(() => {
@@ -321,6 +323,12 @@ export default function ContestDetailsPage() {
             </span>
           </div>
         </div>
+
+        <ContestPrizePoolInfo
+          contest={contest}
+          participationsCount={participations.length}
+          variant="banner"
+        />
 
         {/* Datas */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 mb-6 sm:mb-8">

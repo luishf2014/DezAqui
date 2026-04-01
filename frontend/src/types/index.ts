@@ -42,6 +42,9 @@ export interface Contest {
   second_place_pct?: number
   lowest_place_pct?: number
   admin_fee_pct?: number
+  // MODIFIQUEI AQUI - Prêmio adicional fixo (soma ao pool dos % quando ativo)
+  has_extra_prize?: boolean
+  extra_prize_amount?: number
   // MODIFIQUEI AQUI - Código único do concurso (ex: CG-20250124-A1B2C3)
   contest_code?: string | null
   // MODIFIQUEI AQUI - Campos informativos do concurso oficial (Mega-Sena/Loto etc.)

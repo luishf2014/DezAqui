@@ -16,6 +16,7 @@ import Header from '../components/Header'
 import Footer from '../components/Footer'
 import { canAcceptParticipations, getContestState } from '../utils/contestHelpers'
 import ContestStatusBadge from '../components/ContestStatusBadge'
+import ContestPrizePoolInfo from '../components/ContestPrizePoolInfo'
 
 // MODIFIQUEI AQUI - Última compra (localStorage)
 const LAST_PURCHASE_KEY = 'dezaqui_last_purchase_v1'
@@ -372,6 +373,8 @@ export default function JoinContestPage() {
           {contest.description && (
             <p className="text-[#1F1F1F]/70 mb-4">{contest.description}</p>
           )}
+
+          <ContestPrizePoolInfo contest={contest} variant="compact" />
 
           <div className="rounded-2xl border border-[#E5E5E5] bg-[#F9F9F9] p-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
