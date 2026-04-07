@@ -470,3 +470,18 @@ export async function getContestRanking(
       : null,
   }))
 }
+
+/** Contagem de participações ativas (mesma base do ranking) — ex.: painel admin com valores estimados */
+export async function countActiveParticipationsByContest(contestId: string): Promise<number> {
+  const { count, error } = await supabase
+    .from('participations')
+    .select('*', { count: 'exact', head: true })
+    .eq('contest_id', contestId)
+    .eq('status', 'active')
+
+  if (error) {
+    console.warn('[countActiveParticipationsByContest]', error)
+    return 0
+  }
+  return count ?? 0
+}

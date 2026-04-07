@@ -326,8 +326,9 @@ export default function ContestDetailsPage() {
 
         <ContestPrizePoolInfo
           contest={contest}
-          participationsCount={participations.length}
           variant="banner"
+          showAmounts={isAdmin}
+          participationsCount={participations.length}
         />
 
         {/* Datas */}

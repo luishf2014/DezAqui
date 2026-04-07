@@ -515,10 +515,25 @@ export default function AdminReports() {
                 return (
                   <div className="p-6 border-t border-[#E5E5E5]">
                     <h3 className="text-lg font-bold text-[#1F1F1F] mb-4">Resumo Financeiro</h3>
+                    <p className="text-xs text-[#1F1F1F]/70 mb-3 leading-relaxed">
+                      <span className="text-[#1F1F1F]/60">Arrecadação (pagamentos):</span>{' '}
+                      <span className="font-semibold tabular-nums">R$ {fmt(arrecadacaoPagamentos)}</span>
+                      {valorAdicional > 0 && (
+                        <>
+                          {' '}
+                          <span className="text-[#1F1F1F]/50">·</span> Valor adicional:{' '}
+                          <span className="font-semibold tabular-nums">R$ {fmt(valorAdicional)}</span>
+                        </>
+                      )}
+                      {' '}
+                      <span className="text-[#1F1F1F]/50">·</span>{' '}
+                      <span className="text-[#1F1F1F]/60">Premiação total (base dos %):</span>{' '}
+                      <span className="font-semibold text-[#1E7F43] tabular-nums">R$ {fmt(premiacaoTotalBase)}</span>
+                    </p>
                     {valorAdicional > 0 && (
-                      <p className="text-xs text-[#1F1F1F]/70 mb-3">
-                        Arrecadação (pagamentos): R$ {fmt(arrecadacaoPagamentos)} · Valor adicional: R$ {fmt(valorAdicional)} ·{' '}
-                        <span className="font-semibold text-[#1E7F43]">Premiação total (base dos %): R$ {fmt(premiacaoTotalBase)}</span>
+                      <p className="text-[11px] text-[#1F1F1F]/55 mb-3">
+                        Os percentuais (TOP, 2º, menor, taxa admin) incidem sobre a premiação total acima (arrecadação
+                        + valor adicional).
                       </p>
                     )}
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

@@ -210,16 +210,16 @@ export function generateReportHTML(
   const totalSecond = (premiacaoTotalBase * secondPercent) / 100
   const totalLowest = (premiacaoTotalBase * lowestPercent) / 100
 
-  const linhaBreakdownExtra =
+  const linhaBreakdownFin =
     valorAdicionalExtra > 0
-      ? `<p style="font-size: 11px; color: #555; margin: 0 0 12px 0;">Arrecadação (pagamentos): R$ ${money(arrecadacaoPagamentos)} · Valor adicional: R$ ${money(valorAdicionalExtra)} · <strong>Premiação total (base dos %): R$ ${money(premiacaoTotalBase)}</strong></p>`
-      : ''
+      ? `<p style="font-size: 11px; color: #555; margin: 0 0 8px 0;">Arrecadação (pagamentos): R$ ${money(arrecadacaoPagamentos)} · Valor adicional: R$ ${money(valorAdicionalExtra)} · <strong>Premiação total (base dos %): R$ ${money(premiacaoTotalBase)}</strong></p><p style="font-size: 10px; color: #666; margin: 0 0 12px 0;">Percentuais calculados sobre a premiação total (arrecadação + adicional).</p>`
+      : `<p style="font-size: 11px; color: #555; margin: 0 0 12px 0;">Arrecadação (pagamentos): R$ ${money(arrecadacaoPagamentos)} · <strong>Premiação total (base dos %): R$ ${money(premiacaoTotalBase)}</strong> <span style="color:#888;">(sem valor adicional fixo)</span></p>`
 
   // Completo: TOP/2º/MENOR sem % e sem Admin | Arrecadação: TOP/2º/MENOR/ADMIN com %
   const financeHtmlFull = `
 <div class="finance-mini">
   <h3>Resumo Financeiro</h3>
-  ${linhaBreakdownExtra}
+  ${linhaBreakdownFin}
   <div class="finance-grid" style="grid-template-columns: 1fr 1fr 1fr;">
     <div class="finance-card">
       <div class="finance-label">TOP (🥇)</div>
@@ -239,7 +239,7 @@ export function generateReportHTML(
   const financeHtmlRevenue = `
 <div class="finance-mini">
   <h3>Resumo Financeiro</h3>
-  ${linhaBreakdownExtra}
+  ${linhaBreakdownFin}
   <div class="finance-grid">
     <div class="finance-card">
       <div class="finance-label">TOP (🥇)</div>
