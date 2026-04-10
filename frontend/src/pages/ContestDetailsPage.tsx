@@ -328,6 +328,7 @@ export default function ContestDetailsPage() {
           contest={contest}
           variant="banner"
           showAmounts={isAdmin}
+          showColumnAmountsOnly={!isAdmin}
           participationsCount={participations.length}
         />
 

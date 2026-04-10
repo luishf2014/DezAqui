@@ -19,6 +19,7 @@ import { getContestState } from '../utils/contestHelpers'
 import { getPrizePoolTotalForContest } from '../utils/contestPrizePool'
 import { formatOfficialRefDate } from '../utils/contestOfficialRefUtils'
 import OfficialContestNumbersBadges from '../components/OfficialContestNumbersBadges'
+import ContestPrizePoolInfo from '../components/ContestPrizePoolInfo'
 import Header from '../components/Header'
 import Footer from '../components/Footer'
 import CustomSelect from '../components/CustomSelect'
@@ -491,7 +492,7 @@ export default function RankingPage() {
 
             <p className="text-[#1F1F1F]/70 mb-4">{contest.description || 'Classificação dos participantes por pontuação'}</p>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-2">
               <div className="bg-gradient-to-br from-[#1E7F43] to-[#3CCB7F] rounded-xl p-4 text-white">
                 <div className="text-sm font-semibold opacity-90 mb-1">Total de Participantes</div>
                 <div className="text-3xl font-bold">{participations.length}</div>
@@ -505,25 +506,16 @@ export default function RankingPage() {
                 <div className="text-3xl font-bold">{maxScoreToDisplay}</div>
               </div>
             </div>
-            {/* MODIFIQUEI AQUI - Transparência: arrecadação + extra = base dos % */}
-            {contest?.has_extra_prize && Number(contest.extra_prize_amount) > 0 && (
-              <p className="text-sm text-[#1F1F1F]/70 mt-3">
-                Arrecadação (estimada):{' '}
-                <span className="font-semibold text-[#1F1F1F]">
-                  {getBaseArrecadado().toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                </span>
-                {' · '}
-                Valor adicional:{' '}
-                <span className="font-semibold text-[#1F1F1F]">
-                  {Number(contest.extra_prize_amount).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                </span>
-                {' · '}
-                Premiação total (base dos %):{' '}
-                <span className="font-semibold text-[#1E7F43]">
-                  {getTotalCollected().toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                </span>
-              </p>
-            )}
+
+            <div className="mt-6">
+              <ContestPrizePoolInfo
+                contest={contest}
+                variant="banner"
+                showColumnAmountsOnly={!isAdmin}
+                showColumnAmountsAndPercent={isAdmin}
+                participationsCount={participations.length}
+              />
+            </div>
           </div>
         </div>
 

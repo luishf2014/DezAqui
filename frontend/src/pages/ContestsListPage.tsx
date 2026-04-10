@@ -11,6 +11,7 @@ import { listDrawsByContestId } from '../services/drawsService'
 import { getDrawPayoutSummary } from '../services/payoutsService'
 import { Contest } from '../types'
 import { supabase } from '../lib/supabase'
+import { countActiveParticipationsByContest } from '../services/participationsService'
 import Header from '../components/Header'
 import Footer from '../components/Footer'
 import ContestStatusBadge from '../components/ContestStatusBadge'
@@ -19,6 +20,7 @@ import ContestPrizePoolInfo from '../components/ContestPrizePoolInfo'
 type TabType = 'active' | 'history'
 
 export default function ContestsListPage() {
+  const [poolCountByContest, setPoolCountByContest] = useState<Record<string, number>>({})
   const [activeTab, setActiveTab] = useState<TabType>('active')
   const [activeContests, setActiveContests] = useState<Contest[]>([])
   const [finishedContests, setFinishedContests] = useState<Contest[]>([])
@@ -277,8 +279,38 @@ export default function ContestsListPage() {
     setFinishedContests([])
     setContestsWithDraws({})
     setTopWinnersByContest({})
+    setPoolCountByContest({})
     setError(null)
   }, [simpleMode, ultraSimple])
+
+  useEffect(() => {
+    if (!dataLoaded) {
+      setPoolCountByContest({})
+      return
+    }
+    const all = [...activeContests, ...finishedContests]
+    if (all.length === 0) {
+      setPoolCountByContest({})
+      return
+    }
+    let cancelled = false
+    Promise.all(
+      all.map(async (c) => ({
+        id: c.id,
+        count: await countActiveParticipationsByContest(c.id),
+      }))
+    ).then((rows) => {
+      if (cancelled) return
+      const next: Record<string, number> = {}
+      rows.forEach((r) => {
+        next[r.id] = r.count
+      })
+      setPoolCountByContest(next)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [dataLoaded, activeContests, finishedContests])
 
   if (loading && !dataLoaded) {
     return (
@@ -501,7 +533,12 @@ export default function ContestsListPage() {
                   </p>
                 )}
 
-                <ContestPrizePoolInfo contest={contest} variant="compact" />
+                <ContestPrizePoolInfo
+                  contest={contest}
+                  variant="compact"
+                  showColumnAmountsOnly
+                  participationsCount={poolCountByContest[contest.id]}
+                />
 
                 {/* Botão */}
                 <Link

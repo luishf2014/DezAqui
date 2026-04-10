@@ -15,8 +15,13 @@ const fmt = (n: number) =>
 type Props = {
   contest: Contest
   variant?: 'banner' | 'compact'
+  /** Admin: resumo financeiro completo + R$ e % nas colunas */
   showAmounts?: boolean
   participationsCount?: number
+  /** Visitante ou usuário comum: só R$ nas colunas, sem texto "% do valor total..." (lista, detalhes, ranking) */
+  showColumnAmountsOnly?: boolean
+  /** Admin em ranking: R$ + linha de % nas colunas, sem bloco "Resumo financeiro" */
+  showColumnAmountsAndPercent?: boolean
 }
 
 export default function ContestPrizePoolInfo({
@@ -24,6 +29,8 @@ export default function ContestPrizePoolInfo({
   variant = 'banner',
   showAmounts = false,
   participationsCount,
+  showColumnAmountsOnly = false,
+  showColumnAmountsAndPercent = false,
 }: Props) {
   const extra = getExtraPrizeDisplayAmount(contest)
   const hasExtra = extra > 0
@@ -38,7 +45,9 @@ export default function ContestPrizePoolInfo({
   const poolTotal = getPrizePoolTotalForContest(baseArrecadado, contest)
   const adminFeeAmount = (poolTotal * pctAdmin) / 100
 
-  const amounts = showAmounts ? getCategoryPrizeAmountsFromPool(poolTotal, contest) : null
+  const showMoneyInColumns =
+    showAmounts || showColumnAmountsOnly || showColumnAmountsAndPercent
+  const amounts = showMoneyInColumns ? getCategoryPrizeAmountsFromPool(poolTotal, contest) : null
 
   const n = Math.max(1, Number(contest.numbers_per_participation) || 1)
   const secondLabel = n > 1 ? `${n - 1} PONTOS` : '2º FAIXA'
@@ -60,7 +69,7 @@ export default function ContestPrizePoolInfo({
   const col = (title: string, pct: number, amountMoney: number | undefined) => (
     <div
       className={`flex flex-col items-center justify-center text-center px-1.5 sm:px-3 min-w-0 ${
-        showAmounts
+        showMoneyInColumns
           ? isCompact
             ? 'py-3 bg-gradient-to-b from-white to-[#FAFAFA]'
             : 'py-4 sm:py-5 bg-gradient-to-b from-white to-[#F8FAF9]'
@@ -70,8 +79,10 @@ export default function ContestPrizePoolInfo({
       }`}
     >
       <div className={headClass}>{title}</div>
-      {showAmounts && amountMoney !== undefined && <div className={valueClass}>{fmt(amountMoney)}</div>}
-      <p className={subClass}>{pct}% do valor total do bolão</p>
+      {showMoneyInColumns && amountMoney !== undefined && (
+        <div className={valueClass}>{fmt(amountMoney)}</div>
+      )}
+      {!showColumnAmountsOnly && <p className={subClass}>{pct}% do valor total do bolão</p>}
     </div>
   )
 

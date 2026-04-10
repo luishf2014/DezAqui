@@ -527,28 +527,6 @@ export default function RankingsPage() {
                   {selectedContest.description && (
                     <p className="text-[#1F1F1F]/70 text-xs sm:text-sm line-clamp-2 mb-2">{selectedContest.description}</p>
                   )}
-                  {/* MODIFIQUEI AQUI - Transparência premiação total (estimativa) */}
-                  {selectedContest.has_extra_prize && Number(selectedContest.extra_prize_amount) > 0 && ranking.length > 0 && (
-                    <p className="text-[#1F1F1F]/70 text-xs sm:text-sm mt-2">
-                      Arrecadação (estimada):{' '}
-                      {(ranking.length * (selectedContest.participation_value || 0)).toLocaleString('pt-BR', {
-                        style: 'currency',
-                        currency: 'BRL',
-                      })}{' '}
-                      · Valor adicional:{' '}
-                      {Number(selectedContest.extra_prize_amount).toLocaleString('pt-BR', {
-                        style: 'currency',
-                        currency: 'BRL',
-                      })}{' '}
-                      · Premiação total (base dos %):{' '}
-                      <span className="font-semibold text-[#1E7F43]">
-                        {getPrizePoolTotalForContest(
-                          ranking.length * (selectedContest.participation_value || 0),
-                          selectedContest
-                        ).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                      </span>
-                    </p>
-                  )}
                   <p className="text-[#1F1F1F]/50 text-xs sm:text-sm">
                     {selectedContest.status === 'finished'
                       ? `Finalizado em ${formatDate(selectedContest.end_date)}`
