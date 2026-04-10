@@ -17,6 +17,7 @@ import ComoFuncionaPage from './pages/ComoFuncionaPage'
 import RegulamentoPage from './pages/RegulamentoPage'
 import CentralDeAjudaPage from './pages/CentraldeAjudaPage'
 import TermosDeUsoPage from './pages/TermosDeUsoPage'
+import PoliticaPrivacidadePage from './pages/PoliticaPrivacidadePage'
 import NotificationsPage from './pages/NotificationsPage'
 import PurchaseSuccessPage from './pages/PurchaseSuccessPage'
 
@@ -59,7 +60,7 @@ function App() {
             <Route path="/my-tickets" element={<MyTicketsPage />} />
             {/* Rota de Última Compra */}
             <Route path="/ultima-compra" element={<LastPurchasePage />} />
-            {/* Rota de Configuracoes */}
+            {/* Configurações: qualquer usuário autenticado (comum ou admin); cada um vê só o próprio perfil (RLS + id da sessão) */}
             <Route path="/settings" element={<SettingsPage />} />
             {/* Rota de Notificações */}
             <Route path="/notifications" element={<NotificationsPage />} />
@@ -69,6 +70,7 @@ function App() {
             <Route path="/regulamento" element={<RegulamentoPage />} />
             <Route path="/central-de-ajuda" element={<CentralDeAjudaPage />} />
             <Route path="/termos-de-uso" element={<TermosDeUsoPage />} />
+            <Route path="/politica-de-privacidade" element={<PoliticaPrivacidadePage />} />
           
           {/* MODIFIQUEI AQUI - Rotas Administrativas protegidas com RequireAdmin usando Outlet */}
           <Route path="/admin" element={<RequireAdmin />}>

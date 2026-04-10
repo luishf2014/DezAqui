@@ -16,6 +16,8 @@ export interface User {
   name: string
   phone?: string
   cpf?: string
+  /** ISO date string (YYYY-MM-DD) quando preenchido */
+  birth_date?: string | null
   is_admin: boolean
   created_at: string
   updated_at: string

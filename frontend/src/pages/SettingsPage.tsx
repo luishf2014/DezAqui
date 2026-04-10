@@ -10,6 +10,18 @@ import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 import Header from '../components/Header'
 import Footer from '../components/Footer'
+import {
+  BIRTH_DATE_MIN,
+  getMaxBirthDateForAdultsIso,
+  isValidAdultBirthDate,
+} from '../utils/birthDate'
+
+/** ID do usuário autenticado no Supabase (fonte de verdade para escopo “só meu perfil”). */
+async function getSessionUserId(): Promise<string | null> {
+  const { data: { user: authUser }, error } = await supabase.auth.getUser()
+  if (error || !authUser?.id) return null
+  return authUser.id
+}
 
 export default function SettingsPage() {
   const navigate = useNavigate()
@@ -20,6 +32,7 @@ export default function SettingsPage() {
   const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
   const [cpf, setCpf] = useState('')
+  const [birthDate, setBirthDate] = useState('')
   const [hasCpfSaved, setHasCpfSaved] = useState(false)
 
   // Estado de alteração de senha
@@ -56,6 +69,14 @@ export default function SettingsPage() {
     }
   }, [user, authLoading, navigate])
 
+  // Garantir que o perfil em memória é sempre o da sessão atual (comum ou admin)
+  useEffect(() => {
+    if (authLoading || !user || !profile) return
+    if (profile.id !== user.id) {
+      void refreshProfile()
+    }
+  }, [authLoading, user, profile, refreshProfile])
+
   // Resetar estado quando o usuário mudar
   useEffect(() => {
     if (user?.id) {
@@ -64,18 +85,90 @@ export default function SettingsPage() {
     }
   }, [user?.id])
 
+  const loadUserData = useCallback(async () => {
+    if (loading || dataLoaded) return
+
+    try {
+      setLoading(true)
+      setError(null)
+
+      if (profile) {
+        setName(profile.name || '')
+        setPhone(profile.phone || '')
+        setEmail(profile.email || '')
+        if (profile.cpf) {
+          setCpf(profile.cpf)
+          setHasCpfSaved(true)
+        } else {
+          setCpf('')
+          setHasCpfSaved(false)
+        }
+        if (profile.birth_date) {
+          const raw = String(profile.birth_date)
+          setBirthDate(raw.length >= 10 ? raw.slice(0, 10) : raw)
+        } else {
+          setBirthDate('')
+        }
+
+        if (profile.updated_at) {
+          setLastAccess(new Date(profile.updated_at).toLocaleString('pt-BR'))
+        }
+      }
+
+      if (user?.id) {
+        try {
+          const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Timeout')), 10000)
+          )
+
+          const prefsPromise = supabase
+            .from('notification_preferences')
+            .select('enabled, notify_draw_done, notify_contest_finished')
+            .eq('user_id', user.id)
+            .maybeSingle()
+
+          const { data: prefs, error: prefsErr } = (await Promise.race([
+            prefsPromise,
+            timeoutPromise,
+          ])) as { data: unknown; error: unknown }
+
+          if (!prefsErr && prefs && typeof prefs === 'object' && prefs !== null) {
+            const p = prefs as {
+              enabled?: boolean
+              notify_draw_done?: boolean
+              notify_contest_finished?: boolean
+            }
+            setNotificationsEnabled(p.enabled ?? true)
+            setNotifyDraws(p.notify_draw_done ?? true)
+            setNotifyFinished(p.notify_contest_finished ?? true)
+          }
+        } catch (prefsError) {
+          console.warn('[SettingsPage] Erro ao carregar preferências (timeout ou erro):', prefsError)
+        }
+      }
+
+      setDataLoaded(true)
+    } catch (err) {
+      console.error('Erro ao carregar dados:', err)
+      setError('Erro ao carregar configurações. Recarregue a página se o problema persistir.')
+      setDataLoaded(false)
+    } finally {
+      setLoading(false)
+    }
+  }, [profile, user?.id, loading, dataLoaded])
+
   // Efeito para carregar dados quando disponível
   useEffect(() => {
     if (user && profile && !loading && !dataLoaded) {
-      console.log('[SettingsPage] Carregando dados do usuário...', { 
-        hasUser: !!user, 
-        hasProfile: !!profile, 
-        loading, 
-        dataLoaded 
+      console.log('[SettingsPage] Carregando dados do usuário...', {
+        hasUser: !!user,
+        hasProfile: !!profile,
+        loading,
+        dataLoaded,
       })
-      loadUserData()
+      void loadUserData()
     }
-  }, [user, profile, loadUserData, dataLoaded])
+  }, [user, profile, loadUserData, loading, dataLoaded])
 
   // Limpar mensagens ao trocar de seção
   useEffect(() => {
@@ -130,73 +223,6 @@ export default function SettingsPage() {
     return `${cleanValue.slice(0, 3)}.${cleanValue.slice(3, 6)}.${cleanValue.slice(6, 9)}-${cleanValue.slice(9)}`
   }
 
-  const loadUserData = useCallback(async () => {
-    // Evitar carregar múltiplas vezes se já está carregando ou já foi carregado
-    if (loading || dataLoaded) return
-    
-    try {
-      setLoading(true)
-      setError(null)
-
-      // Carregar dados do perfil
-      if (profile) {
-        setName(profile.name || '')
-        setPhone(profile.phone || '')
-        setEmail(profile.email || '')
-        // CPF: se já existe, marca como salvo
-        if (profile.cpf) {
-          setCpf(profile.cpf)
-          setHasCpfSaved(true)
-        } else {
-          setCpf('')
-          setHasCpfSaved(false)
-        }
-        
-        // Carregar último acesso (usando updated_at do perfil como aproximação)
-        if (profile.updated_at) {
-          setLastAccess(new Date(profile.updated_at).toLocaleString('pt-BR'))
-        }
-      }
-
-      // Carregar preferências de notificação com timeout
-      if (user?.id) {
-        try {
-          const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Timeout')), 10000)
-          )
-          
-          const prefsPromise = supabase
-            .from('notification_preferences')
-            .select('enabled, notify_draw_done, notify_contest_finished')
-            .eq('user_id', user.id)
-            .maybeSingle()
-
-          const { data: prefs, error: prefsErr } = await Promise.race([
-            prefsPromise,
-            timeoutPromise
-          ]) as any
-
-          if (!prefsErr && prefs) {
-            setNotificationsEnabled(prefs.enabled ?? true)
-            setNotifyDraws(prefs.notify_draw_done ?? true)
-            setNotifyFinished(prefs.notify_contest_finished ?? true)
-          }
-        } catch (prefsError) {
-          console.warn('[SettingsPage] Erro ao carregar preferências (timeout ou erro):', prefsError)
-          // Manter valores padrão se der erro ou timeout
-        }
-      }
-
-      setDataLoaded(true)
-    } catch (err) {
-      console.error('Erro ao carregar dados:', err)
-      setError('Erro ao carregar configurações. Recarregue a página se o problema persistir.')
-      setDataLoaded(false) // Permite nova tentativa
-    } finally {
-      setLoading(false)
-    }
-  }, [profile, user?.id])
-
   const handleSaveProfile = async () => {
     if (!user || !profile || saving) return
 
@@ -212,11 +238,23 @@ export default function SettingsPage() {
         email: string | null
         updated_at: string
         cpf?: string
+        birth_date?: string | null
       } = {
         name: name.trim(),
         phone: phone.trim(),
         email: email.trim() || null,
         updated_at: new Date().toISOString(),
+      }
+
+      if (birthDate.trim()) {
+        if (!isValidAdultBirthDate(birthDate.trim())) {
+          setError('Data de nascimento inválida. É necessário ter pelo menos 18 anos.')
+          setSaving(false)
+          return
+        }
+        updateData.birth_date = birthDate.trim()
+      } else {
+        updateData.birth_date = null
       }
 
       // Se usuário preencheu CPF, validar e incluir (permite edição mesmo se já salvo)
@@ -232,11 +270,23 @@ export default function SettingsPage() {
         }
       }
 
-      // MODIFIQUEI AQUI - Atualizar perfil no Supabase
+      const sessionUserId = await getSessionUserId()
+      if (!sessionUserId) {
+        setError('Não foi possível confirmar sua sessão. Faça login novamente.')
+        setSaving(false)
+        return
+      }
+      if (profile.id !== sessionUserId) {
+        await refreshProfile()
+        setError('Perfil sincronizado com a sessão. Tente salvar novamente.')
+        setSaving(false)
+        return
+      }
+
       const { error: updateError } = await supabase
         .from('profiles')
         .update(updateData)
-        .eq('id', user.id)
+        .eq('id', sessionUserId)
 
       if (updateError) {
         throw updateError
@@ -305,17 +355,17 @@ export default function SettingsPage() {
   }
 
   const handleSavePreferences = async () => {
-    if (!user?.id) return
+    const sessionUserId = await getSessionUserId()
+    if (!sessionUserId) return
 
     try {
       setSaving(true)
       setError(null)
 
-      // MODIFIQUEI AQUI - Salvar preferências no Supabase (notification_preferences)
       const { error: upsertErr } = await supabase
         .from('notification_preferences')
         .upsert({
-          user_id: user.id,
+          user_id: sessionUserId,
           enabled: notificationsEnabled,
           notify_draw_done: notifyDraws,
           notify_contest_finished: notifyFinished,
@@ -334,18 +384,17 @@ export default function SettingsPage() {
   }
 
   const handleEndSessions = async () => {
-    if (!user) return
+    const sessionUserId = await getSessionUserId()
+    if (!sessionUserId) return
 
     try {
       setSaving(true)
       setError(null)
 
-      // MODIFIQUEI AQUI - Encerrar todas as sessões exceto a atual
-      // Por enquanto, apenas atualiza o updated_at para simular
       await supabase
         .from('profiles')
         .update({ updated_at: new Date().toISOString() })
-        .eq('id', user.id)
+        .eq('id', sessionUserId)
 
       setActiveSessions(1)
       setSuccess('Todas as sessões foram encerradas!')
@@ -560,6 +609,25 @@ export default function SettingsPage() {
                       className="w-full px-4 py-3 border border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43] focus:border-transparent"
                       placeholder="seu@email.com"
                     />
+                  </div>
+
+                  <div>
+                    <label htmlFor="birthDate" className="block text-sm font-semibold text-[#1F1F1F] mb-2">
+                      Data de nascimento
+                    </label>
+                    <input
+                      id="birthDate"
+                      type="date"
+                      autoComplete="bday"
+                      value={birthDate}
+                      min={BIRTH_DATE_MIN}
+                      max={getMaxBirthDateForAdultsIso()}
+                      onChange={(e) => setBirthDate(e.target.value)}
+                      className="w-full px-4 py-3 border border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43] focus:border-transparent"
+                    />
+                    <p className="mt-1 text-xs text-[#1F1F1F]/50">
+                      Obrigatório no cadastro; aqui você pode atualizar. É necessário ter pelo menos 18 anos.
+                    </p>
                   </div>
 
                   <div>

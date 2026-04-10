@@ -93,6 +93,11 @@ export default function Footer() {
                   Termos de Uso
                 </a>
               </li>
+              <li>
+                <Link to="/politica-de-privacidade" className="text-white/80 hover:text-white transition-colors text-sm">
+                  Política de Privacidade
+                </Link>
+              </li>
             </ul>
           </div>
         </div>

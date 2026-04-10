@@ -5,12 +5,17 @@
  * Permite que usuários façam login ou criem uma nova conta
  */
 import { useState, FormEvent, useEffect } from 'react'
-import { useNavigate, useLocation } from 'react-router-dom'
+import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import Header from '../components/Header'
 import Footer from '../components/Footer'
 import logodezaqui from '../assets/logodezaqui.png'
+import {
+  BIRTH_DATE_MIN,
+  getMaxBirthDateForAdultsIso,
+  isValidAdultBirthDate,
+} from '../utils/birthDate'
 
 export default function LoginPage() {
   const navigate = useNavigate()
@@ -25,6 +30,8 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
   const [cpf, setCpf] = useState('')
+  const [birthDate, setBirthDate] = useState('')
+  const [acceptedTerms, setAcceptedTerms] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -209,6 +216,23 @@ export default function LoginPage() {
       return
     }
 
+    if (!birthDate.trim()) {
+      setError('Por favor, informe sua data de nascimento')
+      setLoading(false)
+      return
+    }
+    if (!isValidAdultBirthDate(birthDate.trim())) {
+      setError('Data de nascimento inválida. É necessário ter pelo menos 18 anos.')
+      setLoading(false)
+      return
+    }
+
+    if (!acceptedTerms) {
+      setError('Confirme que tem mais de 18 anos e aceite os termos e a política de privacidade.')
+      setLoading(false)
+      return
+    }
+
     try {
       // MODIFIQUEI AQUI - Limpar telefone para formato padrão (apenas números) antes de enviar
       const cleanPhone = phone.replace(/\D/g, '')
@@ -235,6 +259,7 @@ export default function LoginPage() {
         phone: cleanPhone,
         email: email.trim(),
         cpf: normalizedCpf,
+        birth_date: birthDate.trim(),
       }
 
       const { data, error: signUpError } = await supabase.auth.signUp({
@@ -274,6 +299,8 @@ export default function LoginPage() {
         setEmail('') // MODIFIQUEI AQUI - Limpar e-mail após cadastro
         setName('') // MODIFIQUEI AQUI - Limpar nome após cadastro
         setCpf('') // Limpar CPF após cadastro
+        setBirthDate('')
+        setAcceptedTerms(false)
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro inesperado ao criar conta')
@@ -402,6 +429,28 @@ export default function LoginPage() {
                 )}
                 {isSignUp && (
                   <div>
+                    <label htmlFor="birthDate" className="text-xs font-semibold uppercase tracking-[0.2em] text-[#1F1F1F]/60">
+                      Data de nascimento <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      id="birthDate"
+                      name="birthDate"
+                      type="date"
+                      autoComplete="bday"
+                      required
+                      value={birthDate}
+                      min={BIRTH_DATE_MIN}
+                      max={getMaxBirthDateForAdultsIso()}
+                      onChange={(e) => setBirthDate(e.target.value)}
+                      className="mt-2 block w-full rounded-xl border border-[#E5E5E5] bg-white px-4 py-3 text-sm text-[#1F1F1F] shadow-sm focus:border-[#1E7F43] focus:outline-none focus:ring-2 focus:ring-[#3CCB7F]/40"
+                    />
+                    <p className="mt-1 text-xs text-[#1F1F1F]/50">
+                      É necessário ter pelo menos 18 anos.
+                    </p>
+                  </div>
+                )}
+                {isSignUp && (
+                  <div>
                     <label htmlFor="cpf" className="text-xs font-semibold uppercase tracking-[0.2em] text-[#1F1F1F]/60">
                       CPF <span className="text-red-500">*</span>
                     </label>
@@ -489,17 +538,74 @@ export default function LoginPage() {
                     </button>
                   </div>
                 </div>
+
+                {isSignUp && (
+                  <>
+                    <div className="flex gap-3 pt-1">
+                      <input
+                        id="acceptTerms"
+                        name="acceptTerms"
+                        type="checkbox"
+                        required
+                        checked={acceptedTerms}
+                        onChange={(e) => setAcceptedTerms(e.target.checked)}
+                        aria-required="true"
+                        className="mt-1 h-4 w-4 shrink-0 rounded border-[#E5E5E5] text-[#1E7F43] focus:ring-[#3CCB7F]/40"
+                      />
+                      <label htmlFor="acceptTerms" className="text-sm text-[#1F1F1F]/90 leading-snug cursor-pointer">
+                        Confirmo que <strong className="text-[#1F1F1F]">tenho mais de 18 anos</strong>, li e aceito os{' '}
+                        <Link
+                          to="/termos-de-uso"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:text-blue-700 underline font-medium"
+                        >
+                          Termos e Condições de Uso
+                        </Link>{' '}
+                        e a{' '}
+                        <Link
+                          to="/politica-de-privacidade"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:text-blue-700 underline font-medium"
+                        >
+                          Política de Privacidade
+                        </Link>
+                        .
+                      </label>
+                    </div>
+
+                    <div
+                      className="flex gap-3 rounded-xl border border-[#E8D9A8] bg-[#FFF9E6] px-3 py-3 sm:px-4 sm:py-3.5"
+                      role="status"
+                    >
+                      <div
+                        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#1F1F1F] text-[11px] font-extrabold text-white leading-tight text-center"
+                        aria-hidden
+                      >
+                        +18
+                      </div>
+                      <div className="min-w-0 flex-1 text-center sm:text-left">
+                        <p className="text-sm font-bold text-[#1F1F1F]">
+                          Proibido para menores de 18 anos.
+                        </p>
+                        <p className="text-sm text-[#1F1F1F]/85 mt-0.5">Jogue com responsabilidade.</p>
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 
             <div>
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || (isSignUp && !acceptedTerms)}
+                title={isSignUp && !acceptedTerms ? 'Marque a caixa para aceitar os termos e continuar' : undefined}
                 className={`
                   group relative w-full rounded-xl border border-transparent px-4 py-3 text-sm font-semibold text-white shadow-lg transition
                   ${
-                    loading
+                    loading || (isSignUp && !acceptedTerms)
                       ? 'cursor-not-allowed bg-[#E5E5E5] text-[#1F1F1F]/60'
                       : 'bg-[#1E7F43] hover:bg-[#3CCB7F] focus:outline-none focus:ring-2 focus:ring-[#3CCB7F]/60 focus:ring-offset-2'
                   }
@@ -522,7 +628,9 @@ export default function LoginPage() {
                     setEmail('') // MODIFIQUEI AQUI - Limpar e-mail apenas ao sair do cadastro
                     setName('') // MODIFIQUEI AQUI - Limpar nome apenas ao sair do cadastro
                     setCpf('') // Limpar CPF obrigatório ao sair do cadastro
+                    setBirthDate('')
                   }
+                  setAcceptedTerms(false)
                   navigate(newSignUp ? '/login?signup=true' : '/login', { replace: true })
                 }}
                 className="text-sm font-semibold text-[#1E7F43] transition hover:text-[#3CCB7F]"

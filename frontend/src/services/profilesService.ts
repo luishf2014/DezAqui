@@ -39,7 +39,7 @@ export async function getCurrentUserProfile(): Promise<User | null> {
     console.log('[profilesService] Buscando perfil do usuário atual usando RLS...')
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, email, name, phone, cpf, is_admin, created_at, updated_at')
+      .select('id, email, name, phone, cpf, birth_date, is_admin, created_at, updated_at')
       .eq('id', authUser.id)
       .maybeSingle()
     
@@ -70,8 +70,10 @@ export async function getCurrentUserProfile(): Promise<User | null> {
 }
 
 /**
- * Busca o perfil de um usuário por ID
- * Útil quando já temos o userId disponível
+ * Busca o perfil de um usuário por ID.
+ * No cliente, use normalmente o ID da sessão (`auth.getUser()` / `user.id` do AuthContext).
+ * Administradores podem ler qualquer perfil via RLS; telas como Configurações devem passar
+ * apenas o ID do usuário logado para não expor dados de terceiros por engano.
  */
 export async function getUserProfileById(userId: string): Promise<User | null> {
   try {
@@ -80,7 +82,7 @@ export async function getUserProfileById(userId: string): Promise<User | null> {
     // MODIFIQUEI AQUI - Busca principal pelo id do profile
     const byId = await supabase
       .from('profiles')
-      .select('id, email, name, phone, cpf, is_admin, created_at, updated_at')
+      .select('id, email, name, phone, cpf, birth_date, is_admin, created_at, updated_at')
       .eq('id', userId)
       .maybeSingle()
     
@@ -148,7 +150,7 @@ export async function listAllUsers(): Promise<User[]> {
     
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, email, name, phone, cpf, is_admin, created_at, updated_at')
+      .select('id, email, name, phone, cpf, birth_date, is_admin, created_at, updated_at')
       .order('name')
     
     if (error) {
