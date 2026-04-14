@@ -1117,3 +1117,155 @@ export function exportToPDF(
     if (iframe.parentNode) generatePDFFromIframe()
   }, 600)
 }
+
+/** Linha para PDF de diretório de participantes (admin) */
+export interface ParticipantDirectoryPdfRow {
+  name: string
+  phone: string
+  email: string
+  /** Já formatado em pt-BR */
+  registrationDate: string
+}
+
+/**
+ * Exporta lista de participantes/usuários em PDF (NOME, TELEFONE, DATA DE CADASTRO, E-MAIL).
+ */
+export function exportParticipantsDirectoryToPDF(rows: ParticipantDirectoryPdfRow[]): void {
+  if (!rows.length) {
+    showErrorModal(
+      'Nenhum participante',
+      'Não há dados para exportar com os filtros atuais. Ajuste os filtros ou a busca e tente novamente.'
+    )
+    return
+  }
+
+  const escape = (s: string) =>
+    s
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+
+  const rowsHtml = rows
+    .map(
+      (r) => `
+    <tr>
+      <td style="padding:8px;border:1px solid #ddd;">${escape(r.name)}</td>
+      <td style="padding:8px;border:1px solid #ddd;">${escape(r.phone)}</td>
+      <td style="padding:8px;border:1px solid #ddd;">${escape(r.registrationDate)}</td>
+      <td style="padding:8px;border:1px solid #ddd;">${escape(r.email)}</td>
+    </tr>`
+    )
+    .join('')
+
+  const emitted = new Date().toLocaleString('pt-BR')
+  const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <style>
+    body { font-family: Arial, Helvetica, sans-serif; font-size: 10px; color: #1a1a1a; margin: 0; }
+    #pdf-root { padding: 12px; background: #fff; }
+    h1 { font-size: 16px; color: #1E7F43; margin: 0 0 4px 0; }
+    .meta { color: #555; margin: 0 0 12px 0; font-size: 9px; }
+    table { width: 100%; border-collapse: collapse; }
+    th { background: #e8f5ef; padding: 8px 6px; border: 1px solid #ccc; text-align: left; font-size: 9px; }
+    td { font-size: 9px; vertical-align: top; word-break: break-word; }
+  </style>
+</head>
+<body>
+  <div id="pdf-root">
+    <h1>Participantes — DezAqui</h1>
+    <p class="meta">Emitido em: ${escape(emitted)} · Registros: ${rows.length}</p>
+    <table>
+      <thead>
+        <tr>
+          <th>NOME</th>
+          <th>TELEFONE</th>
+          <th>DATA DE CADASTRO</th>
+          <th>E-MAIL</th>
+        </tr>
+      </thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>
+  </div>
+</body>
+</html>`
+
+  const iframe = document.createElement('iframe')
+  iframe.style.position = 'absolute'
+  iframe.style.top = '-9999px'
+  iframe.style.left = '-9999px'
+  iframe.style.width = '210mm'
+  iframe.style.height = '297mm'
+  iframe.style.border = 'none'
+  document.body.appendChild(iframe)
+
+  const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document
+  if (!iframeDoc) {
+    showErrorModal('Erro ao gerar PDF', 'Não foi possível criar o documento para gerar o PDF.')
+    return
+  }
+
+  iframeDoc.open()
+  iframeDoc.write(html)
+  iframeDoc.close()
+
+  const cleanup = () => {
+    if (iframe.parentNode) document.body.removeChild(iframe)
+  }
+
+  const waitForPaint = async () => {
+    await new Promise<void>((r) => requestAnimationFrame(() => r()))
+    await new Promise<void>((r) => requestAnimationFrame(() => r()))
+  }
+
+  const generatePDFFromIframe = async () => {
+    try {
+      const root = iframeDoc.getElementById('pdf-root')
+      if (!root) {
+        showErrorModal('Erro ao gerar PDF', 'Não foi possível localizar o conteúdo do PDF.')
+        cleanup()
+        return
+      }
+
+      await waitForPaint()
+
+      const fname = `participantes_dezaqui_${new Date().toISOString().split('T')[0]}.pdf`
+      const opt = {
+        margin: [10, 10, 10, 10] as [number, number, number, number],
+        filename: fname,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: {
+          scale: 2,
+          useCORS: true,
+          logging: false,
+          backgroundColor: '#ffffff',
+          scrollX: 0,
+          scrollY: 0,
+          letterRendering: true,
+          onclone: (clonedDoc: Document) => {
+            const styles = iframeDoc.querySelectorAll('style')
+            styles.forEach((s) => clonedDoc.head.appendChild(s.cloneNode(true)))
+            const cloneBody = clonedDoc.body as HTMLBodyElement
+            cloneBody.style.background = '#ffffff'
+            ;(cloneBody.style as CSSStyleDeclaration & { printColorAdjust?: string }).printColorAdjust =
+              'exact'
+          },
+        },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' as const },
+      }
+
+      await html2pdf().set(opt).from(root).save()
+      cleanup()
+    } catch (err) {
+      console.error('Erro ao gerar PDF participantes:', err)
+      cleanup()
+      showErrorModal('Erro ao gerar PDF', 'Não foi possível gerar o arquivo PDF. Tente novamente.')
+    }
+  }
+
+  setTimeout(() => {
+    if (iframe.parentNode) void generatePDFFromIframe()
+  }, 400)
+}

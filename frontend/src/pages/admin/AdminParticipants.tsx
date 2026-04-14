@@ -13,7 +13,8 @@ import { listAllParticipations } from '../../services/participationsService'
 import { Participation, Contest, User } from '../../types'
 import { listAllContests } from '../../services/contestsService'
 import { listAllUsers } from '../../services/profilesService'
-import { formatPhoneBR, navigateToTop, formatDate as formatDateUtil } from '../../utils/formatters'
+import { formatPhoneBR, navigateToTop } from '../../utils/formatters'
+import { exportParticipantsDirectoryToPDF } from '../../utils/exportUtils'
 
 interface ParticipationWithDetails extends Participation {
   contest: Contest | null
@@ -248,8 +249,14 @@ export default function AdminParticipants() {
           </div>
         </div>
 
-        {/* Filtros */}
-        <div className="mb-6 bg-white rounded-2xl border border-[#E5E5E5] p-4 shadow-sm">
+        {/* Filtros + exportação (PDF integrado ao mesmo bloco) */}
+        <div className="mb-6 bg-white rounded-2xl border border-[#E5E5E5] p-4 sm:p-6 shadow-sm">
+          <div className="mb-4 pb-4 border-b border-[#E5E5E5]">
+            <h2 className="text-base font-bold text-[#1F1F1F]">Filtros e busca</h2>
+            <p className="text-sm text-[#1F1F1F]/60 mt-1">
+              Ajuste concurso, status e texto de busca. A lista abaixo e o PDF seguem estes filtros.
+            </p>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label htmlFor="contest-filter" className="block text-sm font-semibold text-[#1F1F1F] mb-2">
@@ -293,6 +300,46 @@ export default function AdminParticipants() {
                 className="w-full px-4 py-2 border border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43] focus:border-transparent"
               />
             </div>
+          </div>
+
+          <div className="mt-5 pt-5 border-t border-[#E5E5E5] flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4 rounded-xl bg-[#F9F9F9]/80 px-4 py-4 border border-[#E5E5E5]/80">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-[#1F1F1F]">Exportar lista em PDF</p>
+              <p className="text-xs text-[#1F1F1F]/60 mt-0.5">
+                Colunas: nome, telefone, data de cadastro e e-mail — apenas os participantes visíveis com os filtros atuais.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                const rows = userGroups.map((g) => {
+                  const u = users.find((x) => x.id === g.userId)
+                  const registrationDate = u?.created_at
+                    ? new Date(u.created_at).toLocaleString('pt-BR', {
+                        day: '2-digit',
+                        month: '2-digit',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })
+                    : '—'
+                  return {
+                    name: g.userName?.trim() || '—',
+                    phone: formatPhoneBR(g.userPhone) || '—',
+                    email: g.userEmail?.trim() || '—',
+                    registrationDate,
+                  }
+                })
+                exportParticipantsDirectoryToPDF(rows)
+              }}
+              disabled={loading || userGroups.length === 0}
+              className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-[#1E7F43] text-white font-semibold text-sm shadow-sm hover:bg-[#3CCB7F] transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shrink-0 w-full sm:w-auto"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+              </svg>
+              Exportar PDF
+            </button>
           </div>
         </div>
 

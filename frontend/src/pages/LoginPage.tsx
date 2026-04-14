@@ -12,10 +12,32 @@ import Header from '../components/Header'
 import Footer from '../components/Footer'
 import logodezaqui from '../assets/logodezaqui.png'
 import {
-  BIRTH_DATE_MIN,
-  getMaxBirthDateForAdultsIso,
+  brDigitsToIso,
+  formatBirthDateMask,
   isValidAdultBirthDate,
 } from '../utils/birthDate'
+
+/** DDD + celular (9 após DDD) ou fixo (8 após DDD); teclado tel no mobile. */
+function formatBrazilPhoneDisplay(raw: string): string {
+  const d = raw.replace(/\D/g, '').slice(0, 11)
+  if (d.length <= 2) return d
+  const ddd = d.slice(0, 2)
+  const rest = d.slice(2)
+  if (rest.length === 0) return `${ddd} `
+  const mobileFirst = rest[0] === '9'
+  if (d.length === 11) {
+    return `${ddd} ${rest.slice(0, 5)}-${rest.slice(5)}`
+  }
+  if (d.length === 10) {
+    return `${ddd} ${rest.slice(0, 4)}-${rest.slice(4)}`
+  }
+  if (mobileFirst) {
+    if (rest.length <= 5) return `${ddd} ${rest}`
+    return `${ddd} ${rest.slice(0, 5)}-${rest.slice(5)}`
+  }
+  if (rest.length <= 4) return `${ddd} ${rest}`
+  return `${ddd} ${rest.slice(0, 4)}-${rest.slice(4)}`
+}
 
 export default function LoginPage() {
   const navigate = useNavigate()
@@ -30,7 +52,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
   const [cpf, setCpf] = useState('')
-  const [birthDate, setBirthDate] = useState('')
+  const [birthDateDigits, setBirthDateDigits] = useState('')
   const [acceptedTerms, setAcceptedTerms] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -216,12 +238,13 @@ export default function LoginPage() {
       return
     }
 
-    if (!birthDate.trim()) {
-      setError('Por favor, informe sua data de nascimento')
+    const birthIso = brDigitsToIso(birthDateDigits)
+    if (birthDateDigits.length !== 8 || !birthIso) {
+      setError('Por favor, informe uma data de nascimento válida (dd/mm/aaaa)')
       setLoading(false)
       return
     }
-    if (!isValidAdultBirthDate(birthDate.trim())) {
+    if (!isValidAdultBirthDate(birthIso)) {
       setError('Data de nascimento inválida. É necessário ter pelo menos 18 anos.')
       setLoading(false)
       return
@@ -259,7 +282,7 @@ export default function LoginPage() {
         phone: cleanPhone,
         email: email.trim(),
         cpf: normalizedCpf,
-        birth_date: birthDate.trim(),
+        birth_date: birthIso,
       }
 
       const { data, error: signUpError } = await supabase.auth.signUp({
@@ -299,7 +322,7 @@ export default function LoginPage() {
         setEmail('') // MODIFIQUEI AQUI - Limpar e-mail após cadastro
         setName('') // MODIFIQUEI AQUI - Limpar nome após cadastro
         setCpf('') // Limpar CPF após cadastro
-        setBirthDate('')
+        setBirthDateDigits('')
         setAcceptedTerms(false)
       }
     } catch (err) {
@@ -376,37 +399,17 @@ export default function LoginPage() {
                     id="phone"
                     name="phone"
                     type="tel"
+                    inputMode="tel"
                     autoComplete="tel"
                     required
                     value={phone}
-                    onChange={(e) => {
-                      // MODIFIQUEI AQUI - Formatar telefone enquanto digita
-                      const value = e.target.value.replace(/\D/g, '')
-                      let formatted = value
-                      
-                      if (value.length > 11) {
-                        formatted = value.slice(0, 11)
-                      }
-                      
-                      // Formatar: (XX) XXXXX-XXXX ou (XX) XXXX-XXXX
-                      if (formatted.length > 10) {
-                        formatted = `(${formatted.slice(0, 2)}) ${formatted.slice(2, 7)}-${formatted.slice(7)}`
-                      } else if (formatted.length > 6) {
-                        formatted = `(${formatted.slice(0, 2)}) ${formatted.slice(2, 6)}-${formatted.slice(6)}`
-                      } else if (formatted.length > 2) {
-                        formatted = `(${formatted.slice(0, 2)}) ${formatted.slice(2)}`
-                      } else if (formatted.length > 0) {
-                        formatted = `(${formatted}`
-                      }
-                      
-                      setPhone(formatted)
-                    }}
+                    onChange={(e) => setPhone(formatBrazilPhoneDisplay(e.target.value))}
                     className="mt-2 block w-full rounded-xl border border-[#E5E5E5] bg-white px-4 py-3 text-sm text-[#1F1F1F] placeholder-[#1F1F1F]/40 shadow-sm focus:border-[#1E7F43] focus:outline-none focus:ring-2 focus:ring-[#3CCB7F]/40"
-                    placeholder="(00) 00000-0000"
-                    maxLength={15}
+                    placeholder="11 96123-4567"
+                    maxLength={14}
                   />
                   <p className="mt-1 text-xs text-[#1F1F1F]/50">
-                    Informe seu telefone com DDD (ex: (11) 98765-4321)
+                    Informe seu telefone com DDD (ex: 11 96123-4567)
                   </p>
                 </div>
                 {isSignUp && (
@@ -435,14 +438,18 @@ export default function LoginPage() {
                     <input
                       id="birthDate"
                       name="birthDate"
-                      type="date"
+                      type="text"
+                      inputMode="numeric"
                       autoComplete="bday"
                       required
-                      value={birthDate}
-                      min={BIRTH_DATE_MIN}
-                      max={getMaxBirthDateForAdultsIso()}
-                      onChange={(e) => setBirthDate(e.target.value)}
+                      value={formatBirthDateMask(birthDateDigits)}
+                      onChange={(e) => {
+                        const digits = e.target.value.replace(/\D/g, '').slice(0, 8)
+                        setBirthDateDigits(digits)
+                      }}
                       className="mt-2 block w-full rounded-xl border border-[#E5E5E5] bg-white px-4 py-3 text-sm text-[#1F1F1F] shadow-sm focus:border-[#1E7F43] focus:outline-none focus:ring-2 focus:ring-[#3CCB7F]/40"
+                      placeholder="dd/mm/aaaa"
+                      maxLength={10}
                     />
                     <p className="mt-1 text-xs text-[#1F1F1F]/50">
                       É necessário ter pelo menos 18 anos.
@@ -628,7 +635,7 @@ export default function LoginPage() {
                     setEmail('') // MODIFIQUEI AQUI - Limpar e-mail apenas ao sair do cadastro
                     setName('') // MODIFIQUEI AQUI - Limpar nome apenas ao sair do cadastro
                     setCpf('') // Limpar CPF obrigatório ao sair do cadastro
-                    setBirthDate('')
+                    setBirthDateDigits('')
                   }
                   setAcceptedTerms(false)
                   navigate(newSignUp ? '/login?signup=true' : '/login', { replace: true })
