@@ -10,10 +10,13 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import Header from '../components/Header'
 import Footer from '../components/Footer'
+import MobilePhoneCountryInput from '../components/MobilePhoneCountryInput'
 import logodezaqui from '../assets/logodezaqui.png'
 import {
+  BIRTH_DATE_MIN,
   brDigitsToIso,
   formatBirthDateMask,
+  getMaxBirthDateForAdultsIso,
   isValidAdultBirthDate,
 } from '../utils/birthDate'
 
@@ -52,26 +55,53 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
   const [cpf, setCpf] = useState('')
+  /** Mobile: calendário nativo (YYYY-MM-DD). Desktop: máscara dd/mm/aaaa (só dígitos internos). */
+  const [birthDateIso, setBirthDateIso] = useState('')
   const [birthDateDigits, setBirthDateDigits] = useState('')
   const [acceptedTerms, setAcceptedTerms] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  /** DDI numérico (ex.: 55). Só alterável no layout mobile (seletor). Desktop usa sempre 55. */
+  const [countryDial, setCountryDial] = useState('55')
+  const [isMobileViewport, setIsMobileViewport] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches
+  )
+
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 767px)')
+    const sync = () => setIsMobileViewport(mq.matches)
+    mq.addEventListener('change', sync)
+    return () => mq.removeEventListener('change', sync)
+  }, [])
+
+  useEffect(() => {
+    if (!isMobileViewport && countryDial !== '55') {
+      setCountryDial('55')
+      setPhone('')
+    }
+  }, [isMobileViewport, countryDial])
 
   // MODIFIQUEI AQUI - Função para converter telefone em e-mail interno (Supabase requer e-mail)
   const phoneToEmail = (phoneNumber: string): string => {
-    // Remove caracteres não numéricos
     const cleanPhone = phoneNumber.replace(/\D/g, '')
     return `${cleanPhone}@dezaqui.local`
   }
 
-  // MODIFIQUEI AQUI - Função para validar formato de telefone brasileiro
-  const validatePhone = (phoneNumber: string): boolean => {
-    // Remove caracteres não numéricos
-    const cleanPhone = phoneNumber.replace(/\D/g, '')
-    // Aceita telefone com DDD (10 ou 11 dígitos)
-    return cleanPhone.length >= 10 && cleanPhone.length <= 11
+  /** Dígitos para login/cadastro: BR sem DDI; demais países DDI + número local. */
+  const getAuthPhoneDigits = (): string => {
+    const n = phone.replace(/\D/g, '')
+    if (countryDial === '55') return n
+    return `${countryDial}${n}`
+  }
+
+  const validatePhone = (national: string, dial: string): boolean => {
+    const clean = national.replace(/\D/g, '')
+    if (dial === '55') {
+      return clean.length >= 10 && clean.length <= 11
+    }
+    return clean.length >= 6 && clean.length <= 15
   }
 
   // Função para normalizar CPF (remover . e -)
@@ -153,15 +183,18 @@ export default function LoginPage() {
     setLoading(true)
 
     // MODIFIQUEI AQUI - Validar telefone antes de fazer login
-    if (!validatePhone(phone)) {
-      setError('Por favor, informe um telefone válido (com DDD)')
+    if (!validatePhone(phone, countryDial)) {
+      setError(
+        countryDial === '55'
+          ? 'Por favor, informe um telefone válido (com DDD)'
+          : 'Por favor, informe um número de telefone válido'
+      )
       setLoading(false)
       return
     }
 
     try {
-      // MODIFIQUEI AQUI - Converter telefone para e-mail interno para autenticação no Supabase
-      const internalEmail = phoneToEmail(phone)
+      const internalEmail = phoneToEmail(getAuthPhoneDigits())
       
       const { data, error: signInError } = await supabase.auth.signInWithPassword({
         email: internalEmail,
@@ -198,8 +231,12 @@ export default function LoginPage() {
     setLoading(true)
 
     // MODIFIQUEI AQUI - Validar telefone antes de criar conta
-    if (!validatePhone(phone)) {
-      setError('Por favor, informe um telefone válido (com DDD)')
+    if (!validatePhone(phone, countryDial)) {
+      setError(
+        countryDial === '55'
+          ? 'Por favor, informe um telefone válido (com DDD)'
+          : 'Por favor, informe um número de telefone válido'
+      )
       setLoading(false)
       return
     }
@@ -238,9 +275,15 @@ export default function LoginPage() {
       return
     }
 
-    const birthIso = brDigitsToIso(birthDateDigits)
-    if (birthDateDigits.length !== 8 || !birthIso) {
-      setError('Por favor, informe uma data de nascimento válida (dd/mm/aaaa)')
+    const birthIso = isMobileViewport
+      ? birthDateIso.trim()
+      : (brDigitsToIso(birthDateDigits) ?? '')
+    if (!birthIso) {
+      setError(
+        isMobileViewport
+          ? 'Por favor, informe sua data de nascimento'
+          : 'Por favor, informe uma data de nascimento válida (dd/mm/aaaa)'
+      )
       setLoading(false)
       return
     }
@@ -258,7 +301,7 @@ export default function LoginPage() {
 
     try {
       // MODIFIQUEI AQUI - Limpar telefone para formato padrão (apenas números) antes de enviar
-      const cleanPhone = phone.replace(/\D/g, '')
+      const cleanPhone = getAuthPhoneDigits()
       
       // MODIFIQUEI AQUI - Usar e-mail fornecido (agora obrigatório)
       const signUpEmail = phoneToEmail(cleanPhone)
@@ -318,10 +361,12 @@ export default function LoginPage() {
         setIsSignUp(false)
         setPassword('')
         setShowPassword(false)
-        setPhone('') // MODIFIQUEI AQUI - Limpar telefone após cadastro
+        setPhone('')
+        setCountryDial('55')
         setEmail('') // MODIFIQUEI AQUI - Limpar e-mail após cadastro
         setName('') // MODIFIQUEI AQUI - Limpar nome após cadastro
         setCpf('') // Limpar CPF após cadastro
+        setBirthDateIso('')
         setBirthDateDigits('')
         setAcceptedTerms(false)
       }
@@ -392,22 +437,34 @@ export default function LoginPage() {
                   </div>
                 )}
                 <div>
-                  <label htmlFor="phone" className="text-xs font-semibold uppercase tracking-[0.2em] text-[#1F1F1F]/60">
+                  <div className="text-xs font-semibold uppercase tracking-[0.2em] text-[#1F1F1F]/60">
                     Telefone <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    id="phone"
-                    name="phone"
-                    type="tel"
-                    inputMode="tel"
-                    autoComplete="tel"
-                    required
-                    value={phone}
-                    onChange={(e) => setPhone(formatBrazilPhoneDisplay(e.target.value))}
-                    className="mt-2 block w-full rounded-xl border border-[#E5E5E5] bg-white px-4 py-3 text-sm text-[#1F1F1F] placeholder-[#1F1F1F]/40 shadow-sm focus:border-[#1E7F43] focus:outline-none focus:ring-2 focus:ring-[#3CCB7F]/40"
-                    placeholder="11 96123-4567"
-                    maxLength={14}
-                  />
+                  </div>
+                  <div className="md:hidden">
+                    <MobilePhoneCountryInput
+                      phone={phone}
+                      countryDial={countryDial}
+                      onPhoneChange={setPhone}
+                      onCountryDialChange={setCountryDial}
+                      formatBrazil={formatBrazilPhoneDisplay}
+                    />
+                  </div>
+                  <div className="hidden md:block">
+                    <input
+                      id="phone"
+                      name="phone"
+                      type="tel"
+                      inputMode="tel"
+                      autoComplete="tel"
+                      aria-label="Telefone"
+                      required
+                      value={phone}
+                      onChange={(e) => setPhone(formatBrazilPhoneDisplay(e.target.value))}
+                      className="mt-2 block w-full rounded-xl border border-[#E5E5E5] bg-white px-4 py-3 text-sm text-[#1F1F1F] placeholder-[#1F1F1F]/40 shadow-sm focus:border-[#1E7F43] focus:outline-none focus:ring-2 focus:ring-[#3CCB7F]/40"
+                      placeholder="11 96123-4567"
+                      maxLength={14}
+                    />
+                  </div>
                   <p className="mt-1 text-xs text-[#1F1F1F]/50">
                     Informe seu telefone com DDD (ex: 11 96123-4567)
                   </p>
@@ -432,25 +489,41 @@ export default function LoginPage() {
                 )}
                 {isSignUp && (
                   <div>
-                    <label htmlFor="birthDate" className="text-xs font-semibold uppercase tracking-[0.2em] text-[#1F1F1F]/60">
+                    <div className="text-xs font-semibold uppercase tracking-[0.2em] text-[#1F1F1F]/60">
                       Data de nascimento <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      id="birthDate"
-                      name="birthDate"
-                      type="text"
-                      inputMode="numeric"
-                      autoComplete="bday"
-                      required
-                      value={formatBirthDateMask(birthDateDigits)}
-                      onChange={(e) => {
-                        const digits = e.target.value.replace(/\D/g, '').slice(0, 8)
-                        setBirthDateDigits(digits)
-                      }}
-                      className="mt-2 block w-full rounded-xl border border-[#E5E5E5] bg-white px-4 py-3 text-sm text-[#1F1F1F] shadow-sm focus:border-[#1E7F43] focus:outline-none focus:ring-2 focus:ring-[#3CCB7F]/40"
-                      placeholder="dd/mm/aaaa"
-                      maxLength={10}
-                    />
+                    </div>
+                    <div className="md:hidden mt-2">
+                      <input
+                        id="birthDate-mobile"
+                        name="birthDate"
+                        type="date"
+                        autoComplete="bday"
+                        required={isMobileViewport}
+                        value={birthDateIso}
+                        min={BIRTH_DATE_MIN}
+                        max={getMaxBirthDateForAdultsIso()}
+                        onChange={(e) => setBirthDateIso(e.target.value)}
+                        className="block w-full rounded-xl border border-[#E5E5E5] bg-white px-4 py-3 text-sm text-[#1F1F1F] shadow-sm focus:border-[#1E7F43] focus:outline-none focus:ring-2 focus:ring-[#3CCB7F]/40"
+                      />
+                    </div>
+                    <div className="hidden md:block mt-2">
+                      <input
+                        id="birthDate-desktop"
+                        name="birthDate"
+                        type="text"
+                        inputMode="numeric"
+                        autoComplete="bday"
+                        required={!isMobileViewport}
+                        value={formatBirthDateMask(birthDateDigits)}
+                        onChange={(e) => {
+                          const digits = e.target.value.replace(/\D/g, '').slice(0, 8)
+                          setBirthDateDigits(digits)
+                        }}
+                        className="block w-full rounded-xl border border-[#E5E5E5] bg-white px-4 py-3 text-sm text-[#1F1F1F] placeholder-[#1F1F1F]/40 shadow-sm focus:border-[#1E7F43] focus:outline-none focus:ring-2 focus:ring-[#3CCB7F]/40"
+                        placeholder="dd/mm/aaaa"
+                        maxLength={10}
+                      />
+                    </div>
                     <p className="mt-1 text-xs text-[#1F1F1F]/50">
                       É necessário ter pelo menos 18 anos.
                     </p>
@@ -630,11 +703,13 @@ export default function LoginPage() {
                   setError(null)
                   setSuccess(null)
                   setShowPassword(false)
-                  setPhone('') // MODIFIQUEI AQUI - Limpar telefone ao alternar entre login e cadastro
+                  setPhone('')
+                  setCountryDial('55')
                   if (isSignUp) {
                     setEmail('') // MODIFIQUEI AQUI - Limpar e-mail apenas ao sair do cadastro
                     setName('') // MODIFIQUEI AQUI - Limpar nome apenas ao sair do cadastro
                     setCpf('') // Limpar CPF obrigatório ao sair do cadastro
+                    setBirthDateIso('')
                     setBirthDateDigits('')
                   }
                   setAcceptedTerms(false)

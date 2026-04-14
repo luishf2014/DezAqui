@@ -15,7 +15,7 @@ export function isValidAdultBirthDate(isoDate: string): boolean {
   return true
 }
 
-/** Formata até 8 dígitos (DDMMAAAA) como dd/mm/aaaa para exibição. */
+/** Formata até 8 dígitos (DDMMAAAA) como dd/mm/aaaa para exibição (desktop). */
 export function formatBirthDateMask(digits: string): string {
   const d = digits.replace(/\D/g, '').slice(0, 8)
   if (d.length <= 2) return d
@@ -23,7 +23,7 @@ export function formatBirthDateMask(digits: string): string {
   return `${d.slice(0, 2)}/${d.slice(2, 4)}/${d.slice(4)}`
 }
 
-/** Converte 8 dígitos (DDMMAAAA) em YYYY-MM-DD ou null se a data for inválida. */
+/** Converte 8 dígitos (DDMMAAAA) em YYYY-MM-DD ou null se inválido. */
 export function brDigitsToIso(digits: string): string | null {
   const d = digits.replace(/\D/g, '')
   if (d.length !== 8) return null
