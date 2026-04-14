@@ -4,7 +4,7 @@
  * 
  * Permite que usuários façam login ou criem uma nova conta
  */
-import { useState, FormEvent, useEffect } from 'react'
+import { useState, FormEvent, useEffect, useRef, useMemo } from 'react'
 import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
@@ -17,6 +17,7 @@ import {
   brDigitsToIso,
   formatBirthDateMask,
   getMaxBirthDateForAdultsIso,
+  isoDateToBrDigits,
   isValidAdultBirthDate,
 } from '../utils/birthDate'
 
@@ -55,9 +56,13 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
   const [cpf, setCpf] = useState('')
-  /** Mobile: calendário nativo (YYYY-MM-DD). Desktop: máscara dd/mm/aaaa (só dígitos internos). */
-  const [birthDateIso, setBirthDateIso] = useState('')
+  /** dd/mm/aaaa (8 dígitos internos). Mobile: também abre calendário nativo pelo botão. */
   const [birthDateDigits, setBirthDateDigits] = useState('')
+  const birthDatePickerRef = useRef<HTMLInputElement>(null)
+  const birthDatePickerValue = useMemo(
+    () => brDigitsToIso(birthDateDigits) ?? '',
+    [birthDateDigits]
+  )
   const [acceptedTerms, setAcceptedTerms] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -275,15 +280,9 @@ export default function LoginPage() {
       return
     }
 
-    const birthIso = isMobileViewport
-      ? birthDateIso.trim()
-      : (brDigitsToIso(birthDateDigits) ?? '')
+    const birthIso = brDigitsToIso(birthDateDigits) ?? ''
     if (!birthIso) {
-      setError(
-        isMobileViewport
-          ? 'Por favor, informe sua data de nascimento'
-          : 'Por favor, informe uma data de nascimento válida (dd/mm/aaaa)'
-      )
+      setError('Por favor, informe uma data de nascimento válida (dd/mm/aaaa)')
       setLoading(false)
       return
     }
@@ -366,7 +365,6 @@ export default function LoginPage() {
         setEmail('') // MODIFIQUEI AQUI - Limpar e-mail após cadastro
         setName('') // MODIFIQUEI AQUI - Limpar nome após cadastro
         setCpf('') // Limpar CPF após cadastro
-        setBirthDateIso('')
         setBirthDateDigits('')
         setAcceptedTerms(false)
       }
@@ -492,19 +490,55 @@ export default function LoginPage() {
                     <div className="text-xs font-semibold uppercase tracking-[0.2em] text-[#1F1F1F]/60">
                       Data de nascimento <span className="text-red-500">*</span>
                     </div>
-                    <div className="md:hidden mt-2">
+                    <div className="md:hidden mt-2 flex gap-2">
                       <input
                         id="birthDate-mobile"
                         name="birthDate"
-                        type="date"
+                        type="text"
+                        inputMode="numeric"
                         autoComplete="bday"
                         required={isMobileViewport}
-                        value={birthDateIso}
+                        value={formatBirthDateMask(birthDateDigits)}
+                        onChange={(e) => {
+                          const digits = e.target.value.replace(/\D/g, '').slice(0, 8)
+                          setBirthDateDigits(digits)
+                        }}
+                        className="min-w-0 flex-1 rounded-xl border border-[#E5E5E5] bg-white px-4 py-3 text-sm text-[#1F1F1F] placeholder-[#1F1F1F]/40 shadow-sm focus:border-[#1E7F43] focus:outline-none focus:ring-2 focus:ring-[#3CCB7F]/40"
+                        placeholder="dd/mm/aaaa"
+                        maxLength={10}
+                      />
+                      <input
+                        ref={birthDatePickerRef}
+                        type="date"
+                        tabIndex={-1}
+                        aria-hidden
+                        className="sr-only"
+                        value={birthDatePickerValue}
                         min={BIRTH_DATE_MIN}
                         max={getMaxBirthDateForAdultsIso()}
-                        onChange={(e) => setBirthDateIso(e.target.value)}
-                        className="block w-full rounded-xl border border-[#E5E5E5] bg-white px-4 py-3 text-sm text-[#1F1F1F] shadow-sm focus:border-[#1E7F43] focus:outline-none focus:ring-2 focus:ring-[#3CCB7F]/40"
+                        onChange={(e) => {
+                          const v = e.target.value
+                          if (v) setBirthDateDigits(isoDateToBrDigits(v))
+                        }}
                       />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const el = birthDatePickerRef.current
+                          if (!el) return
+                          if (typeof el.showPicker === 'function') {
+                            void el.showPicker().catch(() => el.click())
+                          } else {
+                            el.click()
+                          }
+                        }}
+                        className="flex shrink-0 items-center justify-center rounded-xl border border-[#E5E5E5] bg-white px-3 text-[#1E7F43] shadow-sm hover:bg-[#F9F9F9] focus:border-[#1E7F43] focus:outline-none focus:ring-2 focus:ring-[#3CCB7F]/40"
+                        aria-label="Abrir calendário para escolher a data"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                      </button>
                     </div>
                     <div className="hidden md:block mt-2">
                       <input
@@ -709,7 +743,6 @@ export default function LoginPage() {
                     setEmail('') // MODIFIQUEI AQUI - Limpar e-mail apenas ao sair do cadastro
                     setName('') // MODIFIQUEI AQUI - Limpar nome apenas ao sair do cadastro
                     setCpf('') // Limpar CPF obrigatório ao sair do cadastro
-                    setBirthDateIso('')
                     setBirthDateDigits('')
                   }
                   setAcceptedTerms(false)

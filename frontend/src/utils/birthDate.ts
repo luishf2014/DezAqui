@@ -36,3 +36,10 @@ export function brDigitsToIso(digits: string): string | null {
   if (dt.getFullYear() !== yyyy || dt.getMonth() + 1 !== mm || dt.getDate() !== dd) return null
   return iso
 }
+
+/** Converte YYYY-MM-DD em 8 dígitos DDMMAAAA (para sincronizar com máscara). */
+export function isoDateToBrDigits(iso: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return ''
+  const [y, m, d] = iso.split('-')
+  return `${d}${m}${y}`
+}
