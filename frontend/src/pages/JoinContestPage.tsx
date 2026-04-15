@@ -15,6 +15,7 @@ import { useCart } from '../contexts/CartContext'
 import Header from '../components/Header'
 import Footer from '../components/Footer'
 import { canAcceptParticipations, getContestState } from '../utils/contestHelpers'
+import { formatCurrency } from '../utils/formatters'
 import ContestStatusBadge from '../components/ContestStatusBadge'
 
 // MODIFIQUEI AQUI - Última compra (localStorage)
@@ -399,6 +400,14 @@ export default function JoinContestPage() {
                   />
                 </span>
               </div>
+              {contest.participation_value != null && (
+                <div className="md:col-span-3 pt-2 border-t border-[#E5E5E5]">
+                  <span className="text-[#1F1F1F]/60">Valor da cota:</span>
+                  <span className="ml-2 font-bold text-[#1E7F43] tabular-nums text-base sm:text-lg">
+                    {formatCurrency(contest.participation_value)}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
         </div>

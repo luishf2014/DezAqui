@@ -333,39 +333,40 @@ export default function AdminParticipants() {
                 PDF, Excel (.xlsx) ou CSV — colunas: nome, telefone, data de cadastro e e-mail. Apenas participantes visíveis com os filtros atuais.
               </p>
             </div>
-            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end sm:items-center shrink-0 w-full sm:w-auto">
+            <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-row sm:flex-wrap sm:justify-end sm:items-center shrink-0 w-full sm:w-auto sm:gap-3">
               <button
                 type="button"
                 onClick={() => exportParticipantsDirectoryToPDF(buildParticipantExportRows())}
                 disabled={loading || userGroups.length === 0}
-                className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-[#1E7F43] text-white font-semibold text-sm shadow-sm hover:bg-[#3CCB7F] transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap w-full sm:w-auto"
+                className="touch-manipulation inline-flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-2 sm:px-5 py-2.5 min-h-[48px] rounded-xl bg-[#1E7F43] text-white font-semibold text-xs sm:text-sm shadow-sm hover:bg-[#3CCB7F] transition-colors disabled:opacity-50 disabled:cursor-not-allowed sm:whitespace-nowrap w-full sm:w-auto"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
                 </svg>
-                Exportar PDF
+                <span className="sm:hidden leading-tight text-center">PDF</span>
+                <span className="hidden sm:inline">Exportar PDF</span>
               </button>
               <button
                 type="button"
                 onClick={() => exportParticipantsDirectoryToExcel(buildParticipantExportRows())}
                 disabled={loading || userGroups.length === 0}
-                className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl border-2 border-[#1E7F43] bg-white text-[#1E7F43] font-semibold text-sm shadow-sm hover:bg-[#E8F5EF] transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap w-full sm:w-auto"
+                className="touch-manipulation inline-flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-2 sm:px-5 py-2.5 min-h-[48px] rounded-xl border-2 border-[#1E7F43] bg-white text-[#1E7F43] font-semibold text-xs sm:text-sm shadow-sm hover:bg-[#E8F5EF] transition-colors disabled:opacity-50 disabled:cursor-not-allowed sm:whitespace-nowrap w-full sm:w-auto"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
                 </svg>
-                Excel
+                <span className="leading-tight text-center">Excel</span>
               </button>
               <button
                 type="button"
                 onClick={() => exportParticipantsDirectoryToCSV(buildParticipantExportRows())}
                 disabled={loading || userGroups.length === 0}
-                className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl border-2 border-[#1E7F43] bg-white text-[#1E7F43] font-semibold text-sm shadow-sm hover:bg-[#E8F5EF] transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap w-full sm:w-auto"
+                className="touch-manipulation inline-flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-2 sm:px-5 py-2.5 min-h-[48px] rounded-xl border-2 border-[#1E7F43] bg-white text-[#1E7F43] font-semibold text-xs sm:text-sm shadow-sm hover:bg-[#E8F5EF] transition-colors disabled:opacity-50 disabled:cursor-not-allowed sm:whitespace-nowrap w-full sm:w-auto"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
-                CSV
+                <span className="leading-tight text-center">CSV</span>
               </button>
             </div>
           </div>

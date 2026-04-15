@@ -482,6 +482,11 @@ export default function ContestsListPage() {
                     <h3 className="text-lg sm:text-xl font-extrabold text-[#1F1F1F] mb-2 break-words">
                       {contest.name}
                     </h3>
+                    {contest.participation_value != null && (
+                      <p className="lg:hidden mb-2 text-base font-bold text-[#1E7F43] tabular-nums [overflow-wrap:anywhere]">
+                        Valor da cota: {formatCurrency(contest.participation_value)}
+                      </p>
+                    )}
                     {contest.description && (
                       <p className="text-[#1F1F1F]/70 text-xs sm:text-sm line-clamp-2">
                         {contest.description}
@@ -524,8 +529,8 @@ export default function ContestsListPage() {
                     </div>
                   </div>
 
-                  {/* Valor da cota (participação) — configurado pelo admin */}
-                  <div className="rounded-lg sm:rounded-xl border border-[#E5E5E5] bg-[#F9F9F9] p-2 sm:p-3">
+                  {/* Valor da cota — só em lg+; no celular o valor fica abaixo do título do card */}
+                  <div className="hidden lg:block rounded-lg sm:rounded-xl border border-[#E5E5E5] bg-[#F9F9F9] p-2 sm:p-3">
                     <div className="flex items-center gap-1.5 sm:gap-2 mb-1.5 sm:mb-2">
                       <div className="p-1 sm:p-1.5 bg-[#1E7F43]/10 rounded-lg">
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 sm:h-4 sm:w-4 text-[#1E7F43]" fill="none" viewBox="0 0 24 24" stroke="currentColor">

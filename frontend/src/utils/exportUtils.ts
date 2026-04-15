@@ -8,8 +8,24 @@ import { ReportData } from '../services/reportsService'
 import { getPrizePoolTotalForContest, getExtraPrizeDisplayAmount } from './contestPrizePool'
 // @ts-ignore - html2pdf.js não tem tipos TypeScript
 import html2pdf from 'html2pdf.js'
+import * as XLSX from 'xlsx'
 
 type ExportReportType = 'full' | 'revenue'
+
+/** Download via Blob (Safari iOS e outros browsers; revoga URL após o clique). */
+function downloadBlobToFile(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.style.position = 'fixed'
+  link.style.left = '-9999px'
+  link.setAttribute('aria-hidden', 'true')
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  setTimeout(() => URL.revokeObjectURL(url), 150)
+}
 
 /**
  * Exporta relatório para CSV
@@ -25,13 +41,7 @@ export function exportToCSV(reportData: ReportData, reportType: ExportReportType
     })
     const csvContent = rows.join('\n')
     const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' })
-    const link = document.createElement('a')
-    link.setAttribute('href', URL.createObjectURL(blob))
-    link.setAttribute('download', `${baseName}_arrecadacao.csv`)
-    link.style.visibility = 'hidden'
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
+    downloadBlobToFile(blob, `${baseName}_arrecadacao.csv`)
     return
   }
 
@@ -45,13 +55,7 @@ export function exportToCSV(reportData: ReportData, reportType: ExportReportType
   })
   const csvContent = rows.join('\n')
   const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' })
-  const link = document.createElement('a')
-  link.setAttribute('href', URL.createObjectURL(blob))
-  link.setAttribute('download', `${baseName}.csv`)
-  link.style.visibility = 'hidden'
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
+  downloadBlobToFile(blob, `${baseName}.csv`)
 }
 
 /**
@@ -59,57 +63,62 @@ export function exportToCSV(reportData: ReportData, reportType: ExportReportType
  * Quando reportType é 'revenue', exporta só Arrecadação por Período
  */
 export function exportToExcel(reportData: ReportData, reportType: ExportReportType = 'full'): void {
-  ;(async () => {
-    try {
-      const XLSX = await import('xlsx')
-      const baseName = `relatorio_${reportData.contest.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}`
+  try {
+    const baseName = `relatorio_${reportData.contest.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}`
 
-      if (reportType === 'revenue') {
-        const rows = (reportData.revenueByPeriod || []).map((p) => ({
-          Data: p.date,
-          'Arrecadado (R$)': Number(p.revenue),
-          Participações: p.participations,
-        }))
-        const ws = XLSX.utils.json_to_sheet(rows)
-        ;(ws as any)['!cols'] = [{ wch: 12 }, { wch: 16 }, { wch: 14 }]
-        const wb = XLSX.utils.book_new()
-        XLSX.utils.book_append_sheet(wb, ws, 'Arrecadação')
-        XLSX.writeFile(wb, `${baseName}_arrecadacao.xlsx`)
-        return
-      }
-
-      const rows = reportData.participations.map((p) => {
-        const numbers = (p.numbers || []).map((n) => n.toString().padStart(2, '0')).join(' ')
-        const value = p.payment ? Number(p.payment.amount) : 0
-        return {
-          Nome: p.user?.name || 'N/A',
-          Email: p.user?.email || 'N/A',
-          'Código/Ticket': p.ticket_code || 'N/A',
-          'Números Escolhidos': numbers,
-          Pontuação: Number(p.current_score || 0),
-          'Valor Pago': value,
-          Status: p.status || 'N/A',
-        }
-      })
-
+    if (reportType === 'revenue') {
+      const rows = (reportData.revenueByPeriod || []).map((p) => ({
+        Data: p.date,
+        'Arrecadado (R$)': Number(p.revenue),
+        Participações: p.participations,
+      }))
       const ws = XLSX.utils.json_to_sheet(rows)
-      ;(ws as any)['!cols'] = [
-        { wch: 22 },
-        { wch: 28 },
-        { wch: 18 },
-        { wch: 44 },
-        { wch: 10 },
-        { wch: 12 },
-        { wch: 12 },
-      ]
-
+      ;(ws as { '!cols'?: { wch: number }[] })['!cols'] = [{ wch: 12 }, { wch: 16 }, { wch: 14 }]
       const wb = XLSX.utils.book_new()
-      XLSX.utils.book_append_sheet(wb, ws, 'Relatório')
-      XLSX.writeFile(wb, `${baseName}.xlsx`)
-    } catch {
-      exportToCSV(reportData, reportType)
+      XLSX.utils.book_append_sheet(wb, ws, 'Arrecadação')
+      const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+      const blob = new Blob([buf], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      })
+      downloadBlobToFile(blob, `${baseName}_arrecadacao.xlsx`)
+      return
     }
-  })()
+
+    const rows = reportData.participations.map((p) => {
+      const numbers = (p.numbers || []).map((n) => n.toString().padStart(2, '0')).join(' ')
+      const value = p.payment ? Number(p.payment.amount) : 0
+      return {
+        Nome: p.user?.name || 'N/A',
+        Email: p.user?.email || 'N/A',
+        'Código/Ticket': p.ticket_code || 'N/A',
+        'Números Escolhidos': numbers,
+        Pontuação: Number(p.current_score || 0),
+        'Valor Pago': value,
+        Status: p.status || 'N/A',
+      }
+    })
+
+    const ws = XLSX.utils.json_to_sheet(rows)
+    ;(ws as { '!cols'?: { wch: number }[] })['!cols'] = [
+      { wch: 22 },
+      { wch: 28 },
+      { wch: 18 },
+      { wch: 44 },
+      { wch: 10 },
+      { wch: 12 },
+      { wch: 12 },
+    ]
+
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Relatório')
+    const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+    const blob = new Blob([buf], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    })
+    downloadBlobToFile(blob, `${baseName}.xlsx`)
+  } catch {
+    exportToCSV(reportData, reportType)
+  }
 }
 
 /**
@@ -1153,13 +1162,7 @@ export function exportParticipantsDirectoryToCSV(rows: ParticipantDirectoryPdfRo
   const csvContent = lines.join('\n')
   const fname = `participantes_dezaqui_${new Date().toISOString().split('T')[0]}.csv`
   const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' })
-  const link = document.createElement('a')
-  link.setAttribute('href', URL.createObjectURL(blob))
-  link.setAttribute('download', fname)
-  link.style.visibility = 'hidden'
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
+  downloadBlobToFile(blob, fname)
 }
 
 /**
@@ -1168,31 +1171,32 @@ export function exportParticipantsDirectoryToCSV(rows: ParticipantDirectoryPdfRo
 export function exportParticipantsDirectoryToExcel(rows: ParticipantDirectoryPdfRow[]): void {
   if (participantDirectoryEmpty(rows)) return
 
-  void (async () => {
-    try {
-      const XLSX = await import('xlsx')
-      const data = rows.map((r) => ({
-        Nome: r.name,
-        Telefone: r.phone,
-        'Data de cadastro': r.registrationDate,
-        'E-mail': r.email,
-      }))
-      const ws = XLSX.utils.json_to_sheet(data)
-      ;(ws as { '!cols'?: { wch: number }[] })['!cols'] = [
-        { wch: 28 },
-        { wch: 18 },
-        { wch: 22 },
-        { wch: 32 },
-      ]
-      const wb = XLSX.utils.book_new()
-      XLSX.utils.book_append_sheet(wb, ws, 'Participantes')
-      const fname = `participantes_dezaqui_${new Date().toISOString().split('T')[0]}.xlsx`
-      XLSX.writeFile(wb, fname)
-    } catch (err) {
-      console.error('Erro ao exportar Excel (participantes):', err)
-      exportParticipantsDirectoryToCSV(rows)
-    }
-  })()
+  try {
+    const data = rows.map((r) => ({
+      Nome: r.name,
+      Telefone: r.phone,
+      'Data de cadastro': r.registrationDate,
+      'E-mail': r.email,
+    }))
+    const ws = XLSX.utils.json_to_sheet(data)
+    ;(ws as { '!cols'?: { wch: number }[] })['!cols'] = [
+      { wch: 28 },
+      { wch: 18 },
+      { wch: 22 },
+      { wch: 32 },
+    ]
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Participantes')
+    const fname = `participantes_dezaqui_${new Date().toISOString().split('T')[0]}.xlsx`
+    const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+    const blob = new Blob([buf], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    })
+    downloadBlobToFile(blob, fname)
+  } catch (err) {
+    console.error('Erro ao exportar Excel (participantes):', err)
+    exportParticipantsDirectoryToCSV(rows)
+  }
 }
 
 /**
