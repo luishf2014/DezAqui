@@ -230,14 +230,6 @@ export default function ContestDetailsPage() {
                 {contest.description && (
                   <p className="text-white/90 text-sm sm:text-base md:text-lg max-w-2xl">{contest.description}</p>
                 )}
-                {/* Valor da cota no topo em telas < lg (celular/tablet), sem rolar até os cards */}
-                {contest.participation_value != null && (
-                  <div className="mt-3 lg:hidden">
-                    <span className="inline-flex max-w-full items-center rounded-xl bg-white/20 px-3 py-2 text-base font-bold text-white ring-1 ring-white/30 tabular-nums [overflow-wrap:anywhere]">
-                      Valor da cota: {formatCurrency(contest.participation_value)}
-                    </span>
-                  </div>
-                )}
               </div>
               {/* MODIFIQUEI AQUI - Usar getContestState para verificar se aceita participações e mostrar botão correto */}
               {getContestState(contest, draws.length > 0).acceptsParticipations ? (
@@ -297,8 +289,8 @@ export default function ContestDetailsPage() {
             </div>
           </div>
 
-          {/* Card Valor da cota (participação) — em lg+ o do hero some; aqui mantém o resumo em desktop */}
-          <div className="hidden lg:block rounded-xl sm:rounded-2xl border border-[#E5E5E5] bg-white p-4 sm:p-6 shadow-lg hover:shadow-xl transition-shadow">
+          {/* Card Valor da cota (participação) — igual em mobile e desktop */}
+          <div className="rounded-xl sm:rounded-2xl border border-[#E5E5E5] bg-white p-4 sm:p-6 shadow-lg hover:shadow-xl transition-shadow">
             <div className="flex items-center gap-2 sm:gap-3 mb-3 sm:mb-4">
               <div className="p-2 sm:p-3 bg-[#1E7F43]/10 rounded-lg sm:rounded-xl">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 sm:h-6 sm:w-6 text-[#1E7F43]" fill="none" viewBox="0 0 24 24" stroke="currentColor">

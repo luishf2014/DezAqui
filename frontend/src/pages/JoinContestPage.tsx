@@ -400,15 +400,22 @@ export default function JoinContestPage() {
                   />
                 </span>
               </div>
-              {contest.participation_value != null && (
-                <div className="md:col-span-3 pt-2 border-t border-[#E5E5E5]">
-                  <span className="text-[#1F1F1F]/60">Valor da cota:</span>
-                  <span className="ml-2 font-bold text-[#1E7F43] tabular-nums text-base sm:text-lg">
-                    {formatCurrency(contest.participation_value)}
-                  </span>
-                </div>
-              )}
             </div>
+            {contest.participation_value != null && (
+              <div className="mt-4 rounded-xl border border-[#E5E5E5] bg-white p-3 sm:p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="p-1.5 bg-[#1E7F43]/10 rounded-lg">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-[#1E7F43]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <span className="text-xs font-semibold text-[#1F1F1F]/60 uppercase tracking-wide">Valor da cota</span>
+                </div>
+                <p className="text-xl sm:text-2xl font-extrabold text-[#1E7F43] tabular-nums">
+                  {formatCurrency(contest.participation_value)}
+                </p>
+              </div>
+            )}
           </div>
         </div>
 
