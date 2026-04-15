@@ -14,7 +14,11 @@ import { Participation, Contest, User } from '../../types'
 import { listAllContests } from '../../services/contestsService'
 import { listAllUsers } from '../../services/profilesService'
 import { formatPhoneBR, navigateToTop } from '../../utils/formatters'
-import { exportParticipantsDirectoryToPDF } from '../../utils/exportUtils'
+import {
+  exportParticipantsDirectoryToCSV,
+  exportParticipantsDirectoryToExcel,
+  exportParticipantsDirectoryToPDF,
+} from '../../utils/exportUtils'
 
 interface ParticipationWithDetails extends Participation {
   contest: Contest | null
@@ -182,6 +186,26 @@ export default function AdminParticipants() {
 
   const userGroups = groupedByUser()
 
+  const buildParticipantExportRows = () =>
+    userGroups.map((g) => {
+      const u = users.find((x) => x.id === g.userId)
+      const registrationDate = u?.created_at
+        ? new Date(u.created_at).toLocaleString('pt-BR', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+          })
+        : '—'
+      return {
+        name: g.userName?.trim() || '—',
+        phone: formatPhoneBR(g.userPhone) || '—',
+        email: g.userEmail?.trim() || '—',
+        registrationDate,
+      }
+    })
+
   return (
     <div className="min-h-screen bg-[#F9F9F9] flex flex-col">
       <Header />
@@ -304,42 +328,46 @@ export default function AdminParticipants() {
 
           <div className="mt-5 pt-5 border-t border-[#E5E5E5] flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4 rounded-xl bg-[#F9F9F9]/80 px-4 py-4 border border-[#E5E5E5]/80">
             <div className="min-w-0">
-              <p className="text-sm font-semibold text-[#1F1F1F]">Exportar lista em PDF</p>
+              <p className="text-sm font-semibold text-[#1F1F1F]">Exportar lista</p>
               <p className="text-xs text-[#1F1F1F]/60 mt-0.5">
-                Colunas: nome, telefone, data de cadastro e e-mail — apenas os participantes visíveis com os filtros atuais.
+                PDF, Excel (.xlsx) ou CSV — colunas: nome, telefone, data de cadastro e e-mail. Apenas participantes visíveis com os filtros atuais.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                const rows = userGroups.map((g) => {
-                  const u = users.find((x) => x.id === g.userId)
-                  const registrationDate = u?.created_at
-                    ? new Date(u.created_at).toLocaleString('pt-BR', {
-                        day: '2-digit',
-                        month: '2-digit',
-                        year: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })
-                    : '—'
-                  return {
-                    name: g.userName?.trim() || '—',
-                    phone: formatPhoneBR(g.userPhone) || '—',
-                    email: g.userEmail?.trim() || '—',
-                    registrationDate,
-                  }
-                })
-                exportParticipantsDirectoryToPDF(rows)
-              }}
-              disabled={loading || userGroups.length === 0}
-              className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-[#1E7F43] text-white font-semibold text-sm shadow-sm hover:bg-[#3CCB7F] transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shrink-0 w-full sm:w-auto"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-              </svg>
-              Exportar PDF
-            </button>
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end sm:items-center shrink-0 w-full sm:w-auto">
+              <button
+                type="button"
+                onClick={() => exportParticipantsDirectoryToPDF(buildParticipantExportRows())}
+                disabled={loading || userGroups.length === 0}
+                className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-[#1E7F43] text-white font-semibold text-sm shadow-sm hover:bg-[#3CCB7F] transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap w-full sm:w-auto"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                </svg>
+                Exportar PDF
+              </button>
+              <button
+                type="button"
+                onClick={() => exportParticipantsDirectoryToExcel(buildParticipantExportRows())}
+                disabled={loading || userGroups.length === 0}
+                className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl border-2 border-[#1E7F43] bg-white text-[#1E7F43] font-semibold text-sm shadow-sm hover:bg-[#E8F5EF] transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap w-full sm:w-auto"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+                Excel
+              </button>
+              <button
+                type="button"
+                onClick={() => exportParticipantsDirectoryToCSV(buildParticipantExportRows())}
+                disabled={loading || userGroups.length === 0}
+                className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl border-2 border-[#1E7F43] bg-white text-[#1E7F43] font-semibold text-sm shadow-sm hover:bg-[#E8F5EF] transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap w-full sm:w-auto"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                CSV
+              </button>
+            </div>
           </div>
         </div>
 

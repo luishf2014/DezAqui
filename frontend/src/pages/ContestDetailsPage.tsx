@@ -17,6 +17,7 @@ import Header from '../components/Header'
 import Footer from '../components/Footer'
 import { getContestState } from '../utils/contestHelpers'
 import { formatOfficialRefDate } from '../utils/contestOfficialRefUtils'
+import { formatCurrency } from '../utils/formatters'
 import OfficialContestNumbersBadges from '../components/OfficialContestNumbersBadges'
 import ContestPrizePoolInfo from '../components/ContestPrizePoolInfo'
 
@@ -255,7 +256,7 @@ export default function ContestDetailsPage() {
         </div>
 
         {/* Cards de Informações */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6 mb-6 sm:mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-6 sm:mb-8">
           {/* Card Intervalo Numérico */}
           <div className="rounded-xl sm:rounded-2xl border border-[#E5E5E5] bg-white p-4 sm:p-6 shadow-lg hover:shadow-xl transition-shadow">
             <div className="flex items-center gap-2 sm:gap-3 mb-3 sm:mb-4">
@@ -286,6 +287,21 @@ export default function ContestDetailsPage() {
             <div className="text-2xl sm:text-3xl font-extrabold text-[#1F1F1F]">
               <span className="px-3 sm:px-4 py-1.5 sm:py-2 bg-[#F4C430] text-[#1F1F1F] rounded-lg inline-block">{contest.numbers_per_participation}</span>
             </div>
+          </div>
+
+          {/* Card Valor da cota (participação) */}
+          <div className="rounded-xl sm:rounded-2xl border border-[#E5E5E5] bg-white p-4 sm:p-6 shadow-lg hover:shadow-xl transition-shadow">
+            <div className="flex items-center gap-2 sm:gap-3 mb-3 sm:mb-4">
+              <div className="p-2 sm:p-3 bg-[#1E7F43]/10 rounded-lg sm:rounded-xl">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 sm:h-6 sm:w-6 text-[#1E7F43]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <h3 className="text-xs sm:text-sm font-semibold text-[#1F1F1F]/60 uppercase tracking-wide">Valor da cota</h3>
+            </div>
+            <p className="text-2xl sm:text-3xl font-extrabold text-[#1E7F43] tabular-nums">
+              {contest.participation_value != null ? formatCurrency(contest.participation_value) : '—'}
+            </p>
           </div>
 
           {/* Card Status */}

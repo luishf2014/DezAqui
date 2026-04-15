@@ -1127,17 +1127,79 @@ export interface ParticipantDirectoryPdfRow {
   registrationDate: string
 }
 
-/**
- * Exporta lista de participantes/usuários em PDF (NOME, TELEFONE, DATA DE CADASTRO, E-MAIL).
- */
-export function exportParticipantsDirectoryToPDF(rows: ParticipantDirectoryPdfRow[]): void {
+function participantDirectoryEmpty(rows: ParticipantDirectoryPdfRow[]): boolean {
   if (!rows.length) {
     showErrorModal(
       'Nenhum participante',
       'Não há dados para exportar com os filtros atuais. Ajuste os filtros ou a busca e tente novamente.'
     )
-    return
+    return true
   }
+  return false
+}
+
+/**
+ * Exporta lista de participantes em CSV (UTF-8 com BOM), colunas: Nome, Telefone, Data de cadastro, E-mail.
+ */
+export function exportParticipantsDirectoryToCSV(rows: ParticipantDirectoryPdfRow[]): void {
+  if (participantDirectoryEmpty(rows)) return
+
+  const q = (s: string) => `"${String(s).replace(/"/g, '""')}"`
+  const header = ['Nome', 'Telefone', 'Data de cadastro', 'E-mail']
+  const lines = [
+    header.join(','),
+    ...rows.map((r) => [r.name, r.phone, r.registrationDate, r.email].map(q).join(',')),
+  ]
+  const csvContent = lines.join('\n')
+  const fname = `participantes_dezaqui_${new Date().toISOString().split('T')[0]}.csv`
+  const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' })
+  const link = document.createElement('a')
+  link.setAttribute('href', URL.createObjectURL(blob))
+  link.setAttribute('download', fname)
+  link.style.visibility = 'hidden'
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+}
+
+/**
+ * Exporta lista de participantes em Excel (.xlsx). Em falha do motor XLSX, tenta CSV.
+ */
+export function exportParticipantsDirectoryToExcel(rows: ParticipantDirectoryPdfRow[]): void {
+  if (participantDirectoryEmpty(rows)) return
+
+  void (async () => {
+    try {
+      const XLSX = await import('xlsx')
+      const data = rows.map((r) => ({
+        Nome: r.name,
+        Telefone: r.phone,
+        'Data de cadastro': r.registrationDate,
+        'E-mail': r.email,
+      }))
+      const ws = XLSX.utils.json_to_sheet(data)
+      ;(ws as { '!cols'?: { wch: number }[] })['!cols'] = [
+        { wch: 28 },
+        { wch: 18 },
+        { wch: 22 },
+        { wch: 32 },
+      ]
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, 'Participantes')
+      const fname = `participantes_dezaqui_${new Date().toISOString().split('T')[0]}.xlsx`
+      XLSX.writeFile(wb, fname)
+    } catch (err) {
+      console.error('Erro ao exportar Excel (participantes):', err)
+      exportParticipantsDirectoryToCSV(rows)
+    }
+  })()
+}
+
+/**
+ * Exporta lista de participantes/usuários em PDF (NOME, TELEFONE, DATA DE CADASTRO, E-MAIL).
+ */
+export function exportParticipantsDirectoryToPDF(rows: ParticipantDirectoryPdfRow[]): void {
+  if (participantDirectoryEmpty(rows)) return
 
   const escape = (s: string) =>
     s
