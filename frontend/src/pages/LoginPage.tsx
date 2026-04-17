@@ -20,6 +20,7 @@ import {
   isoDateToBrDigits,
   isValidAdultBirthDate,
 } from '../utils/birthDate'
+import { useSitePagesVisibilityMap } from '../hooks/useSitePagesVisibilityMap'
 
 /** DDD + celular (9 após DDD) ou fixo (8 após DDD); teclado tel no mobile. */
 function formatBrazilPhoneDisplay(raw: string): string {
@@ -48,6 +49,9 @@ export default function LoginPage() {
   const location = useLocation()
   // MODIFIQUEI AQUI - Adicionado isAdmin e profile para redirect baseado em role
   const { user, isAdmin, profile, loading: authLoading } = useAuth()
+  const sitePagesVis = useSitePagesVisibilityMap()
+  const showTermsLink = isAdmin || sitePagesVis?.['termos-de-uso'] !== false
+  const showPrivacyLink = isAdmin || sitePagesVis?.['politica-de-privacidade'] !== false
   // MODIFIQUEI AQUI - Verificar se deve abrir em modo cadastro através da query string
   const searchParams = new URLSearchParams(location.search)
   const [isSignUp, setIsSignUp] = useState(searchParams.get('signup') === 'true')
@@ -659,23 +663,37 @@ export default function LoginPage() {
                       />
                       <label htmlFor="acceptTerms" className="text-sm text-[#1F1F1F]/90 leading-snug cursor-pointer">
                         Confirmo que <strong className="text-[#1F1F1F]">tenho mais de 18 anos</strong>, li e aceito os{' '}
-                        <Link
-                          to="/termos-de-uso"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-blue-600 hover:text-blue-700 underline font-medium"
-                        >
-                          Termos e Condições de Uso
-                        </Link>{' '}
+                        {showTermsLink ? (
+                          <Link
+                            to="/termos-de-uso"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:text-blue-700 underline font-medium"
+                          >
+                            Termos e Condições
+                            {isAdmin && sitePagesVis?.['termos-de-uso'] === false ? (
+                              <span className="ml-1 text-[10px] font-semibold text-amber-700 not-italic">(invisível)</span>
+                            ) : null}
+                          </Link>
+                        ) : (
+                          <span className="font-medium text-[#1F1F1F]">Termos e Condições</span>
+                        )}{' '}
                         e a{' '}
-                        <Link
-                          to="/politica-de-privacidade"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-blue-600 hover:text-blue-700 underline font-medium"
-                        >
-                          Política de Privacidade
-                        </Link>
+                        {showPrivacyLink ? (
+                          <Link
+                            to="/politica-de-privacidade"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:text-blue-700 underline font-medium"
+                          >
+                            Política de Privacidade
+                            {isAdmin && sitePagesVis?.['politica-de-privacidade'] === false ? (
+                              <span className="ml-1 text-[10px] font-semibold text-amber-700 not-italic">(invisível)</span>
+                            ) : null}
+                          </Link>
+                        ) : (
+                          <span className="font-medium text-[#1F1F1F]">Política de Privacidade</span>
+                        )}
                         .
                       </label>
                     </div>

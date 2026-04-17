@@ -4,9 +4,9 @@ export default function TermosDeUsoPage() {
   return (
     <SitePage
       pageKey="termos-de-uso"
-      title="Termos de Uso"
+      title="Termos e Condições"
       subtitle="Condições de utilização e responsabilidades."
-      defaultContent="<h2>Termos de Uso</h2><p>Digite o conteúdo aqui...</p>"
+      defaultContent="<h2>Termos e Condições</h2><p>Digite o conteúdo aqui...</p>"
     />
   )
 }

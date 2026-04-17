@@ -2,11 +2,12 @@
  * Página institucional genérica (CMS simples - editor visual)
  *
  * - Admin (isAdmin=true): edita conteúdo em editor visual (ReactQuill) e salva no Supabase (site_pages.content_html)
- * - Usuário: visualiza renderizado (sem edição)
+ * - Opção is_visible: se false, não-admin é redirecionado (a página “não existe” para eles); admin vê aviso e edita
  *
  * Mantém o layout padrão (Header/Footer + header gradiente + card branco).
  */
 import { useEffect, useMemo, useState } from 'react'
+import { Navigate } from 'react-router-dom'
 import Header from '../components/Header'
 import Footer from '../components/Footer'
 import { supabase } from '../lib/supabase'
@@ -38,7 +39,7 @@ export default function SitePage({
     const [error, setError] = useState<string | null>(null)
     // Estado para feedback visual de salvamento
     const [saveStatus, setSaveStatus] = useState<'success' | 'error' | null>(null)
-
+    const [visibleToUsers, setVisibleToUsers] = useState(true)
 
     // Toolbar simples e fácil pro cliente (alinhamento, negrito, lista, link, etc.)
     const quillModules = useMemo(() => {
@@ -68,7 +69,7 @@ export default function SitePage({
                 // Busca primeiro content_html; se não existir, faz fallback para content_md (caso você já tenha dados antigos)
                 const { data, error: err } = await supabase
                     .from('site_pages')
-                    .select('content_html, content_md')
+                    .select('content_html, content_md, is_visible')
                     .eq('key', pageKey)
                     .maybeSingle()
 
@@ -79,6 +80,7 @@ export default function SitePage({
                     : (data?.content_md ?? '')
 
                 setContentHtml((fromDb ?? defaultContent) || '')
+                setVisibleToUsers((data as { is_visible?: boolean } | null)?.is_visible !== false)
             } catch (e) {
                 console.error('[SitePage] Erro ao carregar conteúdo:', e)
                 setError('Erro ao carregar conteúdo')
@@ -106,6 +108,7 @@ export default function SitePage({
                 key: pageKey,
                 title,
                 content_html: sanitized,
+                is_visible: visibleToUsers,
             })
 
             if (err) throw err
@@ -152,6 +155,10 @@ export default function SitePage({
         )
     }
 
+    if (!visibleToUsers && !isAdmin) {
+        return <Navigate to="/contests" replace />
+    }
+
     return (
         <div className="min-h-screen bg-[#F9F9F9] flex flex-col">
             <Header />
@@ -160,18 +167,28 @@ export default function SitePage({
             <div className="relative rounded-2xl sm:rounded-3xl overflow-hidden mx-2 sm:mx-4 mt-4 sm:mt-6 mb-6 sm:mb-8 shadow-xl">
                 <div className="absolute inset-0 bg-gradient-to-br from-[#1E7F43] via-[#1E7F43] to-[#3CCB7F] opacity-95"></div>
                 <div className="relative bg-white/5 backdrop-blur-sm p-4 sm:p-6 md:p-8">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2 sm:p-3 bg-white/20 rounded-lg sm:rounded-xl">
-                            {icon ?? (
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 sm:h-6 sm:w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 6H7a2 2 0 01-2-2V4a2 2 0 012-2h10a2 2 0 012 2v16a2 2 0 01-2 2z" />
-                                </svg>
-                            )}
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+                        <div className="flex items-center gap-3 min-w-0">
+                            <div className="p-2 sm:p-3 bg-white/20 rounded-lg sm:rounded-xl shrink-0">
+                                {icon ?? (
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 sm:h-6 sm:w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 6H7a2 2 0 01-2-2V4a2 2 0 012-2h10a2 2 0 012 2v16a2 2 0 01-2 2z" />
+                                    </svg>
+                                )}
+                            </div>
+                            <div className="min-w-0">
+                                <h1 className="text-2xl sm:text-3xl md:text-4xl font-extrabold text-white">{title}</h1>
+                                <p className="text-white/90 text-sm sm:text-base mt-1">{subtitle}</p>
+                            </div>
                         </div>
-                        <div>
-                            <h1 className="text-2xl sm:text-3xl md:text-4xl font-extrabold text-white">{title}</h1>
-                            <p className="text-white/90 text-sm sm:text-base mt-1">{subtitle}</p>
-                        </div>
+                        {isAdmin && !visibleToUsers && (
+                            <span
+                                className="shrink-0 inline-flex items-center rounded-full bg-[#1F1F1F]/35 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white ring-1 ring-white/30"
+                                title="Utilizadores e visitantes não veem esta página (são redirecionados)."
+                            >
+                                Invisível para utilizadores
+                            </span>
+                        )}
                     </div>
                 </div>
             </div>
@@ -188,6 +205,17 @@ export default function SitePage({
                     {/* Admin Editor */}
                     {isAdmin && (
                         <div className="mb-6">
+                            <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-[#E5E5E5] bg-[#F9F9F9] px-4 py-3">
+                                <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium text-[#1F1F1F]">
+                                    <input
+                                        type="checkbox"
+                                        checked={visibleToUsers}
+                                        onChange={(e) => setVisibleToUsers(e.target.checked)}
+                                        className="h-4 w-4 rounded border-[#E5E5E5] text-[#1E7F43] focus:ring-[#3CCB7F]/40"
+                                    />
+                                    Página visível para utilizadores
+                                </label>
+                            </div>
                             <div className="flex items-center justify-between gap-3 mb-3">
                                 <div className="text-sm font-semibold text-[#1F1F1F]">Editar conteúdo</div>
                                 <button

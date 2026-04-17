@@ -5,9 +5,14 @@
  */
 import { Link } from 'react-router-dom'
 import logodezaqui from '../assets/logodezaqui.png'
+import { useAuth } from '../contexts/AuthContext'
+import { useSitePagesVisibilityMap } from '../hooks/useSitePagesVisibilityMap'
+import FooterInstitutionalLink from './FooterInstitutionalLink'
 
 export default function Footer() {
   const currentYear = new Date().getFullYear()
+  const { isAdmin } = useAuth()
+  const sitePagesVis = useSitePagesVisibilityMap()
 
   return (
     <footer className="relative mt-auto">
@@ -56,16 +61,20 @@ export default function Footer() {
                   Página Inicial
                 </Link>
               </li> */}
-              <li>
-                <a href="/como-funciona" className="text-white/80 hover:text-white transition-colors text-sm">
-                  Como Funciona
-                </a>
-              </li>
-              <li>
-                <a href="/regulamento" className="text-white/80 hover:text-white transition-colors text-sm">
-                  Regulamento
-                </a>
-              </li>
+              <FooterInstitutionalLink
+                pageKey="como-funciona"
+                to="/como-funciona"
+                label="Como Funciona"
+                visibilityMap={sitePagesVis}
+                isAdmin={!!isAdmin}
+              />
+              <FooterInstitutionalLink
+                pageKey="regulamento"
+                to="/regulamento"
+                label="Regulamento"
+                visibilityMap={sitePagesVis}
+                isAdmin={!!isAdmin}
+              />
             </ul>
           </div>
 
@@ -73,11 +82,13 @@ export default function Footer() {
           <div>
             <h4 className="text-white font-bold mb-4">Suporte</h4>
             <ul className="space-y-2">
-              <li>
-                <a href="/central-de-ajuda" className="text-white/80 hover:text-white transition-colors text-sm">
-                  Central de Ajuda
-                </a>
-              </li>
+              <FooterInstitutionalLink
+                pageKey="central-de-ajuda"
+                to="/central-de-ajuda"
+                label="Central de Ajuda"
+                visibilityMap={sitePagesVis}
+                isAdmin={!!isAdmin}
+              />
               {/* <li>
                 <a href="#" className="text-white/80 hover:text-white transition-colors text-sm">
                   Contato
@@ -88,16 +99,41 @@ export default function Footer() {
                   Perguntas Frequentes
                 </a>
               </li> */}
-              <li>
-                <a href="/termos-de-uso" className="text-white/80 hover:text-white transition-colors text-sm">
-                  Termos de Uso
-                </a>
-              </li>
-              <li>
-                <Link to="/politica-de-privacidade" className="text-white/80 hover:text-white transition-colors text-sm">
-                  Política de Privacidade
-                </Link>
-              </li>
+              <FooterInstitutionalLink
+                pageKey="termos-de-uso"
+                to="/termos-de-uso"
+                label="Termos e Condições"
+                visibilityMap={sitePagesVis}
+                isAdmin={!!isAdmin}
+              />
+              <FooterInstitutionalLink
+                pageKey="politica-de-privacidade"
+                to="/politica-de-privacidade"
+                label="Política de Privacidade"
+                visibilityMap={sitePagesVis}
+                isAdmin={!!isAdmin}
+              />
+              <FooterInstitutionalLink
+                pageKey="politica-de-aposta"
+                to="/politica-de-aposta"
+                label="Política de Aposta"
+                visibilityMap={sitePagesVis}
+                isAdmin={!!isAdmin}
+              />
+              <FooterInstitutionalLink
+                pageKey="politica-kyc"
+                to="/politica-kyc"
+                label="Política (KYC)"
+                visibilityMap={sitePagesVis}
+                isAdmin={!!isAdmin}
+              />
+              <FooterInstitutionalLink
+                pageKey="jogo-responsavel"
+                to="/jogo-responsavel"
+                label="Jogo Responsável"
+                visibilityMap={sitePagesVis}
+                isAdmin={!!isAdmin}
+              />
             </ul>
           </div>
         </div>

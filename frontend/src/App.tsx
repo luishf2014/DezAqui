@@ -17,6 +17,9 @@ import ComoFuncionaPage from './pages/ComoFuncionaPage'
 import RegulamentoPage from './pages/RegulamentoPage'
 import CentralDeAjudaPage from './pages/CentraldeAjudaPage'
 import TermosDeUsoPage from './pages/TermosDeUsoPage'
+import PoliticaApostaPage from './pages/PoliticaApostaPage'
+import PoliticaKYCPage from './pages/PoliticaKYCPage'
+import JogoResponsavelPage from './pages/JogoResponsavelPage'
 import PoliticaPrivacidadePage from './pages/PoliticaPrivacidadePage'
 import NotificationsPage from './pages/NotificationsPage'
 import PurchaseSuccessPage from './pages/PurchaseSuccessPage'
@@ -70,6 +73,9 @@ function App() {
             <Route path="/regulamento" element={<RegulamentoPage />} />
             <Route path="/central-de-ajuda" element={<CentralDeAjudaPage />} />
             <Route path="/termos-de-uso" element={<TermosDeUsoPage />} />
+            <Route path="/politica-de-aposta" element={<PoliticaApostaPage />} />
+            <Route path="/politica-kyc" element={<PoliticaKYCPage />} />
+            <Route path="/jogo-responsavel" element={<JogoResponsavelPage />} />
             <Route path="/politica-de-privacidade" element={<PoliticaPrivacidadePage />} />
           
           {/* MODIFIQUEI AQUI - Rotas Administrativas protegidas com RequireAdmin usando Outlet */}
