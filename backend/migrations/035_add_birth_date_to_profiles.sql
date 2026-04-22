@@ -1,5 +1,5 @@
 -- ============================================
--- Migração 039: Data de nascimento em profiles
+-- Migração 035: Data de nascimento em profiles
 -- ============================================
 -- Campo usado no cadastro e em Configurações.
 -- Trigger handle_new_user recriado para preencher birth_date a partir do metadata.

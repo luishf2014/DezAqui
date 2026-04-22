@@ -1,15 +1,11 @@
 -- ============================================
--- Migração 024: Notificação Automática quando Sorteio é Criado
+-- Migração 025: Notificação automática quando sorteio é criado
 -- ============================================
--- 
--- Esta migração cria uma trigger que automaticamente cria notificações
--- para todos os participantes quando um novo sorteio é criado.
--- 
--- A notificação só é criada se:
--- 1. Um novo sorteio é inserido na tabela draws
--- 2. O participante tem notify_draw_done = true nas preferências
--- 3. O participante tem enabled = true nas preferências
+-- Inclui no início DROP idempotente da função/trigger (reexecução segura).
 -- ============================================
+
+DROP TRIGGER IF EXISTS trigger_notify_on_draw_created ON public.draws;
+DROP FUNCTION IF EXISTS public.notify_on_draw_created();
 
 -- Função que cria notificações quando um sorteio é criado
 -- SECURITY DEFINER permite que a função execute com privilégios do criador,
@@ -57,7 +53,7 @@ BEGIN
   
   -- Criar notificações para todos os participantes habilitados
   -- MODIFIQUEI AQUI - Usar apenas campos que sempre existem na tabela draws
-  -- O campo 'code' é opcional e não será incluído para evitar erros se a migração 013 não foi executada
+  -- O campo 'code' é opcional e não será incluído para evitar erros se a migração 014 (código do sorteio) não foi executada
   INSERT INTO notifications (
     user_id,
     type,

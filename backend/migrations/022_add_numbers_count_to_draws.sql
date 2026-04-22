@@ -1,4 +1,4 @@
--- Migração 021: Adicionar campo numbers_count à tabela draws
+-- Migração 022: Adicionar campo numbers_count à tabela draws
 -- Permite que cada sorteio tenha uma quantidade diferente de números
 -- Se NULL, usa o valor de numbers_per_participation do concurso (comportamento padrão)
 

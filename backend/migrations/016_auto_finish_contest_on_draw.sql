@@ -1,5 +1,5 @@
 -- ============================================
--- Migração 015: Finalização Automática de Concursos ao Criar Sorteio
+-- Migração 016: Finalização automática de concursos ao criar sorteio
 -- CHATGPT: alterei aqui - Trigger para atualizar status do concurso para 'finished' quando primeiro sorteio é criado
 -- ============================================
 -- 

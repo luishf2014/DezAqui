@@ -30,7 +30,7 @@
 
 ### Para remover participações órfãs existentes:
 
-**Script Completo (037_remove_orphan_participations.sql):**
+**Script de limpeza (lógica descrita abaixo; o ficheiro de migração com esse nome foi removido do repositório — manter o SQL de emergência a partir disto ou do histórico do Git se precisar):**
 ```sql
 WITH orphan_participations AS (
   SELECT p.id, p.ticket_code, p.created_at

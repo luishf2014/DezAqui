@@ -1,5 +1,5 @@
 -- ============================================
--- Migração 026: Corrigir notificações para usuários sem preferências
+-- Migração 027: Corrigir notificações para usuários sem preferências
 -- ============================================
 --
 -- Problema: Usuários não recebiam notificações de "sorteio realizado" e

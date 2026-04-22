@@ -1,5 +1,5 @@
 -- ============================================
--- Migração 023: Notificação Automática quando Concurso é Finalizado
+-- Migração 024: Notificação automática quando concurso é finalizado
 -- ============================================
 -- 
 -- Esta migração cria uma trigger que automaticamente cria notificações

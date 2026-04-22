@@ -1,3 +1,4 @@
+-- Migração 036: coluna is_visible em site_pages
 -- Páginas institucionais: visibilidade para visitantes (não-admin)
 -- Se is_visible = false: não-admin é redirecionado ao abrir a URL; link some do rodapé (admin vê link com etiqueta);
 -- administradores continuam a ver a página e editar.

@@ -1,5 +1,5 @@
 -- ============================================
--- Migração 011: Adicionar código/ticket único às participações
+-- Migração 012: Adicionar código/ticket único às participações
 -- FASE 1: Fundação do Sistema
 -- ============================================
 -- 

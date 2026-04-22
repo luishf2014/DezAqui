@@ -1,5 +1,5 @@
 -- ============================================
--- Migração 025: Permitir usuários verem concursos finalizados (Histórico)
+-- Migração 026: Permitir usuários verem concursos finalizados (Histórico)
 -- ============================================
 --
 -- Problema: Na aba "Histórico", concursos finalizados não aparecem

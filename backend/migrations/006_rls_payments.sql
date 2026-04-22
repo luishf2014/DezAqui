@@ -1,5 +1,5 @@
 -- ============================================
--- Migração 005: Row Level Security (RLS) - Payments
+-- Migração 006: Row Level Security (RLS) - Payments
 -- FASE 2: Segurança e Autenticação
 -- ============================================
 -- 

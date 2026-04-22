@@ -47,12 +47,12 @@ supabase secrets list
 
 ### Database Migrations
 
-SQL migrations are in `backend/migrations/`. Execute them in order via Supabase dashboard SQL editor. Key migrations:
-- `001_init.sql` - Initial schema
-- `014_create_discounts_table.sql` - Discount system
-- `015_auto_finish_contest_on_draw.sql` - Auto-finish contest trigger
-- `018_create_draw_payouts_table.sql` - Prize payouts
-- `020_add_cpf_to_profiles.sql` - CPF field for Pix payments
+SQL migrations are in `backend/migrations/`. Ficheiros `001_*.sql` … `036_*.sql` — executar em ordem numérica (ver `MIGRATIONS_RUN_ORDER.md`). Exemplos:
+- `001_init.sql` — schema inicial
+- `015_create_discounts_table.sql` — descontos
+- `016_auto_finish_contest_on_draw.sql` — concurso a terminar ao criar sorteio
+- `019_create_draw_payouts_table.sql` — prémios por participação
+- `021_add_cpf_to_profiles.sql` — CPF (Pix)
 
 ## Architecture
 

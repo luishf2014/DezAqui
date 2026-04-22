@@ -1,4 +1,4 @@
--- Migration 021: Remover trigger de auto-encerramento no primeiro sorteio
+-- Migração 023: Remover trigger de auto-encerramento no primeiro sorteio
 -- O comportamento correto é: concurso só encerra quando alguém atinge numbers_per_participation pontos
 -- Não no primeiro sorteio
 

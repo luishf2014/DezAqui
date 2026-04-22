@@ -1,5 +1,5 @@
 -- ============================================
--- Migração 002: Row Level Security (RLS) - Profiles
+-- Migração 003: Row Level Security (RLS) - Profiles
 -- FASE 2: Segurança e Autenticação
 -- ============================================
 -- 

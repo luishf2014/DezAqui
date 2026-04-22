@@ -1,5 +1,5 @@
 -- ============================================
--- Migração 018: Tabela de Prêmios por Participação (Draw Payouts)
+-- Migração 019: Tabela de prêmios por participação (draw payouts)
 -- FASE 4: Sorteios e Rateio
 -- ============================================
 --

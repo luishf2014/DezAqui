@@ -1,5 +1,5 @@
 -- ============================================
--- Migração 020: Adicionar CPF ao Perfil
+-- Migração 021: Adicionar CPF ao perfil
 -- FASE 1: Fundação do Sistema
 -- ============================================
 -- 

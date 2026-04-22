@@ -1,5 +1,5 @@
 -- ============================================
--- Migração 008: Permitir visualização de concursos ativos para usuários anônimos
+-- Migração 009: Permitir visualização de concursos ativos para usuários anônimos
 -- FASE 1: Fundação do Sistema (Core)
 -- ============================================
 -- 

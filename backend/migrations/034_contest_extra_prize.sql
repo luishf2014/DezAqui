@@ -1,5 +1,5 @@
 -- ============================================
--- Migração 038: Prêmio adicional fixo opcional no concurso
+-- Migração 034: Prêmio adicional fixo opcional no concurso
 -- MODIFIQUEI AQUI
 -- ============================================
 --

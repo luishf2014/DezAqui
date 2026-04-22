@@ -1,5 +1,5 @@
 -- ============================================
--- Migração 003: Row Level Security (RLS) - Contests
+-- Migração 004: Row Level Security (RLS) - Contests
 -- FASE 2: Segurança e Autenticação
 -- ============================================
 -- 

@@ -1,5 +1,5 @@
 -- ============================================
--- Migração 007: Correção RLS - SELECT próprio profile
+-- Migração 008: Correção RLS - SELECT próprio profile
 -- FASE 1: Correção de bug de autenticação
 -- ============================================
 -- 

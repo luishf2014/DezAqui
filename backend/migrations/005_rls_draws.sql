@@ -1,5 +1,5 @@
 -- ============================================
--- Migração 004: Row Level Security (RLS) - Draws
+-- Migração 005: Row Level Security (RLS) - Draws
 -- FASE 2: Segurança e Autenticação
 -- ============================================
 -- 

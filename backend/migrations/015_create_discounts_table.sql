@@ -1,5 +1,5 @@
 -- ============================================
--- Migração 014: Tabela de Descontos e Promoções
+-- Migração 015: Tabela de Descontos e Promoções
 -- FASE 1: Painel Administrativo - Financeiro
 -- ============================================
 -- 

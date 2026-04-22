@@ -1,5 +1,5 @@
 -- ============================================
--- Migração 016: Percentuais de Premiação Configuráveis por Concurso
+-- Migração 017: Percentuais de premiação configuráveis por concurso
 -- FASE 4: Sorteios e Rateio
 -- ============================================
 -- 

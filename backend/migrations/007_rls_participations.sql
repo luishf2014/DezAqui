@@ -1,5 +1,5 @@
 -- ============================================
--- Migração 006: Row Level Security (RLS) - Participations
+-- Migração 007: Row Level Security (RLS) - Participations
 -- FASE 2: Segurança e Autenticação
 -- ============================================
 -- 

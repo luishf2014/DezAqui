@@ -1,5 +1,5 @@
 -- ============================================
--- Migração 012: Permitir UPDATE de participações para admins
+-- Migração 013: Permitir UPDATE de participações para admins
 -- FASE 1: Fundação do Sistema
 -- ============================================
 -- 
@@ -13,7 +13,7 @@
 -- - Manter segurança: apenas admins podem fazer UPDATE
 --
 -- Contexto:
--- - A migração 006_rls_participations.sql bloqueou UPDATE para todos
+-- - A migração 007_rls_participations.sql bloqueou UPDATE para todos
 -- - Agora precisamos permitir UPDATE apenas para administradores
 -- ============================================
 

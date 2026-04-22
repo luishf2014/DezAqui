@@ -1,5 +1,5 @@
 -- ============================================
--- Migração 017: Tabela de Snapshots de Rateio
+-- Migração 018: Tabela de snapshots de rateio
 -- FASE 4: Sorteios e Rateio
 -- ============================================
 -- 

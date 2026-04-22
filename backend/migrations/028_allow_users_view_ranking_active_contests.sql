@@ -1,12 +1,12 @@
 -- ============================================
--- Migração 027: Permitir usuários verem ranking completo de concursos ativos
+-- Migração 028: Permitir usuários verem ranking completo de concursos ativos
 -- ============================================
 --
 -- Problema: Na página de classificação/ranking, o usuário só via seus próprios
 -- números - não via os outros participantes. A classificação parecia vazia.
 --
 -- Causa: RLS em participations permitia ver outras participações apenas em
--- concursos finalizados (migração 025). Para concursos ATIVOS, a policy
+-- concursos finalizados (migração 026). Para concursos ATIVOS, a policy
 -- "Users can view own participations" restringia à própria participação.
 --
 -- Solução: Adicionar policies para permitir visualizar participações e

@@ -1,5 +1,5 @@
 -- ============================================
--- Migração 019: Adicionar código único aos concursos
+-- Migração 020: Adicionar código único aos concursos
 -- FASE 1: Fundação do Sistema
 -- ============================================
 -- 
