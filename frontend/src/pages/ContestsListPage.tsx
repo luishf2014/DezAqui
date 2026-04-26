@@ -27,7 +27,7 @@ export default function ContestsListPage() {
   const [finishedContests, setFinishedContests] = useState<Contest[]>([])
   const [contestsWithDraws, setContestsWithDraws] = useState<Record<string, boolean>>({})
   const [topWinnersByContest, setTopWinnersByContest] = useState<Record<string, number>>({})
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [dataLoaded, setDataLoaded] = useState(false)
   const [simpleMode, setSimpleMode] = useState(true) // Padrão: modo simples para teste
