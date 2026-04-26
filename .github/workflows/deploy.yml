@@ -35,3 +35,4 @@ jobs:
           port: 65002
           local_path: "./frontend/dist/*"
           remote_path: "/public_html/"
+          sftp_only: true
