@@ -34,5 +34,6 @@ jobs:
           password: ${{ secrets.FTP_PASSWORD }}
           port: 65002
           local_path: "./frontend/dist/*"
-          remote_path: "/public_html/"
+          remote_path: "domains/metaferragista.com.br/public_html/"
+
           sftp_only: true
