@@ -1,3 +1,7 @@
+# Build no GitHub, envio por SFTP (Hostinger). lftp "mirror" coloca o conteúdo
+# de frontend/dist/ na raiz de public_html. (put -r dist/ sem lcd podia gerar
+# public_html/dist/ e o site em / mostrava ficheiros antigos.)
+
 name: Deploy Hostinger
 
 on:
@@ -17,6 +21,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
 
       - name: Instalar dependências
         run: npm install
@@ -26,14 +32,27 @@ jobs:
         run: npm run build
         working-directory: frontend
 
-      - name: Enviar para Hostinger via SFTP
-        uses: wlixcc/SFTP-Deploy-Action@v1.2.5
-        with:
-          username: ${{ secrets.FTP_USERNAME }}
-          server: ${{ secrets.FTP_SERVER }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          port: 65002
-          local_path: "./frontend/dist/*"
-          remote_path: "domains/metaferragista.com.br/public_html/"
+      - name: Listar dist (verificação)
+        run: ls -la frontend/dist && ls -la frontend/dist/assets 2>/dev/null || true
 
-          sftp_only: true
+      - name: Enviar conteúdo de dist/ para a raiz do public_html (lftp + SFTP)
+        env:
+          SFTP_USER: ${{ secrets.FTP_USERNAME }}
+          SFTP_PASS: ${{ secrets.FTP_PASSWORD }}
+          SFTP_HOST: ${{ secrets.FTP_SERVER }}
+          SFTP_PORT: "65002"
+          REMOTE_DIR: domains/metaferragista.com.br/public_html
+        run: |
+          set -e
+          sudo apt-get update -qq
+          sudo apt-get install -y lftp
+          lftp <<LFTP
+          set sftp:connect-program "ssh -a -x -oStrictHostKeyChecking=no -p ${SFTP_PORT}"
+          set net:max-retries 3
+          set net:reconnect-interval-base 5
+          open -u ${SFTP_USER},${SFTP_PASS} sftp://${SFTP_HOST}
+          cd ${REMOTE_DIR}
+          lcd ${GITHUB_WORKSPACE}/frontend/dist
+          mirror -R -v
+          bye
+          LFTP

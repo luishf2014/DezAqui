@@ -5,6 +5,7 @@
  * Funções para criar e gerenciar pagamentos
  */
 import { supabase } from '../lib/supabase'
+import type { ParticipationStatus } from '../types'
 import { Payment } from '../types'
 
 /**
@@ -20,9 +21,35 @@ export async function createCashPayment(params: {
   notes?: string
 }): Promise<Payment> {
   const { data: { user } } = await supabase.auth.getUser()
-  
+
   if (!user) {
     throw new Error('Usuário não autenticado')
+  }
+
+  const existing = await getPaymentsByParticipation(params.participationId)
+  const paidCash = existing.find((p) => p.status === 'paid' && p.payment_method === 'cash')
+
+  if (paidCash) {
+    const { data, error } = await supabase
+      .from('payments')
+      .update({
+        amount: params.amount,
+        paid_at: new Date().toISOString(),
+        external_data: params.notes ? { notes: params.notes } : null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', paidCash.id)
+      .select('*')
+      .maybeSingle()
+
+    if (error) {
+      if (error.code === '42501') {
+        throw new Error('Você não tem permissão para atualizar este pagamento')
+      }
+      throw new Error(`Erro ao atualizar pagamento em dinheiro: ${error.message}`)
+    }
+    if (!data) throw new Error('Pagamento em dinheiro não encontrado após atualização')
+    return data
   }
 
   const { data, error } = await supabase
@@ -30,13 +57,13 @@ export async function createCashPayment(params: {
     .insert({
       participation_id: params.participationId,
       amount: params.amount,
-      status: 'paid', // Pagamento em dinheiro é marcado como pago imediatamente
+      status: 'paid',
       payment_method: 'cash',
       paid_at: new Date().toISOString(),
       external_data: params.notes ? { notes: params.notes } : null,
     })
     .select('*')
-    .maybeSingle() // MODIFIQUEI AQUI - Usar maybeSingle() ao invés de single() para evitar erro 406
+    .maybeSingle()
 
   if (error) {
     if (error.code === '42501') {
@@ -45,6 +72,7 @@ export async function createCashPayment(params: {
     throw new Error(`Erro ao registrar pagamento: ${error.message}`)
   }
 
+  if (!data) throw new Error('Pagamento não retornado após inserção')
   return data
 }
 
@@ -153,11 +181,34 @@ export interface PaymentWithDetails extends Payment {
     ticket_code?: string
     contest_id: string
     user_id: string
+    status?: ParticipationStatus
   } | null
   contest?: {
     id: string
     name: string
   } | null
+}
+
+function dedupeLatestPaidPerParticipation(payments: PaymentWithDetails[]): PaymentWithDetails[] {
+  const sorted = [...payments].sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  )
+  const byPid = new Map<string, PaymentWithDetails>()
+  for (const p of sorted) {
+    if (!byPid.has(p.participation_id)) byPid.set(p.participation_id, p)
+  }
+  return Array.from(byPid.values())
+}
+
+/** Pagamentos pagos que contam para arrecadação no bolão: só bilhetes já ativos; um valor por participação (último pago). */
+function paymentsEligibleForBolaoTotals(payments: PaymentWithDetails[]): PaymentWithDetails[] {
+  const paidActive = payments.filter(
+    (p) =>
+      p.status === 'paid' &&
+      p.participation &&
+      p.participation.status === 'active'
+  )
+  return dedupeLatestPaidPerParticipation(paidActive)
 }
 
 // MODIFIQUEI AQUI - helper para endDate incluir o dia inteiro
@@ -192,6 +243,7 @@ export async function listAllPayments(filters?: PaymentFilters): Promise<Payment
         ticket_code,
         contest_id,
         user_id,
+        status,
         contests (
           id,
           name
@@ -249,6 +301,7 @@ export async function listAllPayments(filters?: PaymentFilters): Promise<Payment
         ticket_code: participationData.ticket_code,
         contest_id: participationData.contest_id,
         user_id: participationData.user_id,
+        status: participationData.status as ParticipationStatus | undefined,
       } : null,
       contest: contestData ? {
         id: contestData.id,
@@ -371,12 +424,12 @@ export interface FinancialStats {
 }
 
 export async function getFinancialStats(filters?: PaymentFilters): Promise<FinancialStats> {
-  // Mantive sua lógica para não mudar comportamento, mas agora listAllPayments retorna consistente
   const payments = await listAllPayments(filters)
+  const bolaoPaid = paymentsEligibleForBolaoTotals(payments)
 
   const stats: FinancialStats = {
     totalRevenue: 0,
-    totalPayments: payments.length,
+    totalPayments: bolaoPaid.length,
     revenueByMethod: {
       pix: 0,
       cash: 0,
@@ -391,30 +444,18 @@ export async function getFinancialStats(filters?: PaymentFilters): Promise<Finan
     averagePayment: 0,
   }
 
-  payments.forEach(payment => {
-    if (payment.status === 'paid') {
-      stats.totalRevenue += payment.amount
-    }
+  bolaoPaid.forEach((payment) => {
+    stats.totalRevenue += payment.amount
+    const method = payment.payment_method
+    if (method === 'pix') stats.revenueByMethod.pix += payment.amount
+    else if (method === 'cash') stats.revenueByMethod.cash += payment.amount
+    else if (method === 'manual') stats.revenueByMethod.manual += payment.amount
+  })
 
-    // Por método
-    if (payment.payment_method === 'pix') {
-      if (payment.status === 'paid') {
-        stats.revenueByMethod.pix += payment.amount
-      }
-    } else if (payment.payment_method === 'cash') {
-      if (payment.status === 'paid') {
-        stats.revenueByMethod.cash += payment.amount
-      }
-    } else if (payment.payment_method === 'manual') {
-      if (payment.status === 'paid') {
-        stats.revenueByMethod.manual += payment.amount
-      }
-    }
+  stats.revenueByStatus.paid = stats.totalRevenue
 
-    // Por status
-    if (payment.status === 'paid') {
-      stats.revenueByStatus.paid += payment.amount
-    } else if (payment.status === 'pending') {
+  payments.forEach((payment) => {
+    if (payment.status === 'pending') {
       stats.revenueByStatus.pending += payment.amount
     } else if (payment.status === 'cancelled') {
       stats.revenueByStatus.cancelled += payment.amount
@@ -423,8 +464,8 @@ export async function getFinancialStats(filters?: PaymentFilters): Promise<Finan
     }
   })
 
-  const paidCount = payments.filter(p => p.status === 'paid').length
-  stats.averagePayment = paidCount > 0 ? stats.totalRevenue / paidCount : 0 // MODIFIQUEI AQUI - evita NaN
+  stats.averagePayment =
+    bolaoPaid.length > 0 ? stats.totalRevenue / bolaoPaid.length : 0
 
   return stats
 }
