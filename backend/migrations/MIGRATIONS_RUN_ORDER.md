@@ -1,6 +1,6 @@
-# Ordem de execução (1 → 37)
+# Ordem de execução (1 → 38)
 
-Há **37** ficheiros `00X_*.sql` nesta pasta. Corra **um de cada vez**, por ordem numérica (001 … 037), colando o conteúdo no SQL Editor do Supabase.
+Há **38** ficheiros `00X_*.sql` nesta pasta. Corra **um de cada vez**, por ordem numérica (001 … 038), colando o conteúdo no SQL Editor do Supabase.
 
 **Requisito:** projeto com `auth.users` (Supabase). A `001` referencia `auth.users`.
 
@@ -43,6 +43,7 @@ Há **37** ficheiros `00X_*.sql` nesta pasta. Corra **um de cada vez**, por orde
 | 35 | `035_add_birth_date_to_profiles.sql` |
 | 36 | `036_site_pages_is_visible.sql` |
 | 37 | `037_count_active_participations_public.sql` |
+| 38 | `038_sum_bolao_collected_public.sql` |
 
 - **Removido:** ficheiros antigos 034/035 do fluxo Pix (placeholder + “reversão” de uma 034 nunca preenchida). O estado de `pix_payment_intents` fica **só** na `031`.
 

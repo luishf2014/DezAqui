@@ -11,6 +11,7 @@ import { listDrawsByContestId } from '../services/drawsService'
 import { getDrawPayoutSummary } from '../services/payoutsService'
 import { Contest } from '../types'
 import { countActiveParticipationsByContest } from '../services/participationsService'
+import { sumBolaoCollectedForContest } from '../services/paymentsService'
 import Header from '../components/Header'
 import Footer from '../components/Footer'
 import ContestStatusBadge from '../components/ContestStatusBadge'
@@ -21,6 +22,7 @@ type TabType = 'active' | 'history'
 
 export default function ContestsListPage() {
   const [poolCountByContest, setPoolCountByContest] = useState<Record<string, number>>({})
+  const [poolCollectedByContest, setPoolCollectedByContest] = useState<Record<string, number>>({})
   const [activeTab, setActiveTab] = useState<TabType>('active')
   const [activeContests, setActiveContests] = useState<Contest[]>([])
   const [finishedContests, setFinishedContests] = useState<Contest[]>([])
@@ -122,10 +124,12 @@ export default function ContestsListPage() {
   useEffect(() => {
     if (!dataLoaded) {
       setPoolCountByContest({})
+      setPoolCollectedByContest({})
       return
     }
     if (activeContests.length === 0 && finishedContests.length === 0) {
       setPoolCountByContest({})
+      setPoolCollectedByContest({})
       return
     }
 
@@ -137,6 +141,7 @@ export default function ContestsListPage() {
         contests.map(async (c) => ({
           id: c.id,
           count: await countActiveParticipationsByContest(c.id),
+          collected: await sumBolaoCollectedForContest(c.id),
         }))
       )
       if (cancelled) return
@@ -144,6 +149,13 @@ export default function ContestsListPage() {
         const next = { ...prev }
         rows.forEach((r) => {
           next[r.id] = r.count
+        })
+        return next
+      })
+      setPoolCollectedByContest((prev) => {
+        const next = { ...prev }
+        rows.forEach((r) => {
+          if (r.collected != null) next[r.id] = r.collected
         })
         return next
       })
@@ -382,6 +394,7 @@ export default function ContestsListPage() {
                   variant="compact"
                   showColumnAmountsOnly
                   participationsCount={poolCountByContest[contest.id]}
+                  collectedAmountOverride={poolCollectedByContest[contest.id]}
                 />
 
                 {/* Botão */}

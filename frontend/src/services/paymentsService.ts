@@ -314,6 +314,27 @@ export async function listAllPayments(filters?: PaymentFilters): Promise<Payment
 }
 
 /**
+ * Soma dos valores efetivamente pagos no bolão (bilhetes ativos, último pago por participação).
+ * RPC `sum_bolao_collected_public` (visitantes/admin); fallback via listAllPayments se precisar.
+ */
+export async function sumBolaoCollectedForContest(contestId: string): Promise<number | null> {
+  const { data, error } = await supabase.rpc('sum_bolao_collected_public', {
+    p_contest_id: contestId,
+  })
+  if (!error && data != null) {
+    const n = Number(data)
+    return Number.isFinite(n) ? n : null
+  }
+
+  try {
+    const payments = await listAllPayments({ contestId })
+    return paymentsEligibleForBolaoTotals(payments).reduce((sum, p) => sum + Number(p.amount), 0)
+  } catch {
+    return null
+  }
+}
+
+/**
  * Verifica se um pagamento Pix foi confirmado (para exibir mensagem de sucesso)
  * Usado em CheckoutPage e CartPage para polling enquanto o usuário vê o QR Code
  *

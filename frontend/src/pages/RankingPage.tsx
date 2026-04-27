@@ -9,6 +9,7 @@ import { useParams, Link } from 'react-router-dom'
 import { getContestById } from '../services/contestsService'
 import { listOfficialRefsByContestId } from '../services/contestOfficialRefsService'
 import { getContestRanking, countActiveParticipationsByContest } from '../services/participationsService'
+import { sumBolaoCollectedForContest } from '../services/paymentsService'
 import { listDrawsByContestId } from '../services/drawsService'
 import { getDrawPayoutSummary, getPayoutsByDraw } from '../services/payoutsService'
 import { Contest, Participation, Draw, ContestOfficialRef } from '../types'
@@ -43,13 +44,21 @@ export default function RankingPage() {
   const [error, setError] = useState<string | null>(null)
   const [officialRefs, setOfficialRefs] = useState<ContestOfficialRef[]>([])
   const [publicActiveParticipationCount, setPublicActiveParticipationCount] = useState<number | null>(null)
+  const [publicCollectedSum, setPublicCollectedSum] = useState<number | null>(null)
 
   useEffect(() => {
     if (!id) return
     setPublicActiveParticipationCount(null)
-    countActiveParticipationsByContest(id)
-      .then(setPublicActiveParticipationCount)
-      .catch(() => setPublicActiveParticipationCount(0))
+    setPublicCollectedSum(null)
+    Promise.all([countActiveParticipationsByContest(id), sumBolaoCollectedForContest(id)])
+      .then(([cnt, sum]) => {
+        setPublicActiveParticipationCount(cnt)
+        setPublicCollectedSum(sum)
+      })
+      .catch(() => {
+        setPublicActiveParticipationCount(0)
+        setPublicCollectedSum(null)
+      })
   }, [id])
 
   useEffect(() => {
@@ -529,6 +538,7 @@ export default function RankingPage() {
                     ? publicActiveParticipationCount
                     : participations.length
                 }
+                collectedAmountOverride={publicCollectedSum !== null ? publicCollectedSum : undefined}
               />
             </div>
           </div>

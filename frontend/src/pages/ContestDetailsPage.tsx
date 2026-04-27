@@ -11,6 +11,7 @@ import { listOfficialRefsByContestId } from '../services/contestOfficialRefsServ
 import { listDrawsByContestId } from '../services/drawsService'
 import { getDrawPayoutSummary, getPayoutsByDraw } from '../services/payoutsService'
 import { getContestRanking, countActiveParticipationsByContest } from '../services/participationsService'
+import { sumBolaoCollectedForContest } from '../services/paymentsService'
 import { Contest, Draw, Participation, ContestOfficialRef } from '../types'
 import { useAuth } from '../contexts/AuthContext'
 import Header from '../components/Header'
@@ -34,6 +35,7 @@ export default function ContestDetailsPage() {
   const [error, setError] = useState<string | null>(null)
   const [officialRefs, setOfficialRefs] = useState<ContestOfficialRef[]>([])
   const [publicActiveParticipationCount, setPublicActiveParticipationCount] = useState<number | null>(null)
+  const [publicCollectedSum, setPublicCollectedSum] = useState<number | null>(null)
 
   useEffect(() => {
     async function loadContestData() {
@@ -72,13 +74,20 @@ export default function ContestDetailsPage() {
     loadContestData()
   }, [id])
 
-  // Contagem pública (anon incl.) para o mesmo cálculo de premiação que utilizador/admin
+  // Contagem + soma real dos pagamentos (bilhetes ativos) — não usar só quantidade × valor atual da cota
   useEffect(() => {
     if (!id) return
     setPublicActiveParticipationCount(null)
-    countActiveParticipationsByContest(id)
-      .then(setPublicActiveParticipationCount)
-      .catch(() => setPublicActiveParticipationCount(0))
+    setPublicCollectedSum(null)
+    Promise.all([countActiveParticipationsByContest(id), sumBolaoCollectedForContest(id)])
+      .then(([cnt, sum]) => {
+        setPublicActiveParticipationCount(cnt)
+        setPublicCollectedSum(sum)
+      })
+      .catch(() => {
+        setPublicActiveParticipationCount(0)
+        setPublicCollectedSum(null)
+      })
   }, [id])
 
   // Participações ativas (ranking) — necessário antes do sorteio para premiação estimada e bloco de resultado
@@ -360,6 +369,7 @@ export default function ContestDetailsPage() {
               ? publicActiveParticipationCount
               : participations.length
           }
+          collectedAmountOverride={publicCollectedSum !== null ? publicCollectedSum : undefined}
         />
 
         {/* Datas */}

@@ -18,6 +18,8 @@ type Props = {
   /** Admin: resumo financeiro completo + R$ e % nas colunas */
   showAmounts?: boolean
   participationsCount?: number
+  /** Soma real dos pagamentos (bilhetes ativos); lista de concursos — substitui quantidade × valor atual da cota */
+  collectedAmountOverride?: number | null
   /** Visitante ou usuário comum: só R$ nas colunas, sem texto "% do valor total..." (lista, detalhes, ranking) */
   showColumnAmountsOnly?: boolean
   /** Admin em ranking: R$ + linha de % nas colunas, sem bloco "Resumo financeiro" */
@@ -29,6 +31,7 @@ export default function ContestPrizePoolInfo({
   variant = 'banner',
   showAmounts = false,
   participationsCount,
+  collectedAmountOverride = null,
   showColumnAmountsOnly = false,
   showColumnAmountsAndPercent = false,
 }: Props) {
@@ -39,9 +42,18 @@ export default function ContestPrizePoolInfo({
     getRateioPercentagesFromContest(contest)
 
   const pv = Number(contest.participation_value) || 0
-  const canEstimate =
+  const hasCollectedOverride =
+    collectedAmountOverride !== null &&
+    collectedAmountOverride !== undefined &&
+    Number.isFinite(Number(collectedAmountOverride))
+  const canEstimateFromCotas =
     participationsCount !== undefined && participationsCount >= 0 && pv > 0
-  const baseArrecadado = canEstimate ? participationsCount * pv : 0
+  const baseArrecadado = hasCollectedOverride
+    ? Math.max(0, Number(collectedAmountOverride))
+    : canEstimateFromCotas
+      ? participationsCount * pv
+      : 0
+  const canEstimate = hasCollectedOverride || canEstimateFromCotas
   const poolTotal = getPrizePoolTotalForContest(baseArrecadado, contest)
   const adminFeeAmount = (poolTotal * pctAdmin) / 100
 
