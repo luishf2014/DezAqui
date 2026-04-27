@@ -4,13 +4,12 @@
  * 
  * Exibe lista de concursos disponíveis para participação
  */
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { listActiveContests, listFinishedContests } from '../services/contestsService'
 import { listDrawsByContestId } from '../services/drawsService'
 import { getDrawPayoutSummary } from '../services/payoutsService'
 import { Contest } from '../types'
-import { supabase } from '../lib/supabase'
 import { countActiveParticipationsByContest } from '../services/participationsService'
 import Header from '../components/Header'
 import Footer from '../components/Footer'
@@ -30,284 +29,132 @@ export default function ContestsListPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [dataLoaded, setDataLoaded] = useState(false)
-  const [simpleMode, setSimpleMode] = useState(true) // Padrão: modo simples para teste
-  const [ultraSimple, setUltraSimple] = useState(false) // Modo ultra-simples para debug
 
   // Função helper para adicionar timeout a qualquer promise
   // `<T,>` evita que o parser TSX interprete `<T>` como tag JSX
   const withTimeout = <T,>(promise: Promise<T>, timeoutMs: number, errorMessage: string): Promise<T> => {
     return Promise.race([
       promise,
-      new Promise<never>((_, reject) => 
+      new Promise<never>((_, reject) =>
         setTimeout(() => reject(new Error(errorMessage)), timeoutMs)
-      )
+      ),
     ])
   }
 
-  // Teste de conexão com Supabase
-  const testConnection = useCallback(async () => {
-    console.log('[ContestsListPage] Testando conexão com Supabase...')
+  const loadInFlight = useRef(false)
+  const hasLoadedListRef = useRef(false)
+
+  const loadContests = useCallback(async (options?: { force?: boolean }) => {
+    if (loadInFlight.current) return
+    if (options?.force) {
+      hasLoadedListRef.current = false
+    }
+    if (hasLoadedListRef.current) return
+    loadInFlight.current = true
     try {
-      const { data, error } = await supabase
-        .from('contests')
-        .select('count', { count: 'exact', head: true })
-      
-      if (error) {
-        console.error('[ContestsListPage] Erro na conexão:', error)
-        return false
-      }
-      
-      console.log('[ContestsListPage] Conexão OK. Total de concursos:', data)
-      return true
+      setLoading(true)
+      setError(null)
+
+      const [activeData, finishedData] = await Promise.all([
+        withTimeout(listActiveContests(), 12000, 'Timeout ao carregar concursos ativos'),
+        withTimeout(listFinishedContests(), 12000, 'Timeout ao carregar concursos finalizados'),
+      ])
+
+      setActiveContests(activeData)
+      setFinishedContests(finishedData)
+      setDataLoaded(true)
+      hasLoadedListRef.current = true
+
+      queueMicrotask(() => {
+        const enrich = async () => {
+          const drawsMap: Record<string, boolean> = {}
+          const topWinnersMap: Record<string, number> = {}
+          const ordered = [...activeData, ...finishedData]
+
+          await Promise.allSettled(
+            ordered.map(async (contest) => {
+              try {
+                const draws = await withTimeout(
+                  listDrawsByContestId(contest.id),
+                  8000,
+                  `Timeout sorteios ${contest.id}`
+                )
+                drawsMap[contest.id] = draws.length > 0
+
+                if (contest.status === 'finished' && draws.length > 0) {
+                  try {
+                    const summary = await withTimeout(
+                      getDrawPayoutSummary(draws[0].id),
+                      8000,
+                      `Timeout resumo prêmios ${draws[0].id}`
+                    )
+                    topWinnersMap[contest.id] = summary.categories.TOP?.winnersCount ?? 0
+                  } catch {
+                    topWinnersMap[contest.id] = 0
+                  }
+                }
+              } catch {
+                drawsMap[contest.id] = false
+              }
+            })
+          )
+
+          setContestsWithDraws((prev) => ({ ...prev, ...drawsMap }))
+          setTopWinnersByContest((prev) => ({ ...prev, ...topWinnersMap }))
+        }
+
+        void enrich()
+      })
     } catch (err) {
-      console.error('[ContestsListPage] Exceção na conexão:', err)
-      return false
+      console.error('[ContestsListPage] Erro ao carregar concursos:', err)
+      setError(err instanceof Error ? err.message : 'Erro ao carregar concursos')
+      setDataLoaded(false)
+    } finally {
+      setLoading(false)
+      loadInFlight.current = false
     }
   }, [])
 
-  // Carregamento ULTRA simples - direto do Supabase
-  const loadContestsUltraSimple = useCallback(async () => {
-    if (loading || dataLoaded) return
-
-    try {
-      setLoading(true)
-      setError(null)
-      console.log('[ContestsListPage] Modo ULTRA simples - carregamento direto...')
-      
-      // Carregar diretamente do Supabase, sem services
-      console.log('[ContestsListPage] Fazendo consulta direta ao Supabase...')
-      
-      const { data: activeData, error: activeError } = await supabase
-        .from('contests')
-        .select('*')
-        .eq('status', 'active')
-        .limit(10) // Limitar para teste
-      
-      if (activeError) {
-        console.error('[ContestsListPage] Erro ao buscar ativos:', activeError)
-        throw new Error(`Erro ativos: ${activeError.message}`)
-      }
-      
-      const { data: finishedData, error: finishedError } = await supabase
-        .from('contests')
-        .select('*')
-        .eq('status', 'finished')
-        .limit(10) // Limitar para teste
-      
-      if (finishedError) {
-        console.error('[ContestsListPage] Erro ao buscar finalizados:', finishedError)
-        throw new Error(`Erro finalizados: ${finishedError.message}`)
-      }
-      
-      console.log('[ContestsListPage] ULTRA simples - Dados carregados:', {
-        ativos: activeData?.length || 0,
-        finalizados: finishedData?.length || 0
-      })
-      
-      setActiveContests(activeData || [])
-      setFinishedContests(finishedData || [])
-      setDataLoaded(true)
-    } catch (err) {
-      console.error('[ContestsListPage] Erro no modo ULTRA simples:', err)
-      setError(err instanceof Error ? err.message : 'Erro ao carregar concursos')
-      setDataLoaded(false)
-    } finally {
-      setLoading(false)
-    }
-  }, [loading, dataLoaded])
-
-  // Carregamento super simples para teste
-  const loadContestsSimple = useCallback(async () => {
-    if (loading || dataLoaded) return
-
-    try {
-      setLoading(true)
-      setError(null)
-      console.log('[ContestsListPage] Modo simples iniciado...')
-      
-      // Primeiro teste de conexão
-      const connectionOk = await testConnection()
-      if (!connectionOk) {
-        throw new Error('Falha na conexão com o banco de dados')
-      }
-      
-      console.log('[ContestsListPage] Carregando concursos ativos...')
-      const activeData = await withTimeout(
-        listActiveContests(), 
-        8000, 
-        'Timeout ao carregar concursos ativos'
-      )
-      
-      console.log('[ContestsListPage] Carregando concursos finalizados...')
-      const finishedData = await withTimeout(
-        listFinishedContests(), 
-        8000, 
-        'Timeout ao carregar concursos finalizados'
-      )
-      
-      console.log('[ContestsListPage] Dados carregados:', {
-        ativos: activeData.length,
-        finalizados: finishedData.length
-      })
-      
-      setActiveContests(activeData)
-      setFinishedContests(finishedData)
-      setDataLoaded(true)
-    } catch (err) {
-      console.error('[ContestsListPage] Erro no modo simples:', err)
-      setError(err instanceof Error ? err.message : 'Erro ao carregar concursos')
-      setDataLoaded(false)
-    } finally {
-      setLoading(false)
-    }
-  }, [loading, dataLoaded, testConnection])
-
-  const loadContests = useCallback(async () => {
-    // Evitar carregar múltiplas vezes
-    if (loading || dataLoaded) return
-
-    try {
-      setLoading(true)
-      setError(null)
-      console.log('[ContestsListPage] Carregando concursos...')
-      
-      // PASSO 1: Carregar concursos básicos com timeout curto
-      const contestsPromise = Promise.all([
-        withTimeout(listActiveContests(), 8000, 'Timeout ao carregar concursos ativos'),
-        withTimeout(listFinishedContests(), 8000, 'Timeout ao carregar concursos finalizados'),
-      ])
-      
-      const [activeData, finishedData] = await contestsPromise
-      console.log('[ContestsListPage] Concursos carregados - Ativos:', activeData.length, 'Finalizados:', finishedData.length)
-      
-      // Atualizar UI imediatamente com dados básicos
-      setActiveContests(activeData)
-      setFinishedContests(finishedData)
-      setDataLoaded(true)
-      setLoading(false)
-      
-      // PASSO 2: Carregar informações detalhadas em background (não bloquear UI)
-      setTimeout(async () => {
-        try {
-          console.log('[ContestsListPage] Carregando informações detalhadas...')
-          const drawsMap: Record<string, boolean> = {}
-          const topWinnersMap: Record<string, number> = {}
-          const allContests = [...activeData, ...finishedData]
-          
-          // Processar apenas 3 concursos por vez para evitar sobrecarga
-          const batchSize = 3
-          for (let i = 0; i < allContests.length; i += batchSize) {
-            const batch = allContests.slice(i, i + batchSize)
-            
-            const results = await Promise.allSettled(
-              batch.map(async (contest) => {
-                try {
-                  // Timeout específico para cada consulta
-                  const draws = await withTimeout(
-                    listDrawsByContestId(contest.id), 
-                    5000, 
-                    `Timeout ao verificar sorteios do concurso ${contest.id}`
-                  )
-                  drawsMap[contest.id] = draws.length > 0
-                  
-                  // Para concursos finalizados com sorteio, buscar contagem de ganhadores TOP
-                  if (contest.status === 'finished' && draws.length > 0) {
-                    try {
-                      const summary = await withTimeout(
-                        getDrawPayoutSummary(draws[0].id),
-                        5000,
-                        `Timeout ao carregar resumo de prêmios do sorteio ${draws[0].id}`
-                      )
-                      topWinnersMap[contest.id] = summary.categories.TOP?.winnersCount ?? 0
-                    } catch {
-                      topWinnersMap[contest.id] = 0
-                    }
-                  }
-                } catch (err) {
-                  console.warn(`Erro ao processar concurso ${contest.id}:`, err)
-                  drawsMap[contest.id] = false
-                }
-              })
-            )
-            
-            // Atualizar UI progressivamente
-            setContestsWithDraws({...drawsMap})
-            setTopWinnersByContest({...topWinnersMap})
-            
-            // Pequena pausa entre lotes para não sobrecarregar
-            if (i + batchSize < allContests.length) {
-              await new Promise(resolve => setTimeout(resolve, 500))
-            }
-          }
-          
-          console.log('[ContestsListPage] Informações detalhadas carregadas')
-        } catch (err) {
-          console.warn('[ContestsListPage] Erro ao carregar informações detalhadas:', err)
-          // Não mostrar erro para o usuário, pois os dados básicos já foram carregados
-        }
-      }, 100) // Pequeno delay para permitir que a UI seja atualizada primeiro
-      
-    } catch (err) {
-      console.error('[ContestsListPage] Erro ao carregar concursos:', err)
-      const errorMessage = err instanceof Error ? err.message : 'Erro ao carregar concursos'
-      setError(errorMessage)
-      setDataLoaded(false) // Permite nova tentativa
-      setLoading(false)
-    }
-  }, [loading, dataLoaded])
-
   useEffect(() => {
-    console.log('[ContestsListPage] useEffect - dataLoaded:', dataLoaded, 'loading:', loading, 'ultraSimple:', ultraSimple, 'simpleMode:', simpleMode)
-    if (!dataLoaded && !loading) {
-      if (ultraSimple) {
-        console.log('[ContestsListPage] Iniciando loadContestsUltraSimple...')
-        loadContestsUltraSimple()
-      } else if (simpleMode) {
-        console.log('[ContestsListPage] Iniciando loadContestsSimple...')
-        loadContestsSimple()
-      } else {
-        console.log('[ContestsListPage] Iniciando loadContests completo...')
-        loadContests()
-      }
-    }
-  }, [loadContests, loadContestsSimple, loadContestsUltraSimple, dataLoaded, loading, simpleMode, ultraSimple])
-
-  // Reset quando alterar modo
-  useEffect(() => {
-    setDataLoaded(false)
-    setLoading(false)
-    setActiveContests([])
-    setFinishedContests([])
-    setContestsWithDraws({})
-    setTopWinnersByContest({})
-    setPoolCountByContest({})
-    setError(null)
-  }, [simpleMode, ultraSimple])
+    void loadContests()
+  }, [loadContests])
 
   useEffect(() => {
     if (!dataLoaded) {
       setPoolCountByContest({})
       return
     }
-    const all = [...activeContests, ...finishedContests]
-    if (all.length === 0) {
+    if (activeContests.length === 0 && finishedContests.length === 0) {
       setPoolCountByContest({})
       return
     }
+
     let cancelled = false
-    Promise.all(
-      all.map(async (c) => ({
-        id: c.id,
-        count: await countActiveParticipationsByContest(c.id),
-      }))
-    ).then((rows) => {
+
+    const loadCounts = async (contests: Contest[]) => {
+      if (contests.length === 0) return
+      const rows = await Promise.all(
+        contests.map(async (c) => ({
+          id: c.id,
+          count: await countActiveParticipationsByContest(c.id),
+        }))
+      )
       if (cancelled) return
-      const next: Record<string, number> = {}
-      rows.forEach((r) => {
-        next[r.id] = r.count
+      setPoolCountByContest((prev) => {
+        const next = { ...prev }
+        rows.forEach((r) => {
+          next[r.id] = r.count
+        })
+        return next
       })
-      setPoolCountByContest(next)
-    })
+    }
+
+    void (async () => {
+      await loadCounts(activeContests)
+      if (cancelled) return
+      await loadCounts(finishedContests)
+    })()
+
     return () => {
       cancelled = true
     }
@@ -338,35 +185,16 @@ export default function ContestsListPage() {
             <div className="text-red-600 text-4xl mb-4">⚠️</div>
             <h2 className="text-xl font-bold text-[#1F1F1F] mb-2">Erro ao Carregar</h2>
             <p className="text-[#1F1F1F]/70 mb-6">{error}</p>
-            <div className="flex gap-3 justify-center">
-              <button
-                onClick={() => {
-                  setError(null)
-                  setDataLoaded(false)
-                  if (ultraSimple) {
-                    loadContestsUltraSimple()
-                  } else if (simpleMode) {
-                    loadContestsSimple()
-                  } else {
-                    loadContests()
-                  }
-                }}
-                className="px-6 py-3 bg-[#1E7F43] text-white rounded-xl font-semibold hover:bg-[#3CCB7F] transition-colors"
-              >
-                Tentar Novamente
-              </button>
-              <button
-                onClick={() => {
-                  setUltraSimple(true)
-                  setSimpleMode(false)
-                  setError(null)
-                  setDataLoaded(false)
-                }}
-                className="px-4 py-3 bg-red-500 text-white rounded-xl font-semibold hover:bg-red-600 transition-colors text-sm"
-              >
-                Ultra Simples
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setError(null)
+                void loadContests({ force: true })
+              }}
+              className="px-6 py-3 bg-[#1E7F43] text-white rounded-xl font-semibold hover:bg-[#3CCB7F] transition-colors"
+            >
+              Tentar Novamente
+            </button>
           </div>
         </div>
         <Footer />

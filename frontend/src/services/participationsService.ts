@@ -473,6 +473,17 @@ export async function getContestRanking(
 
 /** Contagem de participações ativas (mesma base do ranking) — ex.: painel admin com valores estimados */
 export async function countActiveParticipationsByContest(contestId: string): Promise<number> {
+  const { data: rpcN, error: rpcErr } = await supabase.rpc('count_active_participations_public', {
+    p_contest_id: contestId,
+  })
+  if (!rpcErr && rpcN != null) {
+    const n = Number(rpcN)
+    return Number.isFinite(n) ? n : 0
+  }
+  if (rpcErr) {
+    console.warn('[countActiveParticipationsByContest] rpc', rpcErr)
+  }
+
   const { count, error } = await supabase
     .from('participations')
     .select('*', { count: 'exact', head: true })

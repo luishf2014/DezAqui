@@ -10,7 +10,7 @@ import { getContestById } from '../services/contestsService'
 import { listOfficialRefsByContestId } from '../services/contestOfficialRefsService'
 import { listDrawsByContestId } from '../services/drawsService'
 import { getDrawPayoutSummary, getPayoutsByDraw } from '../services/payoutsService'
-import { getContestRanking } from '../services/participationsService'
+import { getContestRanking, countActiveParticipationsByContest } from '../services/participationsService'
 import { Contest, Draw, Participation, ContestOfficialRef } from '../types'
 import { useAuth } from '../contexts/AuthContext'
 import Header from '../components/Header'
@@ -33,6 +33,7 @@ export default function ContestDetailsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [officialRefs, setOfficialRefs] = useState<ContestOfficialRef[]>([])
+  const [publicActiveParticipationCount, setPublicActiveParticipationCount] = useState<number | null>(null)
 
   useEffect(() => {
     async function loadContestData() {
@@ -69,6 +70,15 @@ export default function ContestDetailsPage() {
     }
 
     loadContestData()
+  }, [id])
+
+  // Contagem pública (anon incl.) para o mesmo cálculo de premiação que utilizador/admin
+  useEffect(() => {
+    if (!id) return
+    setPublicActiveParticipationCount(null)
+    countActiveParticipationsByContest(id)
+      .then(setPublicActiveParticipationCount)
+      .catch(() => setPublicActiveParticipationCount(0))
   }, [id])
 
   // Participações ativas (ranking) — necessário antes do sorteio para premiação estimada e bloco de resultado
@@ -345,7 +355,11 @@ export default function ContestDetailsPage() {
           variant="banner"
           showAmounts={isAdmin}
           showColumnAmountsOnly={!isAdmin}
-          participationsCount={participations.length}
+          participationsCount={
+            publicActiveParticipationCount !== null
+              ? publicActiveParticipationCount
+              : participations.length
+          }
         />
 
         {/* Datas */}

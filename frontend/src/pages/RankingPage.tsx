@@ -8,7 +8,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { getContestById } from '../services/contestsService'
 import { listOfficialRefsByContestId } from '../services/contestOfficialRefsService'
-import { getContestRanking } from '../services/participationsService'
+import { getContestRanking, countActiveParticipationsByContest } from '../services/participationsService'
 import { listDrawsByContestId } from '../services/drawsService'
 import { getDrawPayoutSummary, getPayoutsByDraw } from '../services/payoutsService'
 import { Contest, Participation, Draw, ContestOfficialRef } from '../types'
@@ -42,6 +42,15 @@ export default function RankingPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [officialRefs, setOfficialRefs] = useState<ContestOfficialRef[]>([])
+  const [publicActiveParticipationCount, setPublicActiveParticipationCount] = useState<number | null>(null)
+
+  useEffect(() => {
+    if (!id) return
+    setPublicActiveParticipationCount(null)
+    countActiveParticipationsByContest(id)
+      .then(setPublicActiveParticipationCount)
+      .catch(() => setPublicActiveParticipationCount(0))
+  }, [id])
 
   useEffect(() => {
     if (!id) {
@@ -53,18 +62,20 @@ export default function RankingPage() {
       return
     }
 
+    const contestId = id
+
     async function loadRankingData() {
       try {
         setLoading(true)
         setError(null)
 
-        console.log('MODIFIQUEI AQUI [RankingPage] loadRankingData START - contestId=', id)
+        console.log('MODIFIQUEI AQUI [RankingPage] loadRankingData START - contestId=', contestId)
 
         const [contestData, rankingData, drawsData, refsData] = await Promise.all([
-          getContestById(id),
-          getContestRanking(id, { includeUserEmail: isAdmin }),
-          listDrawsByContestId(id),
-          listOfficialRefsByContestId(id).catch(() => []),
+          getContestById(contestId),
+          getContestRanking(contestId, { includeUserEmail: isAdmin }),
+          listDrawsByContestId(contestId),
+          listOfficialRefsByContestId(contestId).catch(() => []),
         ])
 
         console.log('MODIFIQUEI AQUI [RankingPage] contestData exists=', !!contestData)
@@ -513,7 +524,11 @@ export default function RankingPage() {
                 variant="banner"
                 showColumnAmountsOnly={!isAdmin}
                 showColumnAmountsAndPercent={isAdmin}
-                participationsCount={participations.length}
+                participationsCount={
+                  publicActiveParticipationCount !== null
+                    ? publicActiveParticipationCount
+                    : participations.length
+                }
               />
             </div>
           </div>
