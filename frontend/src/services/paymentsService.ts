@@ -318,12 +318,24 @@ export async function listAllPayments(filters?: PaymentFilters): Promise<Payment
  * RPC `sum_bolao_collected_public` (visitantes/admin); fallback via listAllPayments se precisar.
  */
 export async function sumBolaoCollectedForContest(contestId: string): Promise<number | null> {
-  const { data, error } = await supabase.rpc('sum_bolao_collected_public', {
-    p_contest_id: contestId,
-  })
-  if (!error && data != null) {
-    const n = Number(data)
-    return Number.isFinite(n) ? n : null
+  const rpcOnce = async (): Promise<number | null> => {
+    const { data, error } = await supabase.rpc('sum_bolao_collected_public', {
+      p_contest_id: contestId,
+    })
+    if (!error && data != null) {
+      const n = Number(data)
+      return Number.isFinite(n) ? n : null
+    }
+    return null
+  }
+
+  let summed = await rpcOnce()
+  if (summed === null) {
+    await new Promise((r) => setTimeout(r, 400))
+    summed = await rpcOnce()
+  }
+  if (summed !== null) {
+    return summed
   }
 
   try {

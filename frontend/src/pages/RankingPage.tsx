@@ -8,8 +8,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { getContestById } from '../services/contestsService'
 import { listOfficialRefsByContestId } from '../services/contestOfficialRefsService'
-import { getContestRanking, countActiveParticipationsByContest } from '../services/participationsService'
-import { sumBolaoCollectedForContest } from '../services/paymentsService'
+import { getContestRanking } from '../services/participationsService'
+import { useContestBolaoPublicTotals } from '../hooks/useContestBolaoPublicTotals'
 import { listDrawsByContestId } from '../services/drawsService'
 import { getDrawPayoutSummary, getPayoutsByDraw } from '../services/payoutsService'
 import { Contest, Participation, Draw, ContestOfficialRef } from '../types'
@@ -43,23 +43,7 @@ export default function RankingPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [officialRefs, setOfficialRefs] = useState<ContestOfficialRef[]>([])
-  const [publicActiveParticipationCount, setPublicActiveParticipationCount] = useState<number | null>(null)
-  const [publicCollectedSum, setPublicCollectedSum] = useState<number | null>(null)
-
-  useEffect(() => {
-    if (!id) return
-    setPublicActiveParticipationCount(null)
-    setPublicCollectedSum(null)
-    Promise.all([countActiveParticipationsByContest(id), sumBolaoCollectedForContest(id)])
-      .then(([cnt, sum]) => {
-        setPublicActiveParticipationCount(cnt)
-        setPublicCollectedSum(sum)
-      })
-      .catch(() => {
-        setPublicActiveParticipationCount(0)
-        setPublicCollectedSum(null)
-      })
-  }, [id])
+  const { publicActiveParticipationCount, publicCollectedSum } = useContestBolaoPublicTotals(id)
 
   useEffect(() => {
     if (!id) {
@@ -256,23 +240,32 @@ export default function RankingPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [participations, selectedDrawId, draws, drawsSortedAsc])
 
-  // MODIFIQUEI AQUI - total arrecadado (summary se existir, senão fallback)
-  const getBaseArrecadado = () => {
-    const fromSummary =
-      payoutSummary?.totalCollected ??
-      payoutSummary?.total_amount ??
-      payoutSummary?.totalAmount ??
-      payoutSummary?.total_paid ??
-      null
+  // Mesma fonte do bloco "Premiação do bolão": soma dos pagamentos (cotas já pagas), não qty × valor atual da cota.
+  // payoutSummary não traz totalCollected — o fallback antigo (participações × participation_value) gerava valores divergentes.
+  const getBaseArrecadado = (): number => {
+    if (
+      publicCollectedSum !== null &&
+      publicCollectedSum !== undefined &&
+      Number.isFinite(Number(publicCollectedSum))
+    ) {
+      return Math.max(0, Number(publicCollectedSum))
+    }
 
-    if (fromSummary !== null && fromSummary !== undefined) {
-      const n = Number(fromSummary)
+    const fromLegacySummary =
+      (payoutSummary as { totalCollected?: number; total_amount?: number; totalAmount?: number; total_paid?: number } | null)?.totalCollected ??
+      (payoutSummary as any)?.total_amount ??
+      (payoutSummary as any)?.totalAmount ??
+      (payoutSummary as any)?.total_paid ??
+      undefined
+    if (fromLegacySummary !== undefined && fromLegacySummary !== null) {
+      const n = Number(fromLegacySummary)
       if (Number.isFinite(n) && n > 0) return n
     }
 
-    // fallback: qtd participações * valor da participação
+    const cnt =
+      publicActiveParticipationCount !== null ? publicActiveParticipationCount : participations.length
     const value = Number((contest as any)?.participation_value || 0)
-    return Number.isFinite(value) ? participations.length * value : 0
+    return Number.isFinite(value) && cnt >= 0 ? cnt * value : 0
   }
 
   /** MODIFIQUEI AQUI - Base dos % = arrecadação + extra fixo (se ativo no concurso) */
@@ -297,6 +290,30 @@ export default function RankingPage() {
 
     const categoryTotal = totalCollected * (percent / 100)
     return categoryTotal / winnersCount
+  }
+
+  /**
+   * Valor por ganhador na UI: com arrecadação real (publicCollectedSum), usa sempre a mesma fórmula do bolão
+   * (% sobre o pool × nº de ganhadores mostrado). O resumo do RPC às vezes traz amountPerWinner calculado com
+   * outra contagem de ganhadores (ex.: LOWEST pago para 6 bilhetes mas só 4 válidos no sorteio) — aí 15,75÷6 ≠ 15,75÷4.
+   */
+  const getDisplayedAmountPerWinner = (
+    category: 'TOP' | 'SECOND' | 'LOWEST',
+    summaryRow: { amountPerWinner: number } | null | undefined,
+    winnersCount: number
+  ) => {
+    const hasFinancialBase =
+      publicCollectedSum !== null &&
+      publicCollectedSum !== undefined &&
+      Number.isFinite(Number(publicCollectedSum))
+
+    if (hasFinancialBase && winnersCount > 0) {
+      return calcAmountPerWinner(category, winnersCount)
+    }
+
+    const fromDb = Number(summaryRow?.amountPerWinner ?? 0)
+    if (Number.isFinite(fromDb) && fromDb > 0) return fromDb
+    return calcAmountPerWinner(category, winnersCount)
   }
 
   // MODIFIQUEI AQUI - calcular ganhadores por SCORE (sempre definido)
@@ -633,7 +650,7 @@ export default function RankingPage() {
                         <div className="text-2xl font-bold mb-1">{drawWinnersByScore.TOP.score} acertos</div>
                         <div className="text-sm mb-2">{drawWinnersByScore.TOP.winnersCount} ganhador(es)</div>
                         <div className="text-lg font-bold">
-                          R$ {Number(calcAmountPerWinner('TOP', drawWinnersByScore.TOP.winnersCount) || 0).toFixed(2).replace('.', ',')}
+                          R$ {Number(getDisplayedAmountPerWinner('TOP', payoutSummary?.categories?.TOP, drawWinnersByScore.TOP.winnersCount) || 0).toFixed(2).replace('.', ',')}
                         </div>
                         <div className="text-xs opacity-75 mt-1">por ganhador</div>
                       </>
@@ -657,7 +674,7 @@ export default function RankingPage() {
                         <div className="text-2xl font-bold mb-1">{drawWinnersByScore.SECOND.score} acertos</div>
                         <div className="text-sm mb-2">{drawWinnersByScore.SECOND.winnersCount} ganhador(es)</div>
                         <div className="text-lg font-bold">
-                          R$ {Number(calcAmountPerWinner('SECOND', drawWinnersByScore.SECOND.winnersCount) || 0).toFixed(2).replace('.', ',')}
+                          R$ {Number(getDisplayedAmountPerWinner('SECOND', payoutSummary?.categories?.SECOND, drawWinnersByScore.SECOND.winnersCount) || 0).toFixed(2).replace('.', ',')}
                         </div>
                         <div className="text-xs opacity-75 mt-1">por ganhador</div>
                       </>
@@ -681,7 +698,7 @@ export default function RankingPage() {
                         <div className="text-2xl font-bold mb-1">{drawWinnersByScore.LOWEST.score} acertos</div>
                         <div className="text-sm mb-2">{drawWinnersByScore.LOWEST.winnersCount} ganhador(es)</div>
                         <div className="text-lg font-bold">
-                          R$ {Number(calcAmountPerWinner('LOWEST', drawWinnersByScore.LOWEST.winnersCount) || 0).toFixed(2).replace('.', ',')}
+                          R$ {Number(getDisplayedAmountPerWinner('LOWEST', payoutSummary?.categories?.LOWEST, drawWinnersByScore.LOWEST.winnersCount) || 0).toFixed(2).replace('.', ',')}
                         </div>
                         <div className="text-xs opacity-75 mt-1">por ganhador</div>
                       </>
@@ -969,11 +986,10 @@ export default function RankingPage() {
                       return { TOP: topCount, SECOND: secondCount, LOWEST: lowestCount }
                     }
 
-                    // MODIFIQUEI AQUI - Prêmio esperado: prioridade % do concurso; fallback summary
+                    // Prêmio: payout do sorteio (DB); se não houver, mesmo cálculo do bolão (% sobre arrecadação real)
                     const getExpectedPrize = (participation: ParticipationWithUser) => {
                       if (!selectedDrawId) return { isWinner: false, category: 'NONE' as ScoreCategory, amount: 0 }
 
-                      // MODIFIQUEI AQUI - Participações criadas após o sorteio nunca recebem prêmio
                       if (participationsCreatedAfterDraw.has(participation.id)) {
                         return { isWinner: false, category: 'NONE' as ScoreCategory, amount: 0 }
                       }
@@ -986,27 +1002,14 @@ export default function RankingPage() {
                       const winnersCount =
                         cat === 'TOP' ? wc.TOP : cat === 'SECOND' ? wc.SECOND : wc.LOWEST
 
-                      // MODIFIQUEI AQUI - valor calculado pela % do concurso (fonte principal)
-                      const amountFromPercent =
-                        winnersCount > 0
-                          ? Number(calcAmountPerWinner(cat as 'TOP' | 'SECOND' | 'LOWEST', winnersCount) || 0)
-                          : 0
-
-                      // MODIFIQUEI AQUI - fallback: caso backend tenha vindo com amountPerWinner
                       const prize = getPrizeByScoreCategory(cat)
-                      const amountFromSummary = Number(prize?.amountPerWinner || 0)
-
-                      const amount = amountFromPercent > 0 ? amountFromPercent : amountFromSummary
-
-                      console.log('MODIFIQUEI AQUI [RankingPage] getExpectedPrize participationId=', participation.id, {
-                        selectedDrawId,
-                        score,
-                        cat,
-                        winnersCount,
-                        amountFromPercent,
-                        amountFromSummary,
-                        amountFinal: amount,
-                      })
+                      const amount =
+                        winnersCount > 0
+                          ? Number(
+                              getDisplayedAmountPerWinner(cat as 'TOP' | 'SECOND' | 'LOWEST', prize, winnersCount) ||
+                                0
+                            )
+                          : 0
 
                       return { isWinner: amount > 0, category: cat, amount }
                     }
