@@ -8,7 +8,7 @@
 ![Vite](https://img.shields.io/badge/Vite-5-646CFF?style=for-the-badge&logo=vite&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
 ![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white)
-![Pix](https://img.shields.io/badge/Pix-Asaas-00A859?style=for-the-badge)
+![Mercado Pago Pix](https://img.shields.io/badge/Mercado_Pago-Pix-00B1EA?style=for-the-badge)
 ![License](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)
 
 [📦 Funcionalidades](#-principais-funcionalidades) •
@@ -24,13 +24,16 @@
 
 ## 🎉 Atualizações Importantes
 
-- ✅ Integração completa com Pix (Asaas) via Edge Functions  
-- ✅ Finalização automática do concurso ao criar o primeiro sorteio  
-- ✅ Ranking em tempo real com medalhas por categoria  
-- ✅ Premiação automática baseada em percentuais configuráveis  
-- ✅ Suporte a múltiplos sorteios por concurso  
-- ✅ Relatórios profissionais (CSV, PDF e Excel)  
-- ✅ Ativação automática (Pix) e manual (dinheiro)  
+- ✅ Pix via **Mercado Pago**, com secrets só nas **Supabase Edge Functions** (`mercadopago-create-pix` / `mercadopago-webhook`)
+- ✅ Contas de usuário **ativas ou inativas** (`profiles.is_active`) para controlar participação e fluxos relacionados
+- ✅ Fluxo **cambistas / indicações**: código de referral, **comissões sobre vendas pagas**, créditos de bilhete bonificado a cada **10** vendas qualificadas
+- ✅ **Área «Meu link»** (vendedor logado) e painel admin **Parceiros e comissões** (`/admin/partners`), incluindo **bilhetes bonificados** (valor zero na arrecadação pública — opcionalmente debite ou não um crédito de indicação)
+- ✅ Encerramento de concurso e sorteios: comportamento atual depende das **migrations** já aplicadas (evita afirmar regra única aqui)
+- ✅ Ranking sempre visível, com medalhas por **categoria** de prémio
+- ✅ Premiação automática segundo percentuais configuráveis do bolão  
+- ✅ Múltiplos sorteios por concurso  
+- ✅ Relatórios e exportações (CSV, PDF, Excel, conforme páginas ativas)
+- ✅ Ativação de participações: Pix (automático por webhook) e dinheiro (manual)
 - ✅ Sistema de cupons e descontos no checkout  
 
 ---
@@ -85,6 +88,7 @@ Eliminar a necessidade de múltiplos sistemas, centralizando em uma única plata
   - Código único
   - Status da participação
   - Resultado financeiro
+- **Vendedor** (utilizadores promovidos no admin): página **Meu link** com código de referral, resumo e resgate opcional de **bilhete bonificado por crédito**, quando a conta está ativa e as regras do produto o permitem.
 
 ### 🛠️ Administrador
 
@@ -96,12 +100,15 @@ Eliminar a necessidade de múltiplos sistemas, centralizando em uma única plata
   - Percentuais de premiação
 - Gestão de sorteios:
   - Múltiplos sorteios
-  - Encerramento automático
+  - Encerramento do concurso conforme migrações aplicadas ao projeto
 - Ativação de participações:
-  - Pix (webhook)
+  - Pix Mercado Pago (webhook)
   - Dinheiro (manual)
+- Parceiros, comissões e bonificações por indicação (`/admin/partners`)
+- Participações bonificadas manuais (institucionais ou com consumo de crédito de indicação, conforme política configurada na base)
 - Financeiro e relatórios
 - Sistema de descontos
+- Gestão de participantes e perfil (CPF obrigatório onde aplicável ao Pix)
 
 ---
 
@@ -109,10 +116,10 @@ Eliminar a necessidade de múltiplos sistemas, centralizando em uma única plata
 
 - Ranking sempre exibido, mesmo sem ganhadores
 - Pontuação baseada em acertos
-- Premiação automática por categorias:
-  - 🥇 **TOP** — maior pontuação
-  - 🥈 **SECOND** — segunda maior
-  - 🥉 **LOWEST** — menor pontuação positiva
+- Premiação automática por categorias configuráveis (exemplos comuns neste projeto):
+  - 🥇 **TOP** — acertos máximos configurados no bolão
+  - 🥈 **SECOND** — degrau de acertos seguinte conforme definições do bolão
+  - 🥉 **LOWEST** — entre as menores pontuações positivas
 - Empates tratados corretamente
 - Rateio proporcional salvo para auditoria
 - Medalhas representam **categoria**, não posição matemática
@@ -139,9 +146,9 @@ Eliminar a necessidade de múltiplos sistemas, centralizando em uma única plata
 - Edge Functions
 
 ## Pagamentos
-- Asaas (Pix)
-- QR Code dinâmico
-- Webhooks seguros
+- Mercado Pago (Pix via API)
+- QR Code dinâmico / copia e cola conforme fluxo da função servidor
+- Webhook dedicado (`mercadopago-webhook`) com validação de token/secrets em ambiente servidor
 
 ## DevOps & Tools
 - Git & GitHub
@@ -157,8 +164,8 @@ Camadas de Proteção
  - JWT seguro
  - Controle de acesso por perfil (Admin / Usuário)
  - Row Level Security (RLS) no banco de dados
- - API Key do Asaas isolada em Supabase Edge Functions
- - Webhook com validação por token
+ - Credenciais do Mercado Pago (access token etc.) apenas em Supabase Edge Functions
+ - Webhook com validação por token configurável (ver secrets da pasta `supabase/functions`)
  - Processamento idempotente
  - Transações seguras (pagamento + ativação)
 
@@ -169,7 +176,7 @@ Camadas de Proteção
    - Node.js 18+
    - Git
    - Conta no Supabase
-   - Conta no Asaas (sandbox ou produção)
+   - Conta / credenciais Mercado Pago (homologação ou produção), conforme o ambiente que for usar
 
 Passo a passo
 ```
@@ -201,11 +208,12 @@ dezaqui/
 │       └── lib/              # Utilitários e clientes (Supabase)
 ├── supabase/                 # Backend serverless
 │   └── functions/            # Edge Functions
-│       ├── asaas-create-pix/ # Criação de pagamentos Pix
-│       ├── asaas-webhook/    # Webhook de confirmação
-│       └── README.md
+│       ├── mercadopago-create-pix/ # Criação de pagamentos Pix no servidor
+│       ├── mercadopago-webhook/    # Confirmação de pagamentos
+│       └── README.md               # pode conter nomenclatura legada — ver código das funções
 ├── backend/
-│   └── migrations/           # Migrações SQL
+│   └── migrations/           # Migrações SQL (`001_*` …; executar em ordem numérica crescente)
+│       └── MIGRATIONS_RUN_ORDER.md # Guia inicial; há migrações além das listadas até ao último número na pasta — siga sempre a ordem dos ficheiros
 └── README.md
 ```
 ---
@@ -214,9 +222,11 @@ dezaqui/
  - ✅ Sistema de autenticação
  - ✅ Participações e ranking
  - ✅ Sorteios múltiplos
- - ✅ Integração Pix
- - ✅ Painel administrativo
- - ✅ Relatórios financeiros
+ - ✅ Integração Pix (Mercado Pago + webhook)
+ - ✅ Painel administrativo (concursos, sorteios, participantes, parceiros)
+ - ✅ Indicações, comissões de vendedor e bilhetes bonificados por crédito / institucional
+ - ✅ Área logada para vendedor (link de indicação / resumo próprio onde aplicável)
+ - ✅ Relatórios financeiros e exportações disponíveis no produto
 
 ----
 

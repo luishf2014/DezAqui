@@ -81,7 +81,16 @@ export async function adminCreateBonusParticipationRpc(params: {
     p_bonus_origin_user_id: params.bonusOriginUserId ?? null,
     p_consume_referral_credit: Boolean(params.consumeReferralCredit),
   })
-  if (error) throw new Error(error.message)
+  if (error) {
+    const code = error.code != null ? String(error.code).trim() : ''
+    const bits = [
+      error.message,
+      error.details && typeof error.details === 'string' && error.details.trim() ? error.details.trim() : null,
+      error.hint && typeof error.hint === 'string' && error.hint.trim() ? error.hint.trim() : null,
+      code ? `código ${code}` : null,
+    ].filter(Boolean) as string[]
+    throw new Error(bits.join(' · '))
+  }
   const id = data as string
   return id
 }
