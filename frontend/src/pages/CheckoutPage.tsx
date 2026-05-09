@@ -7,7 +7,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate, useLocation, Link } from 'react-router-dom'
 import { getContestById } from '../services/contestsService'
-import { createParticipation } from '../services/participationsService'
+import { createParticipation, redeemReferralFreeCreditParticipation } from '../services/participationsService'
 import { createPixPayment } from '../services/mercadopagoService'
 import { checkPixPaymentStatus } from '../services/paymentsService'
 import { getDiscountByCode, calculateDiscountedPrice, incrementDiscountUses } from '../services/discountsService'
@@ -15,6 +15,7 @@ import { Contest, Participation, Discount } from '../types'
 import { useAuth } from '../contexts/AuthContext'
 import Header from '../components/Header'
 import Footer from '../components/Footer'
+import { peekPendingReferralCode, clearPendingReferralCode } from '../utils/referralCodeStorage'
 
 interface LocationState {
   selectedNumbers: number[]
@@ -52,7 +53,7 @@ export default function CheckoutPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const location = useLocation()
-  const { user, profile, loading: authLoading } = useAuth()
+  const { user, profile, loading: authLoading, refreshProfile } = useAuth()
   const [contest, setContest] = useState<Contest | null>(null)
   const [participation, setParticipation] = useState<Participation | null>(null)
   const [selectedNumbers, setSelectedNumbers] = useState<number[]>([])
@@ -275,6 +276,11 @@ export default function CheckoutPage() {
   const handleCashPayment = async () => {
     if (!contest || !profile || selectedNumbers.length === 0) return
 
+    if (profile.is_active === false) {
+      setError('Conta inativa — não é possível concluir a compra. Entre em contato com o suporte.')
+      return
+    }
+
     // Evitar múltiplas chamadas simultâneas
     if (processing || participationCreatedRef.current) return
 
@@ -322,6 +328,7 @@ export default function CheckoutPage() {
 
       // Limpar sessionStorage após sucesso
       sessionStorage.removeItem('dezaqui_checkout')
+      clearPendingReferralCode()
 
       setSuccess(true)
     } catch (err) {
@@ -411,8 +418,49 @@ export default function CheckoutPage() {
     setDiscountError(null)
   }
 
+  // MODIFIQUEI AQUI: usar crédito de indicação (sem pagamento; não conta na arrecadação)
+  const handleRedeemFreeCredit = async () => {
+    if (!contest || !profile || selectedNumbers.length === 0) return
+    if (profile.is_active === false) {
+      setError('Conta inativa — não é possível usar créditos.')
+      return
+    }
+    if ((profile.referral_bonus_credits ?? 0) <= 0) return
+    if (processing) return
+
+    try {
+      setProcessing(true)
+      setError(null)
+      const result = await redeemReferralFreeCreditParticipation({
+        contestId: contest.id,
+        numbers: selectedNumbers,
+      })
+      clearPendingReferralCode()
+      sessionStorage.removeItem('dezaqui_checkout')
+      await refreshProfile()
+      navigate('/compra/sucesso', {
+        replace: true,
+        state: {
+          paymentMethod: 'pix',
+          ticketCodes: result.ticket_code ? [result.ticket_code] : [],
+          contestId: result.contest_id,
+          fromCart: false,
+        },
+      })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Não foi possível usar o crédito de indicação')
+    } finally {
+      setProcessing(false)
+    }
+  }
+
   const handlePixPayment = async () => {
     if (!contest || !profile || selectedNumbers.length === 0) return
+
+    if (profile.is_active === false) {
+      setError('Conta inativa — não é possível gerar Pix.')
+      return
+    }
 
     if (processing) return
 
@@ -446,6 +494,7 @@ export default function CheckoutPage() {
         customerPhone: profile.phone || undefined,
         customerCpfCnpj: cpfDigits,
         discountCode: appliedDiscount?.code || undefined,
+        referrerCode: peekPendingReferralCode() ?? undefined,
       })
 
       // 5. Se chegou aqui, tudo deu certo - exibir QR Code
@@ -465,6 +514,7 @@ export default function CheckoutPage() {
 
       // Limpar sessionStorage após sucesso
       sessionStorage.removeItem('dezaqui_checkout')
+      clearPendingReferralCode()
 
       setSuccess(true)
     } catch (err) {
@@ -762,6 +812,30 @@ export default function CheckoutPage() {
           </div>
         </div>
 
+        {profile?.is_active === false && (
+          <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-900">
+            Sua conta está inativa. Não é possível gerar novo Pix ou registrar compra até um administrador reativar o cadastro.
+          </div>
+        )}
+
+        {!success && (profile?.referral_bonus_credits ?? 0) > 0 && profile?.is_active !== false && (
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6 mb-6">
+            <h2 className="text-lg font-bold text-[#1F1F1F] mb-2">Créditos de jogo por indicação</h2>
+            <p className="text-sm text-[#1F1F1F]/80 mb-4">
+              Você tem <strong>{profile?.referral_bonus_credits ?? 0}</strong> crédito(s).
+              Ao usar um crédito neste bolão, o bilhete entra como bonificado (sem Pix e sem valer na arrecadação).
+            </p>
+            <button
+              type="button"
+              onClick={handleRedeemFreeCredit}
+              disabled={processing}
+              className="w-full py-3 px-4 rounded-xl font-semibold bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-50 transition-colors"
+            >
+              Usar 1 crédito nestes números
+            </button>
+          </div>
+        )}
+
         {/* Seleção de Método de Pagamento */}
         {!success && (
           <div className="bg-white rounded-2xl shadow-lg p-6 mb-6 border border-[#E5E5E5]">
@@ -771,7 +845,7 @@ export default function CheckoutPage() {
               {/* Opção Pix */}
               <button
                 onClick={() => handlePaymentMethodSelect('pix')}
-                disabled={processing}
+                disabled={processing || profile?.is_active === false}
                 className={`p-6 rounded-xl border-2 transition-all ${
                   paymentMethod === 'pix'
                     ? 'border-[#1E7F43] bg-[#1E7F43]/5'
@@ -790,7 +864,7 @@ export default function CheckoutPage() {
               {/* Opção Dinheiro */}
               <button
                 onClick={() => handlePaymentMethodSelect('cash')}
-                disabled={processing}
+                disabled={processing || profile?.is_active === false}
                 className={`p-6 rounded-xl border-2 transition-all ${
                   paymentMethod === 'cash'
                     ? 'border-[#1E7F43] bg-[#1E7F43]/5'

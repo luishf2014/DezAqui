@@ -28,6 +28,30 @@ function jsonResponse(body: unknown, status = 200) {
 const normalizeDigits = (v?: string) => (v || '').replace(/[^\d]/g, '')
 const trim = (v?: string) => (v || '').trim()
 
+async function resolveReferrerSnapshot(
+  admin: ReturnType<typeof createClient>,
+  rawCode: unknown
+): Promise<{ snapshot: string | null; referredById: string | null }> {
+  const raw = trim(String(rawCode ?? ''))
+  const c = raw.toUpperCase().replace(/[^A-Z0-9]/g, '')
+  if (!c || c.length > 48) {
+    return { snapshot: null, referredById: null }
+  }
+
+  const { data: rows } = await admin
+    .from('profiles')
+    .select('id, is_active')
+    .eq('referral_code', c)
+    .limit(2)
+
+  const activeRows = (rows || []).filter((r: { is_active?: boolean }) => r.is_active !== false)
+  if (activeRows.length !== 1) {
+    return { snapshot: c, referredById: null }
+  }
+
+  return { snapshot: c, referredById: (activeRows[0] as { id: string }).id }
+}
+
 // ============================================
 // Edge Function
 // ============================================
@@ -50,7 +74,6 @@ serve(async (req) => {
     const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
     const MP_ACCESS_TOKEN = Deno.env.get('MERCADOPAGO_ACCESS_TOKEN') || ''
     const MP_BASE_URL = Deno.env.get('MERCADOPAGO_BASE_URL') || 'https://api.mercadopago.com'
-    // Para Pix/QR Code, a URL de notificação DEVE ser passada na criação do pagamento
     const MP_NOTIFICATION_URL =
       Deno.env.get('MERCADOPAGO_NOTIFICATION_URL') ||
       `${SUPABASE_URL.replace(/\/$/, '')}/functions/v1/mercadopago-webhook`
@@ -59,9 +82,6 @@ serve(async (req) => {
       return jsonResponse({ error: 'Variáveis de ambiente ausentes' }, 500)
     }
 
-    // ============================================
-    // AUTH (IGUAL AO ASAAS)
-    // ============================================
     const authHeader = req.headers.get('authorization')
     if (!authHeader?.startsWith('Bearer ')) {
       return jsonResponse({ error: 'Authorization inválido' }, 401)
@@ -81,10 +101,21 @@ serve(async (req) => {
       return jsonResponse({ error: 'Token inválido ou expirado' }, 401)
     }
 
-    // ============================================
-    // BODY (IGUAL AO ASAAS)
-    // ============================================
     const body = await req.json()
+
+    const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY)
+
+    const { data: buyerProf, error: buyerErr } = await admin
+      .from('profiles')
+      .select('is_active')
+      .eq('id', user.id)
+      .maybeSingle()
+
+    if (!buyerErr && buyerProf && buyerProf.is_active === false) {
+      return jsonResponse({ error: 'Conta inativa. Não é possível gerar Pix.', debug: { step: 'inactive_user' } }, 403)
+    }
+
+    const referrerResolved = await resolveReferrerSnapshot(admin, body?.referrerCode)
 
     const contestId = trim(body?.contestId)
     const selectedNumbersRaw = body?.selectedNumbers
@@ -147,10 +178,11 @@ serve(async (req) => {
 
     const customerEmail = trim(body.customerEmail) || undefined
 
-    // ============================================
-    // DB ADMIN
-    // ============================================
-    const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY)
+    const refId =
+      referrerResolved.referredById && referrerResolved.referredById !== user.id
+        ? referrerResolved.referredById
+        : null
+    const refSnap = refId ? referrerResolved.snapshot : null
 
     if (isCartFlow) {
       // ============================================
@@ -174,6 +206,8 @@ serve(async (req) => {
             selected_numbers: it.selectedNumbers,
             amount: it.amount,
             status: 'PENDING',
+            referrer_code_snapshot: refSnap,
+            referred_by_profile_id: refId,
           })
           .select('id')
           .single()
@@ -265,6 +299,8 @@ serve(async (req) => {
         amount,
         discount_code: body.discountCode || null,
         status: 'PENDING',
+        referrer_code_snapshot: refSnap,
+        referred_by_profile_id: refId,
       })
       .select('id')
       .single()

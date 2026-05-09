@@ -14,6 +14,7 @@ import { listActiveContests } from '../services/contestsService'
 import { Contest } from '../types'
 import Header from '../components/Header'
 import Footer from '../components/Footer'
+import { peekPendingReferralCode, clearPendingReferralCode } from '../utils/referralCodeStorage'
 
 // MODIFIQUEI AQUI - Última compra (localStorage)
 const LAST_PURCHASE_KEY = 'dezaqui_last_purchase_v1'
@@ -337,6 +338,11 @@ export default function CartPage() {
   const handleCheckout = async () => {
     if (!user || !profile || items.length === 0 || processingRef.current) return
 
+    if (profile?.is_active === false) {
+      setError('Conta inativa — não é possível finalizar a compra.')
+      return
+    }
+
     // Validar CPF para pagamento via Pix
     const cpfDigits = String(profile?.cpf || '').replace(/\D/g, '')
     if (paymentMethod === 'pix' && cpfDigits.length !== 11) {
@@ -384,6 +390,7 @@ export default function CartPage() {
           customerPhone: profile.phone || undefined,
           customerCpfCnpj: cpfDigits,
           cartItems,
+          referrerCode: peekPendingReferralCode() ?? undefined,
         })
 
         setPixPaymentId(pixData.id)
@@ -444,6 +451,7 @@ export default function CartPage() {
 
       // Limpar carrinho após sucesso
       clearCart()
+      clearPendingReferralCode()
       setSuccess(true)
     } catch (err) {
       console.error('Erro ao processar checkout:', err)

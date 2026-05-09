@@ -28,23 +28,64 @@ export default function ContestsListPage() {
   const [finishedContests, setFinishedContests] = useState<Contest[]>([])
   const [contestsWithDraws, setContestsWithDraws] = useState<Record<string, boolean>>({})
   const [topWinnersByContest, setTopWinnersByContest] = useState<Record<string, number>>({})
-  const [loading, setLoading] = useState(false)
+  // MODIFIQUEI AQUI: iniciar true para primeiro paint consistente e não “pisar” o Auth/layout antes da 1ª carga.
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [dataLoaded, setDataLoaded] = useState(false)
 
-  // Função helper para adicionar timeout a qualquer promise
-  // `<T,>` evita que o parser TSX interprete `<T>` como tag JSX
-  const withTimeout = <T,>(promise: Promise<T>, timeoutMs: number, errorMessage: string): Promise<T> => {
-    return Promise.race([
+  /**
+   * MODIFIQUEI AQUI: timeouts curtos na listagem principal causavam falsos positivos (“Timeout ao
+   * carregar concursos ativos”) em redes lentas, cold start ou muitos pedidos em paralelo.
+   * Mantemos timeout só no enriquecimento secundário (sorteios), com margem maior.
+   */
+  const withTimeout = <T,>(promise: Promise<T>, timeoutMs: number, errorMessage: string): Promise<T> =>
+    Promise.race([
       promise,
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error(errorMessage)), timeoutMs)
-      ),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error(errorMessage)), timeoutMs)),
     ])
-  }
 
   const loadInFlight = useRef(false)
   const hasLoadedListRef = useRef(false)
+
+  const runEnrichmentForContests = useCallback(
+    async (ordered: Contest[]) => {
+      if (ordered.length === 0) return
+      const drawsMap: Record<string, boolean> = {}
+      const topWinnersMap: Record<string, number> = {}
+
+      await Promise.allSettled(
+        ordered.map(async (contest) => {
+          try {
+            const draws = await withTimeout(
+              listDrawsByContestId(contest.id),
+              20000,
+              `Timeout sorteios ${contest.id}`
+            )
+            drawsMap[contest.id] = draws.length > 0
+
+            if (contest.status === 'finished' && draws.length > 0) {
+              try {
+                const summary = await withTimeout(
+                  getDrawPayoutSummary(draws[0].id),
+                  20000,
+                  `Timeout resumo prêmios ${draws[0].id}`
+                )
+                topWinnersMap[contest.id] = summary.categories.TOP?.winnersCount ?? 0
+              } catch {
+                topWinnersMap[contest.id] = 0
+              }
+            }
+          } catch {
+            drawsMap[contest.id] = false
+          }
+        })
+      )
+
+      setContestsWithDraws((prev) => ({ ...prev, ...drawsMap }))
+      setTopWinnersByContest((prev) => ({ ...prev, ...topWinnersMap }))
+    },
+    []
+  )
 
   const loadContests = useCallback(async (options?: { force?: boolean }) => {
     if (loadInFlight.current) return
@@ -57,65 +98,36 @@ export default function ContestsListPage() {
       setLoading(true)
       setError(null)
 
-      const [activeData, finishedData] = await Promise.all([
-        withTimeout(listActiveContests(), 12000, 'Timeout ao carregar concursos ativos'),
-        withTimeout(listFinishedContests(), 12000, 'Timeout ao carregar concursos finalizados'),
-      ])
+      // MODIFIQUEI AQUI: só os ativos são críticos para “entrar” na página — histórico em background
+      // (evita bloquear spinner/Header quando a query finished está lenta ou instável).
+      const activeData = await listActiveContests()
 
       setActiveContests(activeData)
-      setFinishedContests(finishedData)
       setDataLoaded(true)
       hasLoadedListRef.current = true
+      setLoading(false)
 
-      queueMicrotask(() => {
-        const enrich = async () => {
-          const drawsMap: Record<string, boolean> = {}
-          const topWinnersMap: Record<string, number> = {}
-          const ordered = [...activeData, ...finishedData]
+      queueMicrotask(() => void runEnrichmentForContests(activeData))
 
-          await Promise.allSettled(
-            ordered.map(async (contest) => {
-              try {
-                const draws = await withTimeout(
-                  listDrawsByContestId(contest.id),
-                  8000,
-                  `Timeout sorteios ${contest.id}`
-                )
-                drawsMap[contest.id] = draws.length > 0
-
-                if (contest.status === 'finished' && draws.length > 0) {
-                  try {
-                    const summary = await withTimeout(
-                      getDrawPayoutSummary(draws[0].id),
-                      8000,
-                      `Timeout resumo prêmios ${draws[0].id}`
-                    )
-                    topWinnersMap[contest.id] = summary.categories.TOP?.winnersCount ?? 0
-                  } catch {
-                    topWinnersMap[contest.id] = 0
-                  }
-                }
-              } catch {
-                drawsMap[contest.id] = false
-              }
-            })
-          )
-
-          setContestsWithDraws((prev) => ({ ...prev, ...drawsMap }))
-          setTopWinnersByContest((prev) => ({ ...prev, ...topWinnersMap }))
-        }
-
-        void enrich()
-      })
+      void listFinishedContests()
+        .then((finishedData) => {
+          setFinishedContests(finishedData)
+          queueMicrotask(() => void runEnrichmentForContests(finishedData))
+        })
+        .catch((finErr) => {
+          console.warn('[ContestsListPage] Lista de histórico indisponível; continua só com ativos:', finErr)
+          setFinishedContests([])
+        })
     } catch (err) {
       console.error('[ContestsListPage] Erro ao carregar concursos:', err)
       setError(err instanceof Error ? err.message : 'Erro ao carregar concursos')
       setDataLoaded(false)
-    } finally {
+      hasLoadedListRef.current = false
       setLoading(false)
+    } finally {
       loadInFlight.current = false
     }
-  }, [])
+  }, [runEnrichmentForContests])
 
   useEffect(() => {
     void loadContests()

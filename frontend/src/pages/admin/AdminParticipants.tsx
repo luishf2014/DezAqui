@@ -13,6 +13,7 @@ import { listAllParticipations } from '../../services/participationsService'
 import { Participation, Contest, User } from '../../types'
 import { listAllContests } from '../../services/contestsService'
 import { listAllUsers } from '../../services/profilesService'
+import { updateUserSellerFieldsAdmin } from '../../services/partnersAdminService'
 import { formatPhoneBR, navigateToTop } from '../../utils/formatters'
 import {
   exportParticipantsDirectoryToCSV,
@@ -46,10 +47,28 @@ export default function AdminParticipants() {
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [searchQuery, setSearchQuery] = useState<string>('')
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null)
+  /** MODIFIQUEI AQUI — conta ativa gerida aqui em vez da página Parceiros */
+  const [accountActiveUpdatingUserId, setAccountActiveUpdatingUserId] = useState<string | null>(null)
+  /** MODIFIQUEI AQUI — pop-up em vez do span quando a conta está bloqueada (+ confirmação ao bloquear) */
+  const [blockedAccountModal, setBlockedAccountModal] = useState<{
+    variant: 'blocked_info' | 'confirm_block'
+    userId: string
+    userDisplayName: string
+  } | null>(null)
 
   useEffect(() => {
     loadData()
   }, [])
+
+  /** MODIFIQUEI AQUI */
+  useEffect(() => {
+    if (!blockedAccountModal) return
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setBlockedAccountModal(null)
+    }
+    window.addEventListener('keydown', onEsc)
+    return () => window.removeEventListener('keydown', onEsc)
+  }, [blockedAccountModal])
 
   const loadData = async () => {
     try {
@@ -69,6 +88,28 @@ export default function AdminParticipants() {
     } finally {
       setLoading(false)
     }
+  }
+
+  /** MODIFIQUEI AQUI */
+  const setClienteAccountActive = async (userId: string, nextActive: boolean) => {
+    setAccountActiveUpdatingUserId(userId)
+    setError(null)
+    try {
+      await updateUserSellerFieldsAdmin({ userId, is_active: nextActive })
+      await loadData()
+    } catch (err) {
+      console.error('[AdminParticipants] erro ao atualizar conta ativa:', err)
+      setError(err instanceof Error ? err.message : 'Erro ao atualizar conta do cliente')
+    } finally {
+      setAccountActiveUpdatingUserId(null)
+    }
+  }
+
+  /** MODIFIQUEI AQUI */
+  const confirmBlockCliente = async () => {
+    if (!blockedAccountModal || blockedAccountModal.variant !== 'confirm_block') return
+    await setClienteAccountActive(blockedAccountModal.userId, false)
+    setBlockedAccountModal(null)
   }
 
   // MODIFIQUEI AQUI - Agrupar participações por usuário, incluindo usuários sem participações
@@ -226,7 +267,8 @@ export default function AdminParticipants() {
             Participantes
           </h1>
           <p className="text-[#1F1F1F]/70">
-            Listar participantes, filtrar e ver participações
+            Listar participantes, filtrar participações e <strong className="text-[#1F1F1F]">ativação da conta do cliente</strong>{' '}
+            (bloqueia novas compras quando inativa — mesma informação utilizada pelo checkout).
           </p>
         </div>
 
@@ -405,64 +447,146 @@ export default function AdminParticipants() {
                 className="bg-white rounded-2xl border border-[#E5E5E5] shadow-sm hover:shadow-md transition-all"
               >
                 {/* Cabeçalho do Usuário */}
-                <div
-                  className="p-6 cursor-pointer"
-                  onClick={() => setExpandedUserId(expandedUserId === userGroup.userId ? null : userGroup.userId)}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
-                        <h3 className="text-lg font-bold text-[#1F1F1F]">
-                          {userGroup.userName}
-                        </h3>
-                        <span className="px-3 py-1 bg-[#1E7F43]/10 text-[#1E7F43] rounded-lg text-xs font-semibold">
-                          {userGroup.participations.length} {userGroup.participations.length === 1 ? 'participação' : 'participações'}
-                        </span>
-                      </div>
-                      <p className="text-sm text-[#1F1F1F]/70">{userGroup.userEmail}</p>
-                      {userGroup.userPhone && (
-                        <p className="text-sm text-[#1F1F1F]/70">{formatPhoneBR(userGroup.userPhone)}</p>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-4">
-                      {(() => {
-                        const pendingCount = userGroup.participations.filter(p => p.status === 'pending').length
-                        const activeCount = userGroup.participations.filter(p => p.status === 'active').length
-                        
-                        return (
-                          <div className="flex items-center gap-4">
-                            {pendingCount > 0 && (
-                              <div className="text-right">
-                                <p className="text-xs text-[#1F1F1F]/60">Pendentes</p>
-                                <p className="text-lg font-bold text-[#F4C430]">
-                                  {pendingCount}
-                                </p>
+                <div className="p-6">
+                  {(() => {
+                    const profileRow = users.find((u) => u.id === userGroup.userId)
+                    const contaAtiva = profileRow?.is_active !== false
+                    return (
+                      <>
+                        <div
+                          className="cursor-pointer"
+                          role="button"
+                          tabIndex={0}
+                          onClick={() =>
+                            setExpandedUserId(expandedUserId === userGroup.userId ? null : userGroup.userId)
+                          }
+                          onKeyDown={(ev) => {
+                            if (ev.key === 'Enter' || ev.key === ' ') {
+                              ev.preventDefault()
+                              setExpandedUserId(expandedUserId === userGroup.userId ? null : userGroup.userId)
+                            }
+                          }}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-3 mb-2">
+                                <h3 className="text-lg font-bold text-[#1F1F1F]">{userGroup.userName}</h3>
+                                <span className="px-3 py-1 bg-[#1E7F43]/10 text-[#1E7F43] rounded-lg text-xs font-semibold">
+                                  {userGroup.participations.length}{' '}
+                                  {userGroup.participations.length === 1 ? 'participação' : 'participações'}
+                                </span>
                               </div>
-                            )}
-                            {activeCount > 0 && (
-                              <div className="text-right">
-                                <p className="text-xs text-[#1F1F1F]/60">Ativas</p>
-                                <p className="text-lg font-bold text-[#3CCB7F]">
-                                  {activeCount}
-                                </p>
-                              </div>
+                              <p className="text-sm text-[#1F1F1F]/70">{userGroup.userEmail}</p>
+                              {userGroup.userPhone && (
+                                <p className="text-sm text-[#1F1F1F]/70">{formatPhoneBR(userGroup.userPhone)}</p>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-4">
+                              {(() => {
+                                const pendingCount = userGroup.participations.filter((p) => p.status === 'pending')
+                                  .length
+                                const activeCount = userGroup.participations.filter((p) => p.status === 'active').length
+
+                                return (
+                                  <div className="flex items-center gap-4">
+                                    {pendingCount > 0 && (
+                                      <div className="text-right">
+                                        <p className="text-xs text-[#1F1F1F]/60">Pendentes</p>
+                                        <p className="text-lg font-bold text-[#F4C430]">{pendingCount}</p>
+                                      </div>
+                                    )}
+                                    {activeCount > 0 && (
+                                      <div className="text-right">
+                                        <p className="text-xs text-[#1F1F1F]/60">Ativas</p>
+                                        <p className="text-lg font-bold text-[#3CCB7F]">{activeCount}</p>
+                                      </div>
+                                    )}
+                                  </div>
+                                )
+                              })()}
+                              <span className="text-[#1E7F43]" aria-hidden>
+                                <svg
+                                  xmlns="http://www.w3.org/2000/svg"
+                                  className={`h-6 w-6 transform transition-transform ${
+                                    expandedUserId === userGroup.userId ? 'rotate-180' : ''
+                                  }`}
+                                  fill="none"
+                                  viewBox="0 0 24 24"
+                                  stroke="currentColor"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M19 9l-7 7-7-7"
+                                  />
+                                </svg>
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        {/* MODIFIQUEI AQUI — conta bloqueada: sem span; usar pop-up; confirmação ao desmarcar */}
+                        <div
+                          className={`mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl px-4 py-3 ${
+                            contaAtiva
+                              ? 'border border-[#E8EEF0] bg-[#F9FBFA]'
+                              : 'border border-[#FECACA] bg-[#FEF2F2]'
+                          }`}
+                          onClick={(e) => e.stopPropagation()}
+                          onMouseDown={(e) => e.stopPropagation()}
+                          role="group"
+                          aria-label="Estado da conta do cliente na plataforma"
+                        >
+                          <div className="flex flex-wrap items-center gap-3 min-w-0">
+                            {!contaAtiva ? (
+                              <button
+                                type="button"
+                                className="text-left shrink-0 text-sm font-bold text-[#991B1B] underline underline-offset-2 hover:text-[#b91c1c]"
+                                onClick={() =>
+                                  setBlockedAccountModal({
+                                    variant: 'blocked_info',
+                                    userId: userGroup.userId,
+                                    userDisplayName:
+                                      userGroup.userName || userGroup.userEmail || 'Cliente',
+                                  })
+                                }
+                              >
+                                Conta bloqueada — abrir mensagem
+                              </button>
+                            ) : (
+                              <p className="text-xs text-[#1F1F1F]/65 leading-snug max-w-xl">
+                                Esta conta permite compras no site enquanto a opção estiver ligada.
+                              </p>
                             )}
                           </div>
-                        )
-                      })()}
-                      <button className="text-[#1E7F43] hover:text-[#3CCB7F] transition-colors">
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          className={`h-6 w-6 transform transition-transform ${expandedUserId === userGroup.userId ? 'rotate-180' : ''}`}
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
-                        >
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                        </svg>
-                      </button>
-                    </div>
-                  </div>
+                          <label className="inline-flex shrink-0 items-center gap-2 cursor-pointer select-none touch-manipulation">
+                            <span className="text-sm font-semibold text-[#1F1F1F] whitespace-nowrap">
+                              Cliente pode comprar
+                            </span>
+                            <input
+                              type="checkbox"
+                              className="h-5 w-5 rounded border-[#D1D5DB] text-[#1E7F43] focus:ring-[#1E7F43]"
+                              checked={contaAtiva}
+                              disabled={accountActiveUpdatingUserId === userGroup.userId}
+                              onChange={(ev) => {
+                                const next = ev.target.checked
+                                if (!next && contaAtiva) {
+                                  setBlockedAccountModal({
+                                    variant: 'confirm_block',
+                                    userId: userGroup.userId,
+                                    userDisplayName:
+                                      userGroup.userName || userGroup.userEmail || 'Cliente',
+                                  })
+                                  return
+                                }
+                                void setClienteAccountActive(userGroup.userId, next)
+                              }}
+                            />
+                          </label>
+                        </div>
+                      </>
+                    )
+                  })()}
                 </div>
 
                 {/* Lista de Participações (Expandida) */}
@@ -685,6 +809,90 @@ export default function AdminParticipants() {
           </div>
         )}
       </main>
+
+      {/* MODIFIQUEI AQUI — pop-up conta bloqueada / confirmação de bloqueio */}
+      {blockedAccountModal && (
+        <div
+          className="fixed inset-0 z-[140] flex items-center justify-center p-4 sm:p-6"
+          role="presentation"
+          aria-live="polite"
+        >
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/45"
+            aria-label="Fechar janela"
+            onClick={() => setBlockedAccountModal(null)}
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="blocked-account-modal-title"
+            className="relative z-10 w-full max-w-[26rem] rounded-2xl border border-[#E5E7EB] bg-white p-6 shadow-2xl"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            {blockedAccountModal.variant === 'blocked_info' ? (
+              <>
+                <h2
+                  id="blocked-account-modal-title"
+                  className="text-lg font-extrabold text-[#111827]"
+                >
+                  Conta bloqueada para novas compras
+                </h2>
+                <p className="mt-3 text-[15px] leading-relaxed text-[#374151]">
+                  <strong>{blockedAccountModal.userDisplayName}</strong> não pode concluir novos checkouts nem participar em
+                  novos bolões enquanto a conta permanecer bloqueada aqui. Participações já ativas continuam válidas segundo
+                  as regras do sistema; apenas o fluxo de novas compras no site é interrompido.
+                </p>
+                <p className="mt-3 text-sm text-[#6B7280]">
+                  Para permitir novas compras, volte a marcar &quot;Cliente pode comprar&quot; neste mesmo cartão.
+                </p>
+                <button
+                  type="button"
+                  className="mt-6 w-full rounded-xl bg-[#1E7F43] py-3 text-center text-sm font-bold text-white hover:bg-[#196c3a]"
+                  onClick={() => setBlockedAccountModal(null)}
+                >
+                  Fechar
+                </button>
+              </>
+            ) : (
+              <>
+                <h2
+                  id="blocked-account-modal-title"
+                  className="text-lg font-extrabold text-[#111827]"
+                >
+                  Confirmar bloqueio da conta
+                </h2>
+                <p className="mt-3 text-[15px] leading-relaxed text-[#374151]">
+                  O cliente <strong>{blockedAccountModal.userDisplayName}</strong> ficará impedido de finalizar novas
+                  compras até que a conta seja <strong>reativada</strong> manualmente nesta página (Participantes). Deseja
+                  continuar?
+                </p>
+                <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
+                  <button
+                    type="button"
+                    className="w-full rounded-xl border border-[#E5E7EB] px-4 py-2.5 text-sm font-semibold text-[#374151] hover:bg-[#F9FAFB] sm:w-auto"
+                    onClick={() => setBlockedAccountModal(null)}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    className="w-full rounded-xl bg-[#B91C1C] px-4 py-2.5 text-sm font-bold text-white hover:bg-[#991B1B] sm:w-auto"
+                    disabled={
+                      accountActiveUpdatingUserId === blockedAccountModal.userId
+                    }
+                    onClick={() => void confirmBlockCliente()}
+                  >
+                    {accountActiveUpdatingUserId === blockedAccountModal.userId
+                      ? 'A bloquear…'
+                      : 'Sim, bloquear conta'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       <Footer />
     </div>

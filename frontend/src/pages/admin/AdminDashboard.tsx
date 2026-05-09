@@ -355,6 +355,22 @@ export default function AdminDashboard() {
               <p className="text-sm text-[#1F1F1F]/70">Taxas, parametrização e valores</p>
             </Link>
 
+            {/* MODIFIQUEI AQUI: parceiros / indicações / comissões */}
+            <Link
+              to="/admin/partners"
+              className="p-4 rounded-xl border border-[#E5E5E5] hover:border-[#1E7F43] hover:shadow-md transition-all group"
+            >
+              <div className="flex items-center gap-3 mb-2">
+                <div className="p-2 bg-[#FFD700]/20 rounded-lg">
+                  <span className="text-xl" aria-hidden>🤝</span>
+                </div>
+                <h3 className="font-semibold text-[#1F1F1F]">Parceiros</h3>
+              </div>
+              <p className="text-sm text-[#1F1F1F]/70">
+                Cambistas, clientes ativos, bonificações e comissões
+              </p>
+            </Link>
+
             <Link
               to="/admin/reports"
               className="p-4 rounded-xl border border-[#E5E5E5] hover:border-[#1E7F43] hover:shadow-md transition-all group"

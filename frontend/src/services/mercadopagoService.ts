@@ -26,6 +26,8 @@ export interface CreatePixPaymentParams {
   customerPhone?: string
   discountCode?: string
   cartItems?: CartItemForPix[]
+  /** MODIFIQUEI AQUI: código de indicação capturado pelo ?ref= (resolvido na Edge) */
+  referrerCode?: string | null
 }
 
 export interface CreatePixPaymentResponse {
@@ -67,6 +69,7 @@ export async function createPixPayment(
       customerCpfCnpj: params.customerCpfCnpj,
       discountCode: params.discountCode,
       cartItems: params.cartItems,
+      referrerCode: params.referrerCode ?? undefined,
     },
   })
 

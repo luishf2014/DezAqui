@@ -182,6 +182,8 @@ export interface PaymentWithDetails extends Payment {
     contest_id: string
     user_id: string
     status?: ParticipationStatus
+    /** MODIFIQUEI AQUI: bilhetes bonificados ficam de fora da arrecadação */
+    is_bonus?: boolean
   } | null
   contest?: {
     id: string
@@ -206,7 +208,8 @@ function paymentsEligibleForBolaoTotals(payments: PaymentWithDetails[]): Payment
     (p) =>
       p.status === 'paid' &&
       p.participation &&
-      p.participation.status === 'active'
+      p.participation.status === 'active' &&
+      !p.participation.is_bonus
   )
   return dedupeLatestPaidPerParticipation(paidActive)
 }
@@ -244,6 +247,7 @@ export async function listAllPayments(filters?: PaymentFilters): Promise<Payment
         contest_id,
         user_id,
         status,
+        is_bonus,
         contests (
           id,
           name
@@ -302,6 +306,7 @@ export async function listAllPayments(filters?: PaymentFilters): Promise<Payment
         contest_id: participationData.contest_id,
         user_id: participationData.user_id,
         status: participationData.status as ParticipationStatus | undefined,
+        is_bonus: Boolean(participationData.is_bonus),
       } : null,
       contest: contestData ? {
         id: contestData.id,

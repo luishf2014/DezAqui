@@ -7,6 +7,7 @@
 import { supabase } from '../lib/supabase'
 import { Participation, Contest } from '../types'
 import { generateTicketCode } from '../utils/ticketCodeGenerator'
+import { peekPendingReferralCode } from '../utils/referralCodeStorage'
 
 /**
  * Cria uma nova participação em um concurso
@@ -19,12 +20,25 @@ export async function createParticipation(params: {
   contestId: string
   numbers: number[]
   amount: number // MODIFIQUEI AQUI - valor travado vindo do checkout
+  /** MODIFIQUEI AQUI — opcional; se omitido usa código pendente guardado pelo ?ref= */
+  referrerCodeSnapshot?: string | null
 }): Promise<Participation> {
   // Buscar o usuário autenticado
   const { data: { user } } = await supabase.auth.getUser()
 
   if (!user) {
     throw new Error('Usuário não autenticado')
+  }
+
+  // MODIFIQUEI AQUI — bloquear compras se perfil marcado como inativo (ADM)
+  const { data: profileGate } = await supabase
+    .from('profiles')
+    .select('is_active')
+    .eq('id', user.id)
+    .maybeSingle()
+
+  if (profileGate?.is_active === false) {
+    throw new Error('Conta inativa: não é possível criar participação.')
   }
 
   // MODIFIQUEI AQUI - Validar dados antes de enviar
@@ -139,6 +153,10 @@ export async function createParticipation(params: {
           status: 'pending', // Status padrão
           ticket_code: ticketCode, // MODIFIQUEI AQUI - Adicionar código/ticket único
           amount: params.amount, // MODIFIQUEI AQUI - salvar valor travado vindo do checkout
+          referrer_code_snapshot:
+            params.referrerCodeSnapshot !== undefined
+              ? params.referrerCodeSnapshot
+              : peekPendingReferralCode(),
         })
         .select('*')
         .maybeSingle() // MODIFIQUEI AQUI - Usar maybeSingle() ao invés de single() para evitar erro 406
@@ -495,4 +513,43 @@ export async function countActiveParticipationsByContest(contestId: string): Pro
     return 0
   }
   return count ?? 0
+}
+
+/**
+ * MODIFIQUEI AQUI: consome um crédito de indicação (10 vendas pagas confirmadas)
+ * e cria uma participação bonificada já ativa, sem Pix ou fluxo financeiro.
+ */
+export async function redeemReferralFreeCreditParticipation(params: {
+  contestId: string
+  numbers: number[]
+}): Promise<{ participationId: string; ticket_code: string | undefined; contest_id: string }> {
+  const { data: pid, error: rpcErr } = await supabase.rpc('rpc_redeem_referral_free_credit', {
+    p_contest_id: params.contestId,
+    p_numbers: params.numbers,
+  })
+
+  if (rpcErr) {
+    throw new Error(rpcErr.message)
+  }
+
+  const participationId = String(pid ?? '')
+  if (!participationId) {
+    throw new Error('Resgate não retornou identificação do bilhete')
+  }
+
+  const { data: row, error: fetchErr } = await supabase
+    .from('participations')
+    .select('ticket_code, contest_id')
+    .eq('id', participationId)
+    .maybeSingle()
+
+  if (fetchErr) {
+    throw new Error(fetchErr.message)
+  }
+
+  return {
+    participationId,
+    ticket_code: row?.ticket_code,
+    contest_id: String(row?.contest_id ?? params.contestId),
+  }
 }

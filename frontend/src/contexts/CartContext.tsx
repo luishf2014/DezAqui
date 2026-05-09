@@ -114,7 +114,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       id: `${contest.id}-${Date.now()}`, // ID único
       contestId: contest.id,
       contestName: contest.name,
-      contestCode: contest.contest_code,
+      contestCode: contest.contest_code ?? undefined,
       selectedNumbers: [...numbers].sort((a, b) => a - b),
       price: contest.participation_value || 0,
       addedAt: Date.now(),

@@ -7,6 +7,14 @@
 import { supabase } from '../lib/supabase'
 import { User } from '../types'
 
+/** MODIFIQUEI AQUI: PostgREST/JSON pode devolver boolean estranho; o menu do vendedor depende deste campo. */
+export function normalizeIsSellerFlag(raw: unknown): boolean {
+  if (typeof raw === 'boolean') return raw
+  if (typeof raw === 'string') return raw.trim().toLowerCase() === 'true' || raw.trim() === '1'
+  if (typeof raw === 'number') return raw !== 0
+  return false
+}
+
 // MODIFIQUEI AQUI - Interface para tipar erros do Supabase
 interface SupabaseError {
   code?: string
@@ -39,7 +47,9 @@ export async function getCurrentUserProfile(): Promise<User | null> {
     console.log('[profilesService] Buscando perfil do usuário atual usando RLS...')
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, email, name, phone, cpf, birth_date, is_admin, created_at, updated_at')
+      .select(
+        'id, email, name, phone, cpf, birth_date, is_admin, is_active, referral_code, referral_bonus_credits, referral_bonus_credits_used, referral_qualifying_sales_count, is_seller, commission_percent, created_at, updated_at'
+      )
       .eq('id', authUser.id)
       .maybeSingle()
     
@@ -53,12 +63,18 @@ export async function getCurrentUserProfile(): Promise<User | null> {
       return await getUserProfileById(authUser.id)
     }
     
-    // Normalizar is_admin
+    // Normalizar is_admin / is_seller
     const normalizedData = {
       ...data,
-      is_admin: typeof data.is_admin === 'string' 
-        ? data.is_admin.toLowerCase() === 'true' 
-        : Boolean(data.is_admin)
+      is_admin: typeof data.is_admin === 'string'
+        ? data.is_admin.toLowerCase() === 'true'
+        : Boolean(data.is_admin),
+      // MODIFIQUEI AQUI
+      is_seller: normalizeIsSellerFlag((data as { is_seller?: unknown }).is_seller),
+      is_active:
+        typeof (data as { is_active?: boolean }).is_active === 'boolean'
+          ? (data as { is_active: boolean }).is_active
+          : (data as { is_active?: boolean }).is_active !== false,
     }
     
     console.log('[profilesService] ✅ Perfil do usuário atual carregado:', normalizedData)
@@ -82,7 +98,9 @@ export async function getUserProfileById(userId: string): Promise<User | null> {
     // MODIFIQUEI AQUI - Busca principal pelo id do profile
     const byId = await supabase
       .from('profiles')
-      .select('id, email, name, phone, cpf, birth_date, is_admin, created_at, updated_at')
+      .select(
+        'id, email, name, phone, cpf, birth_date, is_admin, is_active, referral_code, referral_bonus_credits, referral_bonus_credits_used, referral_qualifying_sales_count, is_seller, commission_percent, created_at, updated_at'
+      )
       .eq('id', userId)
       .maybeSingle()
     
@@ -93,9 +111,15 @@ export async function getUserProfileById(userId: string): Promise<User | null> {
       // MODIFIQUEI AQUI - Normalizar is_admin para boolean
       const normalized = {
         ...byId.data,
-        is_admin: typeof byId.data.is_admin === 'string' 
-          ? byId.data.is_admin.toLowerCase() === 'true' 
-          : Boolean(byId.data.is_admin)
+        is_admin: typeof byId.data.is_admin === 'string'
+          ? byId.data.is_admin.toLowerCase() === 'true'
+          : Boolean(byId.data.is_admin),
+        // MODIFIQUEI AQUI
+        is_seller: normalizeIsSellerFlag((byId.data as { is_seller?: unknown }).is_seller),
+        is_active:
+          typeof byId.data.is_active === 'boolean'
+            ? byId.data.is_active
+            : byId.data.is_active !== false,
       }
       console.log('[profilesService] ✅ Perfil encontrado por id:', normalized)
       return normalized
@@ -150,7 +174,9 @@ export async function listAllUsers(): Promise<User[]> {
     
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, email, name, phone, cpf, birth_date, is_admin, created_at, updated_at')
+      .select(
+        'id, email, name, phone, cpf, birth_date, is_admin, is_active, referral_code, referral_bonus_credits, referral_bonus_credits_used, referral_qualifying_sales_count, is_seller, commission_percent, created_at, updated_at'
+      )
       .order('name')
     
     if (error) {
@@ -161,9 +187,13 @@ export async function listAllUsers(): Promise<User[]> {
     // Normalizar is_admin para todos os usuários
     const normalizedUsers = (data || []).map(user => ({
       ...user,
-      is_admin: typeof user.is_admin === 'string' 
-        ? user.is_admin.toLowerCase() === 'true' 
-        : Boolean(user.is_admin)
+      is_admin: typeof user.is_admin === 'string'
+        ? user.is_admin.toLowerCase() === 'true'
+        : Boolean(user.is_admin),
+      // MODIFIQUEI AQUI
+      is_seller: normalizeIsSellerFlag(user.is_seller),
+      is_active:
+        typeof user.is_active === 'boolean' ? user.is_active : user.is_active !== false,
     }))
     
     console.log('[profilesService] ✅ Usuários carregados:', normalizedUsers.length)

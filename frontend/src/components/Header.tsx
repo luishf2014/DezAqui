@@ -12,6 +12,7 @@ import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { useCart } from '../contexts/CartContext'
 import { supabase } from '../lib/supabase' // MODIFIQUEI AQUI - Supabase para buscar notificações
+import { normalizeIsSellerFlag } from '../services/profilesService' // MODIFIQUEI AQUI
 import logodezaqui from '../assets/logodezaqui.png'
 
 // Constantes
@@ -30,6 +31,8 @@ type Notif = {
 export default function Header() {
   const navigate = useNavigate()
   const { user, isAdmin, logout, profile } = useAuth()
+  /** MODIFIQUEI AQUI — menu «Meu link» para todo cambista com perfil válido */
+  const isSellerUser = normalizeIsSellerFlag(profile?.is_seller)
   const { getItemCount } = useCart()
   const [showProfileMenu, setShowProfileMenu] = useState(false)
   const [isLoggingOut, setIsLoggingOut] = useState(false)
@@ -474,6 +477,16 @@ export default function Header() {
                 </Link>
               )}
 
+              {/* MODIFIQUEI AQUI — cambista: painel próprio (não substitui o ADM). */}
+              {user && isSellerUser && (
+                <Link
+                  to="/meu-link"
+                  className="px-4 py-2 text-white/90 hover:text-white font-semibold text-sm rounded-lg hover:bg-white/10 transition-all border border-[#F4C430]/35"
+                >
+                  Área do vendedor
+                </Link>
+              )}
+
               {/* Apenas link "Dashboard" quando admin e autenticado */}
               {user && isAdmin && (
                 <Link
@@ -737,6 +750,21 @@ export default function Header() {
                         </svg>
                         Concursos
                       </Link>
+
+                      {/* MODIFIQUEI AQUI */}
+                      {isSellerUser && (
+                        <Link
+                          to="/meu-link"
+                          onClick={closeProfileMenu}
+                          role="menuitem"
+                          className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold text-[#1E7F43] hover:bg-[#F4C430]/15 transition-all duration-150 border border-[#F4C430]/30"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-[#1E7F43]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          Área do vendedor — Meu link
+                        </Link>
+                      )}
 
                       <Link
                         to="/settings"

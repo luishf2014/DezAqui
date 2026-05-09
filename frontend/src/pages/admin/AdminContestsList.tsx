@@ -10,6 +10,7 @@ import Header from '../../components/Header'
 import Footer from '../../components/Footer'
 import { listAllContests, deleteContest } from '../../services/contestsService'
 import { Contest } from '../../types'
+import { formatContestDateTimeDisplay } from '../../utils/formatters'
 
 export default function AdminContestsList() {
   const navigate = useNavigate()
@@ -173,14 +174,6 @@ export default function AdminContestsList() {
     ? contests
     : contests.filter(c => c.status === filterStatus)
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-    })
-  }
-
   return (
     <div className="min-h-screen bg-[#F9F9F9] flex flex-col">
       <Header />
@@ -336,11 +329,11 @@ export default function AdminContestsList() {
                   </div>
                   <div>
                     <p className="text-[#1F1F1F]/70 mb-1">Início</p>
-                    <p className="font-semibold text-[#1F1F1F]">{formatDate(contest.start_date)}</p>
+                    <p className="font-semibold text-[#1F1F1F]">{formatContestDateTimeDisplay(contest.start_date)}</p>
                   </div>
                   <div>
                     <p className="text-[#1F1F1F]/70 mb-1">Fim</p>
-                    <p className="font-semibold text-[#1F1F1F]">{formatDate(contest.end_date)}</p>
+                    <p className="font-semibold text-[#1F1F1F]">{formatContestDateTimeDisplay(contest.end_date)}</p>
                   </div>
                 </div>
 

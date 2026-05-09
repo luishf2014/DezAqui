@@ -568,6 +568,32 @@ export default function SettingsPage() {
                     />
                   </div>
 
+                  {/* MODIFIQUEI AQUI — código de indicação (somente leitura; use em ?ref=CÓDIGO no link do bolão) */}
+                  {profile?.referral_code ? (
+                    <div className="p-4 rounded-xl bg-[#FAFAFA] border border-[#E5E5E5]">
+                      <p className="text-sm font-semibold text-[#1F1F1F] mb-1">Seu código de indicação</p>
+                      <p className="font-mono text-lg text-[#1E7F43] mb-2">{profile.referral_code}</p>
+                      <p className="text-xs text-[#1F1F1F]/60 mb-2">
+                        Créditos de jogo grátis disponíveis: <strong>{profile.referral_bonus_credits ?? 0}</strong> (a cada
+                        10 compras pagas confirmadas dos seus convidados, você ganha 1 crédito).
+                      </p>
+                      {/* MODIFIQUEI AQUI */}
+                      <p className="text-xs text-[#1F1F1F]/55 mb-2">
+                        Créditos já utilizados (bilhetes bonificados emitidos):{' '}
+                        <strong>{profile.referral_bonus_credits_used ?? 0}</strong>
+                      </p>
+                      {/* MODIFIQUEI AQUI */}
+                      <p className="text-xs text-[#1F1F1F]/55 mb-2">
+                        Créditos já utilizados (bilhetes bonificados emitidos):{' '}
+                        <strong>{profile.referral_bonus_credits_used ?? 0}</strong>
+                      </p>
+                      <p className="text-xs text-[#1F1F1F]/55">
+                        Exemplo de link ao compartilhar um bolão: acesse um concurso e acrescente no final da URL{' '}
+                        <span className="font-mono">?ref={profile.referral_code}</span>
+                      </p>
+                    </div>
+                  ) : null}
+
                   <div>
                     <label htmlFor="phone" className="block text-sm font-semibold text-[#1F1F1F] mb-2">
                       Telefone

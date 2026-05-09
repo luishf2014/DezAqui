@@ -10,6 +10,7 @@ import Header from '../../components/Header'
 import Footer from '../../components/Footer'
 import CustomSelect from '../../components/CustomSelect'
 import { getContestById, createContest, updateContest, CreateContestInput, UpdateContestInput } from '../../services/contestsService'
+import { toDateTimeLocalInputValue, dateTimeLocalInputToIsoUtc } from '../../utils/formatters'
 
 export default function AdminContestForm() {
   const navigate = useNavigate()
@@ -58,18 +59,15 @@ export default function AdminContestForm() {
         return
       }
 
-      // Converter datas para formato de input (YYYY-MM-DDTHH:mm)
-      const startDate = new Date(contest.start_date)
-      const endDate = new Date(contest.end_date)
-
+      /** MODIFIQUEI AQUI — datetime-local deve usar relógio local, não truncar ISO em UTC (`toISOString().slice`). */
       setFormData({
         name: contest.name,
         description: contest.description || '',
         min_number: contest.min_number,
         max_number: contest.max_number,
         numbers_per_participation: contest.numbers_per_participation,
-        start_date: startDate.toISOString().slice(0, 16),
-        end_date: endDate.toISOString().slice(0, 16),
+        start_date: toDateTimeLocalInputValue(contest.start_date),
+        end_date: toDateTimeLocalInputValue(contest.end_date),
         status: contest.status,
         participation_value: contest.participation_value || undefined,
         // MODIFIQUEI AQUI - Carregar percentuais de premiação do concurso
@@ -142,6 +140,10 @@ export default function AdminContestForm() {
         }
       }
 
+      /** MODIFIQUEI AQUI — gravar instante UTC explícito; evita string sem fuso sendo lida diferente pelo Postgres */
+      const startIso = dateTimeLocalInputToIsoUtc(formData.start_date)
+      const endIso = dateTimeLocalInputToIsoUtc(formData.end_date)
+
       if (isEditing && id) {
         const updateData: UpdateContestInput = {
           name: formData.name,
@@ -149,8 +151,8 @@ export default function AdminContestForm() {
           min_number: formData.min_number,
           max_number: formData.max_number,
           numbers_per_participation: formData.numbers_per_participation,
-          start_date: formData.start_date,
-          end_date: formData.end_date,
+          start_date: startIso,
+          end_date: endIso,
           status: formData.status,
           participation_value: formData.participation_value || undefined,
           // MODIFIQUEI AQUI - Incluir percentuais de premiação
@@ -166,6 +168,8 @@ export default function AdminContestForm() {
       } else {
         await createContest({
           ...formData,
+          start_date: startIso,
+          end_date: endIso,
           // MODIFIQUEI AQUI
           has_extra_prize: !!formData.has_extra_prize,
           extra_prize_amount: formData.has_extra_prize ? Number(formData.extra_prize_amount) || 0 : 0,
@@ -380,6 +384,11 @@ export default function AdminContestForm() {
                 />
               </div>
             </div>
+            {/* MODIFIQUEI AQUI — alinhar expectativa ADM/com público (fuso do browser ao editar vs visitante ao ver) */}
+            <p className="mt-3 text-[11px] text-[#6B7280] leading-relaxed max-w-3xl">
+              O horário definido aqui usa o <strong>relógio local deste computador/navegador</strong> ao salvar converte‑se para
+              UTC na base — as páginas do site mostram o mesmo instante na localização brasileira padrão (pt‑BR).
+            </p>
           </div>
 
           {/* Status e Valor */}

@@ -178,7 +178,7 @@ serve(async (req) => {
         if (!participationId && payment.intent_id) {
         const { data: intent, error: intentErr } = await supabase
           .from('pix_payment_intents')
-          .select('id, user_id, contest_id, selected_numbers, amount')
+          .select('id, user_id, contest_id, selected_numbers, amount, referred_by_profile_id, referrer_code_snapshot')
           .eq('id', payment.intent_id)
           .maybeSingle()
 
@@ -205,6 +205,9 @@ serve(async (req) => {
                 amount: Number(intent.amount),
                 status: 'active',
                 ticket_code: ticketCode,
+                // MODIFIQUEI AQUI: indicação vinda do intent (campos já conferidos pela Edge ao criar o pedido Pix)
+                referred_by_profile_id: intent.referred_by_profile_id ?? null,
+                referrer_code_snapshot: intent.referrer_code_snapshot ?? null,
               })
               .select('id')
               .single()

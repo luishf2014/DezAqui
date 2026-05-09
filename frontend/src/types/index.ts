@@ -19,6 +19,15 @@ export interface User {
   /** ISO date string (YYYY-MM-DD) quando preenchido */
   birth_date?: string | null
   is_admin: boolean
+  // MODIFIQUEI AQUI: indicação, vendedor e status de cliente
+  is_active?: boolean
+  referral_code?: string
+  referral_bonus_credits?: number
+  /** MODIFIQUEI AQUI: total de bilhetes grátis já consumidos (redeem/ADM). */
+  referral_bonus_credits_used?: number
+  referral_qualifying_sales_count?: number
+  is_seller?: boolean
+  commission_percent?: number
   created_at: string
   updated_at: string
 }
@@ -83,6 +92,13 @@ export interface Participation {
   status: ParticipationStatus
   current_score: number
   ticket_code?: string // MODIFIQUEI AQUI - Código único da participação (ex: TKT-20250124-A1B2C3)
+  amount?: number | null
+  // MODIFIQUEI AQUI: bonificação e indicação
+  is_bonus?: boolean
+  bonus_reason?: string | null
+  bonus_origin_user_id?: string | null
+  referred_by_profile_id?: string | null
+  referrer_code_snapshot?: string | null
   created_at: string
   updated_at: string
 }

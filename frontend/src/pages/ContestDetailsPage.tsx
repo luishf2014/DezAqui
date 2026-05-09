@@ -5,7 +5,7 @@
  * Exibe informações do concurso e histórico de sorteios
  */
 import { useEffect, useState } from 'react'
-import { useParams, Link, useNavigate } from 'react-router-dom'
+import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { getContestById } from '../services/contestsService'
 import { listOfficialRefsByContestId } from '../services/contestOfficialRefsService'
 import { listDrawsByContestId } from '../services/drawsService'
@@ -18,14 +18,16 @@ import Header from '../components/Header'
 import Footer from '../components/Footer'
 import { getContestState } from '../utils/contestHelpers'
 import { formatOfficialRefDate } from '../utils/contestOfficialRefUtils'
-import { formatCurrency } from '../utils/formatters'
+import { formatCurrency, formatContestDateTimeDisplay } from '../utils/formatters'
 import OfficialContestNumbersBadges from '../components/OfficialContestNumbersBadges'
 import ContestPrizePoolInfo from '../components/ContestPrizePoolInfo'
+import { setPendingReferralCodeFromQuery } from '../utils/referralCodeStorage'
 
 export default function ContestDetailsPage() {
   const { id } = useParams<{ id: string }>()
+  const [searchParams] = useSearchParams()
   const navigate = useNavigate()
-  const { user, isAdmin, loading: authLoading } = useAuth()
+  const { user, isAdmin, profile, loading: authLoading } = useAuth()
   const [contest, setContest] = useState<Contest | null>(null)
   const [draws, setDraws] = useState<Draw[]>([])
   const [participations, setParticipations] = useState<Participation[]>([])
@@ -35,6 +37,12 @@ export default function ContestDetailsPage() {
   const [error, setError] = useState<string | null>(null)
   const [officialRefs, setOfficialRefs] = useState<ContestOfficialRef[]>([])
   const { publicActiveParticipationCount, publicCollectedSum } = useContestBolaoPublicTotals(id)
+  /** MODIFIQUEI AQUI — pop-up próprio em vez de alert() do browser */
+  const [inactiveAccountModalOpen, setInactiveAccountModalOpen] = useState(false)
+
+  useEffect(() => {
+    setPendingReferralCodeFromQuery(searchParams.get('ref'))
+  }, [searchParams])
 
   useEffect(() => {
     async function loadContestData() {
@@ -132,6 +140,16 @@ export default function ContestDetailsPage() {
     }
   }, [contest, draws.length])
 
+  /** MODIFIQUEI AQUI */
+  useEffect(() => {
+    if (!inactiveAccountModalOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setInactiveAccountModalOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [inactiveAccountModalOpen])
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#F9F9F9]">
@@ -167,16 +185,6 @@ export default function ContestDetailsPage() {
         </div>
       </div>
     )
-  }
-
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
   }
 
   return (
@@ -240,6 +248,9 @@ export default function ContestDetailsPage() {
                     // MODIFIQUEI AQUI - Redirecionar para login se não autenticado, senão para página de participação
                     if (!user) {
                       navigate('/login')
+                    } else if (profile?.is_active === false) {
+                      // MODIFIQUEI AQUI — modal em página (evita alert nativo ilegível / bloqueio do fluxo visual)
+                      setInactiveAccountModalOpen(true)
                     } else {
                       navigate(`/contests/${id}/join`)
                     }
@@ -366,7 +377,7 @@ export default function ContestDetailsPage() {
               </div>
               <h3 className="text-xs sm:text-sm font-semibold text-[#1F1F1F]/60 uppercase">Data de Início</h3>
             </div>
-            <p className="text-sm sm:text-base md:text-lg font-semibold text-[#1F1F1F] break-words">{formatDate(contest.start_date)}</p>
+            <p className="text-sm sm:text-base md:text-lg font-semibold text-[#1F1F1F] break-words">{formatContestDateTimeDisplay(contest.start_date)}</p>
           </div>
 
           <div className="rounded-xl sm:rounded-2xl border border-[#E5E5E5] bg-white p-4 sm:p-6 shadow-lg">
@@ -378,7 +389,7 @@ export default function ContestDetailsPage() {
               </div>
               <h3 className="text-xs sm:text-sm font-semibold text-[#1F1F1F]/60 uppercase">Data de Encerramento</h3>
             </div>
-            <p className="text-sm sm:text-base md:text-lg font-semibold text-[#1F1F1F] break-words">{formatDate(contest.end_date)}</p>
+            <p className="text-sm sm:text-base md:text-lg font-semibold text-[#1F1F1F] break-words">{formatContestDateTimeDisplay(contest.end_date)}</p>
           </div>
         </div>
 
@@ -551,10 +562,10 @@ export default function ContestDetailsPage() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <h3 className="font-bold text-[#1F1F1F] text-base sm:text-lg mb-1 break-words">
-                          Sorteio realizado em {formatDate(draw.draw_date)}
+                          Sorteio realizado em {formatContestDateTimeDisplay(draw.draw_date)}
                         </h3>
                         <p className="text-xs sm:text-sm text-[#1F1F1F]/60">
-                          Criado em {formatDate(draw.created_at)}
+                          Criado em {formatContestDateTimeDisplay(draw.created_at)}
                         </p>
                       </div>
                     </div>
@@ -581,6 +592,45 @@ export default function ContestDetailsPage() {
           )}
         </div>
       </div>
+
+      {/* MODIFIQUEI AQUI — conta inativa ao clicar Participar */}
+      {inactiveAccountModalOpen && (
+        <div className="fixed inset-0 z-[140] flex items-center justify-center p-4 sm:p-6">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/45"
+            aria-label="Fechar"
+            onClick={() => setInactiveAccountModalOpen(false)}
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="inactive-account-public-title"
+            className="relative z-10 w-full max-w-md rounded-2xl border border-[#E5E7EB] bg-white p-6 shadow-2xl"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <h2 id="inactive-account-public-title" className="text-lg font-extrabold text-[#111827]">
+              Conta inativa no site
+            </h2>
+            <p className="mt-3 text-[15px] leading-relaxed text-[#374151]">
+              Sua conta está inativa e <strong>não permite novas participações ou compras</strong> até ser reativada
+              pela administração. Entre em contato com o suporte ou com quem gere a plataforma.
+            </p>
+            <p className="mt-3 text-sm text-[#6B7280]">
+              Bilhetes e participações que já estejam válidos no sistema não são substituídos por esta mensagem — apenas
+              o fluxo de novas apostas é bloqueado.
+            </p>
+            <button
+              type="button"
+              className="mt-6 w-full rounded-xl bg-[#1E7F43] py-3 text-center text-sm font-bold text-white hover:bg-[#196c3a]"
+              onClick={() => setInactiveAccountModalOpen(false)}
+            >
+              Entendi
+            </button>
+          </div>
+        </div>
+      )}
+
       <Footer />
     </div>
   )

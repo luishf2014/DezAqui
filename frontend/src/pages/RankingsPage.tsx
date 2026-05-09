@@ -16,6 +16,7 @@ import { getDrawPayoutSummary, getPayoutsByDraw } from '../services/payoutsServi
 import { Contest, Participation, Draw, ContestOfficialRef } from '../types'
 import { calculateRanking, createRankingMap, RankingEntry } from '../utils/rankingCalculator'
 import { getAllHitNumbers } from '../utils/rankingHelpers'
+import { formatContestDateTimeDisplay } from '../utils/formatters'
 import { useAuth } from '../contexts/AuthContext'
 import ContestStatusBadge from '../components/ContestStatusBadge'
 import CustomSelect from '../components/CustomSelect'
@@ -183,15 +184,7 @@ export default function RankingsPage() {
     loadRanking()
   }, [selectedContestId, selectedDrawId, authLoading, isAdmin]) // MODIFIQUEI AQUI - inclui selectedDrawId para recarregar payouts ao trocar sorteio
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
-  }
+
 
   // MODIFIQUEI AQUI - Identificar participações criadas após o sorteio (para destacar visualmente)
   const participationsCreatedAfterDraw = useMemo(() => {
@@ -529,8 +522,8 @@ export default function RankingsPage() {
                   )}
                   <p className="text-[#1F1F1F]/50 text-xs sm:text-sm">
                     {selectedContest.status === 'finished'
-                      ? `Finalizado em ${formatDate(selectedContest.end_date)}`
-                      : `Encerra em ${formatDate(selectedContest.end_date)}`}
+                      ? `Finalizado em ${formatContestDateTimeDisplay(selectedContest.end_date)}`
+                      : `Encerra em ${formatContestDateTimeDisplay(selectedContest.end_date)}`}
                   </p>
                 </div>
                 <div className="flex flex-col sm:flex-row gap-2 shrink-0">
@@ -613,7 +606,7 @@ export default function RankingsPage() {
                       placeholder="Todos os sorteios (pontuação total)"
                       options={[
                         { value: '', label: 'Todos os sorteios (pontuação total)' },
-                        ...draws.map((d) => ({ value: d.id, label: formatDate(d.draw_date) })),
+                        ...draws.map((d) => ({ value: d.id, label: formatContestDateTimeDisplay(d.draw_date) })),
                       ]}
                       className="text-sm font-semibold border-2"
                     />

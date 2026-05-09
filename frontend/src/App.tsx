@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useParams, useLocation } from 'react-router-dom'
 import { AuthProvider } from './contexts/AuthContext'
 import { CartProvider } from './contexts/CartContext'
 import Home from './pages/Home'
@@ -34,6 +34,17 @@ import AdminParticipants from './pages/admin/AdminParticipants'
 import AdminActivations from './pages/admin/AdminActivations'
 import AdminFinance from './pages/admin/AdminFinance'
 import AdminReports from './pages/admin/AdminReports'
+import AdminPartners from './pages/admin/AdminPartners'
+import SellerAreaPage from './pages/SellerAreaPage'
+import RequireSeller from './routes/RequireSeller'
+
+function LegacyConcursosContestRedirect({ suffix }: { suffix?: string }) {
+  const { id } = useParams<{ id: string }>()
+  const loc = useLocation()
+  if (!id) return <Navigate to="/contests" replace />
+  const base = suffix ? `/contests/${id}${suffix}` : `/contests/${id}`
+  return <Navigate to={`${base}${loc.search}`} replace />
+}
 
 function App() {
   return (
@@ -51,6 +62,9 @@ function App() {
             <Route path="/contests/:id/join" element={<JoinContestPage />} />
             {/* Rota de checkout */}
             <Route path="/contests/:id/checkout" element={<CheckoutPage />} />
+            {/* MODIFIQUEI AQUI - alias em português (?ref=CÓDIGO) */}
+            <Route path="/concursos/:id" element={<LegacyConcursosContestRedirect />} />
+            <Route path="/concursos/:id/join" element={<LegacyConcursosContestRedirect suffix="/join" />} />
             {/* Rota do carrinho */}
             <Route path="/cart" element={<CartPage />} />
             {/* Página de sucesso de compra */}
@@ -67,6 +81,9 @@ function App() {
             <Route path="/settings" element={<SettingsPage />} />
             {/* Rota de Notificações */}
             <Route path="/notifications" element={<NotificationsPage />} />
+            {/* MODIFIQUEI AQUI — apenas profiles.is_seller (guard no RequireSeller). */}
+            <Route path="/meu-link" element={<RequireSeller><SellerAreaPage /></RequireSeller>} />
+            <Route path="/minhas-vendas" element={<RequireSeller><SellerAreaPage /></RequireSeller>} />
 
             {/* Páginas institucionais */}
             <Route path="/como-funciona" element={<ComoFuncionaPage />} />
@@ -88,6 +105,7 @@ function App() {
             <Route path="participants" element={<AdminParticipants />} />
             <Route path="activations" element={<AdminActivations />} />
             <Route path="finance" element={<AdminFinance />} />
+            <Route path="partners" element={<AdminPartners />} />
             <Route path="reports" element={<AdminReports />} />
           </Route>
           </Routes>

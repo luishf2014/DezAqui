@@ -5,7 +5,7 @@
  * Permite que usuários escolham números e participem de um concurso
  */
 import { useEffect, useState } from 'react'
-import { useParams, useNavigate, Link } from 'react-router-dom'
+import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { getContestById } from '../services/contestsService'
 import { listDrawsByContestId } from '../services/drawsService'
 import { Contest, Draw } from '../types'
@@ -17,6 +17,7 @@ import Footer from '../components/Footer'
 import { canAcceptParticipations, getContestState } from '../utils/contestHelpers'
 import { formatCurrency } from '../utils/formatters'
 import ContestStatusBadge from '../components/ContestStatusBadge'
+import { setPendingReferralCodeFromQuery } from '../utils/referralCodeStorage'
 
 // MODIFIQUEI AQUI - Última compra (localStorage)
 const LAST_PURCHASE_KEY = 'dezaqui_last_purchase_v1'
@@ -89,8 +90,9 @@ function getLastPurchase(): LastPurchaseNormalized | null {
 
 export default function JoinContestPage() {
   const { id } = useParams<{ id: string }>()
+  const [searchParams] = useSearchParams()
   const navigate = useNavigate()
-  const { user, loading: authLoading } = useAuth()
+  const { user, loading: authLoading, profile } = useAuth()
   const { addItem, getItemCount } = useCart()
   const [contest, setContest] = useState<Contest | null>(null)
   const [draws, setDraws] = useState<Draw[]>([])
@@ -101,6 +103,10 @@ export default function JoinContestPage() {
 
   // MODIFIQUEI AQUI - Estado para exibir Última Compra
   const [lastPurchase, setLastPurchase] = useState<LastPurchaseNormalized | null>(null)
+
+  useEffect(() => {
+    setPendingReferralCodeFromQuery(searchParams.get('ref'))
+  }, [searchParams])
 
   useEffect(() => {
     // MODIFIQUEI AQUI - Redirecionar para login se não autenticado
@@ -163,6 +169,12 @@ export default function JoinContestPage() {
   const handleRepeatLastPurchase = () => {
     if (!contest || !id) return
 
+    // MODIFIQUEI AQUI
+    if (profile?.is_active === false) {
+      setError('Conta inativa — não é possível repetir ou adicionar bilhetes ao carrinho.')
+      return
+    }
+
     const last = getLastPurchase()
     setLastPurchase(last)
 
@@ -213,6 +225,12 @@ export default function JoinContestPage() {
 
     if (!contest || !id) return
 
+    // MODIFIQUEI AQUI
+    if (profile?.is_active === false) {
+      setError('Conta inativa — não é possível seguir para o checkout.')
+      return
+    }
+
     // Validação no frontend
     if (selectedNumbers.length !== contest.numbers_per_participation) {
       setError(
@@ -248,6 +266,12 @@ export default function JoinContestPage() {
   // Funcao para adicionar ao carrinho
   const handleAddToCart = () => {
     if (!contest || selectedNumbers.length !== contest.numbers_per_participation) return
+
+    // MODIFIQUEI AQUI
+    if (profile?.is_active === false) {
+      setError('Conta inativa — não é possível adicionar ao carrinho.')
+      return
+    }
 
     // Validar intervalo
     const invalidNumbers = selectedNumbers.filter(
