@@ -17,10 +17,53 @@ import {
   type PartnerUserRow,
   type ReferralIndicationRewardAdminRow,
 } from '../../services/partnersAdminService'
-import { listAllContests } from '../../services/contestsService'
+import { listAllContests, updateContest } from '../../services/contestsService'
 import type { Contest } from '../../types'
 import { formatCurrency } from '../../utils/formatters'
 import { normalizeIsSellerFlag } from '../../services/profilesService'
+
+function contestStatusLabelPt(status: Contest['status']): string {
+  const m: Record<string, string> = {
+    draft: 'Rascunho',
+    active: 'Ativo',
+    finished: 'Encerrado',
+    cancelled: 'Cancelado',
+  }
+  return m[status] ?? status
+}
+
+type ReferralIndicationDraft = {
+  target: string
+  rewardType: '' | 'free_ticket' | 'manual_pix_bonus'
+  value: string
+  /** % comissão só neste bolão; vazio = usa o % do perfil do cambista */
+  sellerPctOverride: string
+}
+
+function buildReferralDraftsFromContests(cts: Contest[]): Record<string, ReferralIndicationDraft> {
+  const o: Record<string, ReferralIndicationDraft> = {}
+  for (const c of cts) {
+    o[c.id] = {
+      target:
+        c.referral_target_sales != null && Number(c.referral_target_sales) > 0
+          ? String(Math.floor(Number(c.referral_target_sales)))
+          : '',
+      rewardType:
+        c.referral_reward_type === 'free_ticket' || c.referral_reward_type === 'manual_pix_bonus'
+          ? c.referral_reward_type
+          : '',
+      value:
+        c.referral_reward_value != null && c.referral_reward_value !== undefined
+          ? String(c.referral_reward_value)
+          : '',
+      sellerPctOverride:
+        c.seller_commission_percent_override != null && c.seller_commission_percent_override !== undefined
+          ? String(c.seller_commission_percent_override)
+          : '',
+    }
+  }
+  return o
+}
 
 export default function AdminPartners() {
   const [loading, setLoading] = useState(true)
@@ -37,6 +80,9 @@ export default function AdminPartners() {
   /** Erro próximo ao botão (banner global pode ficar fora da vista quando o cartão está em baixo na página). */
   const [bonusInlineError, setBonusInlineError] = useState<string | null>(null)
   const bonusFeedbackRef = useRef<HTMLDivElement>(null)
+
+  const [referralDraftById, setReferralDraftById] = useState<Record<string, ReferralIndicationDraft>>({})
+  const [savingReferralContestId, setSavingReferralContestId] = useState<string | null>(null)
 
   const [bonusForm, setBonusForm] = useState({
     userId: '',
@@ -68,6 +114,17 @@ export default function AdminPartners() {
     [users]
   )
 
+  const contestsReferralOverview = useMemo(() => {
+    const arr = Array.from(allContestsById.values())
+    const order: Record<string, number> = { active: 0, draft: 1, finished: 2, cancelled: 3 }
+    return arr.sort((a, b) => {
+      const da = order[a.status] ?? 99
+      const db = order[b.status] ?? 99
+      if (da !== db) return da - db
+      return a.name.localeCompare(b.name, 'pt')
+    })
+  }, [allContestsById])
+
   const reload = async () => {
     setLoading(true)
     setError(null)
@@ -86,6 +143,7 @@ export default function AdminPartners() {
       setIndicationRewards(indRows)
       setAllContestsById(cmap)
       setContests(activeOnly)
+      setReferralDraftById(buildReferralDraftsFromContests(cts))
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Erro ao carregar dados'
       setError(msg)
@@ -160,6 +218,80 @@ export default function AdminPartners() {
       await reload()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erro ao atualizar bônus')
+    }
+  }
+
+  const patchReferralDraft = (contestId: string, patch: Partial<ReferralIndicationDraft>) => {
+    setReferralDraftById((prev) => ({
+      ...prev,
+      [contestId]: {
+        target: '',
+        rewardType: '',
+        value: '',
+        sellerPctOverride: '',
+        ...prev[contestId],
+        ...patch,
+      },
+    }))
+  }
+
+  const saveIndicationRulesForContest = async (contestId: string) => {
+    const d = referralDraftById[contestId]
+    if (!d) return
+
+    const targetRaw = d.target.trim()
+    const refTarget = targetRaw === '' ? null : Math.floor(Number(targetRaw.replace(',', '.')))
+
+    if (refTarget !== null && (!Number.isFinite(refTarget) || refTarget <= 0)) {
+      setError('Meta: informe um número inteiro positivo ou deixe vazio para desactivar o programa neste bolão.')
+      return
+    }
+
+    let refType: 'free_ticket' | 'manual_pix_bonus' | null = null
+    if (refTarget != null && refTarget > 0) {
+      if (d.rewardType !== 'free_ticket' && d.rewardType !== 'manual_pix_bonus') {
+        setError('Com meta definida, escolha o tipo de prémio para o indicador (jogo grátis ou bónus Pix).')
+        return
+      }
+      refType = d.rewardType
+    }
+
+    let refVal: number | null = null
+    if (refType === 'manual_pix_bonus') {
+      const v = Number(String(d.value).replace(',', '.'))
+      if (!Number.isFinite(v) || v <= 0) {
+        setError('Informe o valor em R$ do bónus Pix (maior que zero).')
+        return
+      }
+      refVal = v
+    }
+
+    const sellerRaw = String(d.sellerPctOverride ?? '').trim().replace(',', '.')
+    let sellerOv: number | null = null
+    if (sellerRaw !== '') {
+      const s = Number(sellerRaw)
+      if (!Number.isFinite(s) || s < 0 || s > 100) {
+        setError('«% cambista neste bolão»: use um valor entre 0 e 100 ou deixe vazio para usar o % do perfil.')
+        return
+      }
+      sellerOv = s
+    }
+
+    setSavingReferralContestId(contestId)
+    setError(null)
+    try {
+      await updateContest(contestId, {
+        referral_target_sales: refTarget,
+        referral_reward_type: refTarget != null ? refType : null,
+        referral_reward_value:
+          refTarget != null && refType === 'manual_pix_bonus' ? refVal : null,
+        seller_commission_percent_override: sellerOv,
+      })
+      await reload()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erro ao guardar prémios de indicação')
+    } finally {
+      setSavingReferralContestId(null)
     }
   }
 
@@ -297,6 +429,143 @@ export default function AdminPartners() {
             </div>
           </div>
         </header>
+
+        <section className="bg-white rounded-2xl border border-[#E5E7EB] shadow-[0_1px_3px_rgba(0,0,0,0.06)] overflow-hidden">
+          <div className="p-5 sm:p-6 border-b border-[#F3F4F6] bg-gradient-to-r from-[#ECFDF5] to-[#F0FDF4]">
+            <h2 className="text-lg font-bold text-[#111827]">Indique e Ganhe e % cambista (por bolão)</h2>
+            <p className="text-sm text-[#374151] mt-2 leading-relaxed max-w-4xl">
+              Defina aqui a <strong>meta</strong> de indicação (a cada quantas <strong>vendas pagas</strong> ao código do indicador) e o{' '}
+              <strong>prémio</strong>: <strong>jogo grátis</strong> (crédito automático, sem Pix) ou <strong>valor em R$</strong> (bónus
+              Pix pendente até marcar pago mais abaixo). Deixe a meta vazia para desactivar o programa automático neste bolão.{' '}
+              <strong>% cambista neste bolão</strong> substitui temporariamente o percentual do perfil do vendedor só para este concurso —
+              deixe vazio para usar o do perfil.
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="bg-[#F9FAFB] text-[11px] font-bold uppercase tracking-wide text-[#6B7280] border-b border-[#E5E7EB]">
+                <tr>
+                  <th className="p-3 pl-5 text-left">Bolão</th>
+                  <th className="p-3 text-left">Estado</th>
+                  <th className="p-3 text-left whitespace-nowrap">Meta (vendas pagas)</th>
+                  <th className="p-3 text-left min-w-[10rem]">Tipo de prémio</th>
+                  <th className="p-3 text-left whitespace-nowrap">Valor R$ (Pix)</th>
+                  <th className="p-3 text-left whitespace-nowrap">% cambista (bolão)</th>
+                  <th className="p-3 pr-5 text-right">Guardar</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
+                  <tr>
+                    <td colSpan={7} className="p-6 text-center text-[#6B7280]">
+                      A carregar concursos…
+                    </td>
+                  </tr>
+                ) : contestsReferralOverview.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="p-8 text-center text-[#9CA3AF]">
+                      Nenhum concurso encontrado.
+                    </td>
+                  </tr>
+                ) : (
+                  contestsReferralOverview.map((c) => {
+                    const d = referralDraftById[c.id] ?? {
+                      target: '',
+                      rewardType: '' as const,
+                      value: '',
+                      sellerPctOverride: '',
+                    }
+                    const disabledRow = c.status === 'cancelled'
+                    const saving = savingReferralContestId === c.id
+                    return (
+                      <tr key={c.id} className="border-b border-[#F3F4F6] hover:bg-[#F9FAFB] align-top">
+                        <td className="p-3 pl-5">
+                          <div className="font-semibold text-[#111827]">{c.name}</div>
+                          {disabledRow && (
+                            <p className="text-[11px] text-amber-800 mt-1">Bolão cancelado — não editável.</p>
+                          )}
+                        </td>
+                        <td className="p-3 whitespace-nowrap">
+                          <span className="inline-flex rounded-lg bg-[#F3F4F6] px-2 py-1 text-xs font-semibold text-[#374151]">
+                            {contestStatusLabelPt(c.status)}
+                          </span>
+                        </td>
+                        <td className="p-3">
+                          <input
+                            type="number"
+                            min={1}
+                            step={1}
+                            inputMode="numeric"
+                            disabled={disabledRow}
+                            className="w-24 min-w-[5.5rem] border border-[#E5E7EB] rounded-lg px-2 py-2 text-sm tabular-nums disabled:opacity-50"
+                            placeholder="—"
+                            value={d.target}
+                            onChange={(e) => patchReferralDraft(c.id, { target: e.target.value.replace(/\D/g, '') })}
+                          />
+                          <p className="text-[10px] text-[#9CA3AF] mt-1 max-w-[10rem]">Vazio = sem meta</p>
+                        </td>
+                        <td className="p-3">
+                          <select
+                            className="w-full max-w-[14rem] border border-[#E5E7EB] rounded-lg px-2 py-2 text-sm bg-white disabled:opacity-50"
+                            disabled={disabledRow}
+                            value={d.rewardType}
+                            onChange={(e) => {
+                              const v = e.target.value as ReferralIndicationDraft['rewardType']
+                              patchReferralDraft(c.id, {
+                                rewardType: v,
+                                ...(v !== 'manual_pix_bonus' ? { value: '' } : {}),
+                              })
+                            }}
+                          >
+                            <option value="">— Escolher —</option>
+                            <option value="free_ticket">Jogo grátis (crédito)</option>
+                            <option value="manual_pix_bonus">Bónus em dinheiro (Pix manual)</option>
+                          </select>
+                        </td>
+                        <td className="p-3">
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            disabled={disabledRow || d.rewardType !== 'manual_pix_bonus'}
+                            className="w-28 min-w-[7rem] border border-[#E5E7EB] rounded-lg px-2 py-2 text-sm tabular-nums disabled:bg-[#F3F4F6]"
+                            placeholder="0,00"
+                            value={d.value}
+                            onChange={(e) => patchReferralDraft(c.id, { value: e.target.value })}
+                          />
+                        </td>
+                        <td className="p-3">
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            disabled={disabledRow}
+                            className="w-20 min-w-[4.5rem] border border-[#E5E7EB] rounded-lg px-2 py-2 text-sm tabular-nums disabled:opacity-50"
+                            placeholder="—"
+                            title="Vazio = percentual do perfil do cambista"
+                            value={d.sellerPctOverride}
+                            onChange={(e) =>
+                              patchReferralDraft(c.id, { sellerPctOverride: e.target.value.replace(',', '.') })
+                            }
+                          />
+                          <p className="text-[10px] text-[#9CA3AF] mt-1 max-w-[8rem]">0–100 · vazio = perfil</p>
+                        </td>
+                        <td className="p-3 pr-5 text-right">
+                          <button
+                            type="button"
+                            disabled={disabledRow || saving || loading}
+                            onClick={() => void saveIndicationRulesForContest(c.id)}
+                            className="inline-flex items-center justify-center min-h-[40px] px-4 py-2 rounded-xl bg-[#1E7F43] text-white text-xs font-bold hover:bg-[#196c3a] disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {saving ? 'A guardar…' : 'Guardar'}
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
 
         {error && (
           <div className="flex flex-wrap items-center gap-3 p-4 bg-red-50 border border-red-200 rounded-xl text-red-800 text-sm">
@@ -714,9 +983,9 @@ export default function AdminPartners() {
           {/* MODIFIQUEI AQUI — legenda técnica curta */}
           <div className="p-5 text-[11px] text-[#6B7280] border-t border-[#F3F4F6] bg-[#FAFAFB] space-y-1.5 leading-relaxed">
             <p>
-              {/* MODIFIQUEI AQUI */}
               Comissões só entram quando o comprador usou link de <strong>cambista</strong> e o pagamento foi confirmado. O percentual
-              pode ser sobrescrito <strong>por bolão</strong> no formulário do concurso.
+              vem do <strong>perfil do vendedor</strong>, salvo <strong>substituição por bolão</strong> na tabela{' '}
+              <strong>Indique e Ganhe e % cambista</strong> no topo desta página.
             </p>
             <p className="text-[#6B7280]">
               Para <strong>bloquear ou liberar compras</strong> de um usuário (campo <strong>is_active</strong> no perfil), utilize a página{' '}

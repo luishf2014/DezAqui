@@ -39,11 +39,6 @@ export default function AdminContestForm() {
     // MODIFIQUEI AQUI - Prêmio adicional fixo (desativado por padrão)
     has_extra_prize: false,
     extra_prize_amount: 0,
-    // MODIFIQUEI AQUI — meta de indicação por bolão (cliente comum)
-    referral_target_sales: undefined as number | undefined,
-    referral_reward_type: undefined as 'free_ticket' | 'manual_pix_bonus' | undefined,
-    referral_reward_value: undefined as number | undefined,
-    seller_commission_percent_override: undefined as number | undefined,
   })
   const [currentContest, setCurrentContest] = useState<{ contest_code?: string | null } | null>(null)
 
@@ -83,10 +78,6 @@ export default function AdminContestForm() {
         // MODIFIQUEI AQUI
         has_extra_prize: !!contest.has_extra_prize,
         extra_prize_amount: contest.extra_prize_amount ?? 0,
-        referral_target_sales: contest.referral_target_sales ?? undefined,
-        referral_reward_type: (contest.referral_reward_type as CreateContestInput['referral_reward_type']) ?? undefined,
-        referral_reward_value: contest.referral_reward_value ?? undefined,
-        seller_commission_percent_override: contest.seller_commission_percent_override ?? undefined,
       })
       // MODIFIQUEI AQUI - Armazenar dados do concurso para exibir código
       setCurrentContest(contest)
@@ -149,33 +140,6 @@ export default function AdminContestForm() {
         }
       }
 
-      // MODIFIQUEI AQUI — Indique e Ganhe por bolão
-      const refTarget =
-        formData.referral_target_sales != null && formData.referral_target_sales > 0
-          ? Math.floor(Number(formData.referral_target_sales))
-          : null
-      const refType = formData.referral_reward_type ?? null
-      const refVal =
-        formData.referral_reward_value != null ? Number(formData.referral_reward_value) : null
-      if (refTarget != null) {
-        if (!refType) {
-          throw new Error('Com meta de vendas por indicação, escolha o tipo de recompensa')
-        }
-        if (refType === 'manual_pix_bonus') {
-          if (!Number.isFinite(refVal) || refVal == null || refVal <= 0) {
-            throw new Error('Para bônus Pix manual, informe um valor maior que zero')
-          }
-        }
-      }
-      const sellerOv =
-        formData.seller_commission_percent_override != null &&
-        String(formData.seller_commission_percent_override).trim() !== ''
-          ? Number(formData.seller_commission_percent_override)
-          : null
-      if (sellerOv != null && (!Number.isFinite(sellerOv) || sellerOv < 0 || sellerOv > 100)) {
-        throw new Error('Percentual do cambista para este bolão deve ficar entre 0 e 100 (ou vazio)')
-      }
-
       /** MODIFIQUEI AQUI — gravar instante UTC explícito; evita string sem fuso sendo lida diferente pelo Postgres */
       const startIso = dateTimeLocalInputToIsoUtc(formData.start_date)
       const endIso = dateTimeLocalInputToIsoUtc(formData.end_date)
@@ -199,11 +163,6 @@ export default function AdminContestForm() {
           // MODIFIQUEI AQUI
           has_extra_prize: !!formData.has_extra_prize,
           extra_prize_amount: formData.has_extra_prize ? Number(formData.extra_prize_amount) || 0 : 0,
-          referral_target_sales: refTarget,
-          referral_reward_type: refTarget != null ? refType : null,
-          referral_reward_value:
-            refTarget != null && refType === 'manual_pix_bonus' ? refVal : null,
-          seller_commission_percent_override: sellerOv,
         }
         await updateContest(id, updateData)
       } else {
@@ -214,11 +173,6 @@ export default function AdminContestForm() {
           // MODIFIQUEI AQUI
           has_extra_prize: !!formData.has_extra_prize,
           extra_prize_amount: formData.has_extra_prize ? Number(formData.extra_prize_amount) || 0 : 0,
-          referral_target_sales: refTarget,
-          referral_reward_type: refTarget != null ? refType : null,
-          referral_reward_value:
-            refTarget != null && refType === 'manual_pix_bonus' ? refVal : null,
-          seller_commission_percent_override: sellerOv,
         })
       }
 
@@ -237,8 +191,7 @@ export default function AdminContestForm() {
       ...prev,
       [name]: name === 'min_number' || name === 'max_number' || name === 'numbers_per_participation' || name === 'participation_value' || 
                name === 'first_place_pct' || name === 'second_place_pct' || name === 'lowest_place_pct' || name === 'admin_fee_pct' ||
-               name === 'extra_prize_amount' ||
-               name === 'referral_target_sales' || name === 'referral_reward_value' || name === 'seller_commission_percent_override'
+               name === 'extra_prize_amount'
         ? value === '' ? undefined : Number(value)
         : value,
     }))
@@ -472,81 +425,6 @@ export default function AdminContestForm() {
                   step="0.01"
                   className="w-full px-4 py-3 border border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43] focus:border-transparent"
                   placeholder="0.00"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* MODIFIQUEI AQUI — Indique e Ganhe (cliente) + % cambista só neste bolão */}
-          <div className="mb-6 p-4 rounded-xl border border-[#1E7F43]/25 bg-[#F9FFF9]/80">
-            <h3 className="text-lg font-bold text-[#1F1F1F] mb-2">Indique e Ganhe / Cambista</h3>
-            <p className="text-xs text-[#1F1F1F]/65 mb-4">
-              Meta e recompensa valem apenas para <strong>clientes indicadores</strong> (não cambistas). Cambistas usam só comissão. Deixe a meta vazia para não gerar bônus automáticos neste bolão.
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="referral_target_sales" className="block text-sm font-semibold text-[#1F1F1F] mb-2">
-                  Vendas confirmadas para 1 recompensa
-                </label>
-                <input
-                  type="number"
-                  id="referral_target_sales"
-                  name="referral_target_sales"
-                  min={1}
-                  value={formData.referral_target_sales ?? ''}
-                  onChange={handleChange}
-                  className="w-full px-4 py-3 border border-[#E5E5E5] rounded-xl"
-                  placeholder="Ex.: 10 (vazio = desligado)"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-[#1F1F1F] mb-2">Tipo de recompensa</label>
-                <CustomSelect
-                  value={formData.referral_reward_type ?? ''}
-                  onChange={(v) =>
-                    setFormData((prev) => ({
-                      ...prev,
-                      referral_reward_type: v ? (v as 'free_ticket' | 'manual_pix_bonus') : undefined,
-                    }))
-                  }
-                  options={[
-                    { value: '', label: '—' },
-                    { value: 'free_ticket', label: 'Jogo grátis' },
-                    { value: 'manual_pix_bonus', label: 'Bônus em dinheiro (Pix manual ADM)' },
-                  ]}
-                />
-              </div>
-              <div>
-                <label htmlFor="referral_reward_value" className="block text-sm font-semibold text-[#1F1F1F] mb-2">
-                  Valor do bônus (R$), se Pix manual
-                </label>
-                <input
-                  type="number"
-                  id="referral_reward_value"
-                  name="referral_reward_value"
-                  min={0}
-                  step="0.01"
-                  value={formData.referral_reward_value ?? ''}
-                  onChange={handleChange}
-                  className="w-full px-4 py-3 border border-[#E5E5E5] rounded-xl"
-                  placeholder="0,00"
-                />
-              </div>
-              <div>
-                <label htmlFor="seller_commission_percent_override" className="block text-sm font-semibold text-[#1F1F1F] mb-2">
-                  % comissão cambista neste bolão (opcional)
-                </label>
-                <input
-                  type="number"
-                  id="seller_commission_percent_override"
-                  name="seller_commission_percent_override"
-                  min={0}
-                  max={100}
-                  step="0.01"
-                  value={formData.seller_commission_percent_override ?? ''}
-                  onChange={handleChange}
-                  className="w-full px-4 py-3 border border-[#E5E5E5] rounded-xl"
-                  placeholder="Vazio = usa % do perfil do cambista"
                 />
               </div>
             </div>
