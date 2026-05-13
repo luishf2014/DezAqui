@@ -8,12 +8,14 @@ import CustomSelect from '../../components/CustomSelect'
 import NumberPicker from '../../components/NumberPicker'
 import {
   fetchCommissionsForAdmin,
-  fetchReferralBonusEventsForAdmin,
+  fetchReferralIndicationRewardsForAdmin,
   listUsersWithTotalsForPartners,
   updateCommissionStatusAdmin,
   updateUserSellerFieldsAdmin,
+  updateReferralIndicationRewardAdmin,
   adminCreateBonusParticipationRpc,
   type PartnerUserRow,
+  type ReferralIndicationRewardAdminRow,
 } from '../../services/partnersAdminService'
 import { listAllContests } from '../../services/contestsService'
 import type { Contest } from '../../types'
@@ -26,8 +28,9 @@ export default function AdminPartners() {
 
   const [users, setUsers] = useState<PartnerUserRow[]>([])
   const [commissions, setCommissions] = useState<Awaited<ReturnType<typeof fetchCommissionsForAdmin>>>([])
-  const [bonusEvents, setBonusEvents] = useState<Awaited<ReturnType<typeof fetchReferralBonusEventsForAdmin>>>([])
+  const [indicationRewards, setIndicationRewards] = useState<ReferralIndicationRewardAdminRow[]>([])
   const [contests, setContests] = useState<Contest[]>([])
+  const [allContestsById, setAllContestsById] = useState<Map<string, Contest>>(new Map())
   const [updatingUid, setUpdatingUid] = useState<string | null>(null)
   const [bonusCreateOkMsg, setBonusCreateOkMsg] = useState<string | null>(null)
   const [bonusSubmitting, setBonusSubmitting] = useState(false)
@@ -55,6 +58,11 @@ export default function AdminPartners() {
     [users]
   )
 
+  const indicatorRows = useMemo(
+    () => users.filter((u) => !normalizeIsSellerFlag(u.is_seller) && !u.is_admin),
+    [users]
+  )
+
   const nonSellerChoices = useMemo(
     () => users.filter((u) => !normalizeIsSellerFlag(u.is_seller)),
     [users]
@@ -64,17 +72,19 @@ export default function AdminPartners() {
     setLoading(true)
     setError(null)
     try {
-      const [uRows, commRows, beRows, cts] = await Promise.all([
+      const [uRows, commRows, indRows, cts] = await Promise.all([
         listUsersWithTotalsForPartners(),
         fetchCommissionsForAdmin(),
-        fetchReferralBonusEventsForAdmin(),
+        fetchReferralIndicationRewardsForAdmin(),
         listAllContests(),
       ])
       const activeOnly = cts.filter((x) => x.status === 'active')
+      const cmap = new Map(cts.map((c) => [c.id, c]))
 
       setUsers(uRows)
       setCommissions(commRows)
-      setBonusEvents(beRows)
+      setIndicationRewards(indRows)
+      setAllContestsById(cmap)
       setContests(activeOnly)
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Erro ao carregar dados'
@@ -118,12 +128,38 @@ export default function AdminPartners() {
     }
   }
 
-  const setCommissionPaidState = async (id: string, status: 'pending' | 'paid' | 'canceled') => {
+  const [commissionPayNotes, setCommissionPayNotes] = useState<Record<string, string>>({})
+  const [indicationPayNotes, setIndicationPayNotes] = useState<Record<string, string>>({})
+
+  const setCommissionPaidState = async (
+    id: string,
+    status: 'pending' | 'paid' | 'canceled',
+    note?: string
+  ) => {
     try {
-      await updateCommissionStatusAdmin(id, status)
+      await updateCommissionStatusAdmin(id, status, {
+        admin_payment_note: note?.trim() ? note.trim() : null,
+      })
       await reload()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erro ao atualizar comissão')
+    }
+  }
+
+  const setIndicationRewardState = async (
+    id: string,
+    status: 'pending' | 'paid' | 'canceled',
+    note?: string
+  ) => {
+    try {
+      await updateReferralIndicationRewardAdmin({
+        id,
+        status,
+        admin_payment_note: note?.trim() ? note.trim() : null,
+      })
+      await reload()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erro ao atualizar bônus')
     }
   }
 
@@ -230,7 +266,7 @@ export default function AdminPartners() {
     }
   }
 
-  const theadCols = 11 // MODIFIQUEI AQUI — Linhas (#) foram para o bloco abaixo da tabela
+  const theadCols = 7 // MODIFIQUEI AQUI — grelha cambista simplificada
 
   return (
     <div className="min-h-screen bg-[#F3F4F6] flex flex-col">
@@ -245,9 +281,10 @@ export default function AdminPartners() {
                 Parceiros e comissões
               </h1>
               <p className="text-[15px] text-[#374151] leading-relaxed">
-                Gestão fiscal de cambistas e clientes indicados: comissões apenas sobre vendas <strong>pagas</strong>.
-                Percentual padrão <strong>5%</strong>. A cada <strong>10</strong> vendas qualificadas o sistema concede{' '}
-                <strong>1</strong> crédito para bilhete bonificado (sem arrecadação e sem nova comissão).
+                {/* MODIFIQUEI AQUI */}
+                Separação explícita: <strong>clientes indicadores</strong> (programa «Indique e Ganhe», sem comissão) e{' '}
+                <strong>cambistas</strong> (comissão % só sobre vendas <strong>pagas</strong>, sem carteira interna). Pagamentos de
+                comissão e de bônus Pix são sempre <strong>manuais via Pix</strong>, registados aqui como pendentes ou pagos.
               </p>
             </div>
             {/* MODIFIQUEI AQUI: link de venda ficou apenas na área do vendedor (logado) */}
@@ -433,6 +470,67 @@ export default function AdminPartners() {
           </div>
         </section>
 
+        {/* MODIFIQUEI AQUI — clientes indicadores (não cambistas) */}
+        <section className="bg-white rounded-2xl border border-[#E5E7EB] shadow-[0_1px_3px_rgba(0,0,0,0.06)] overflow-hidden">
+          <div className="p-5 sm:p-6 border-b border-[#F3F4F6] bg-[#FFFBEB]">
+            <h2 className="text-lg font-bold text-[#111827]">Clientes indicadores</h2>
+            <p className="text-xs text-[#6B7280] mt-1">
+              Utilizadores que participam do «Indique e Ganhe» (não marcar como cambista). Jogos grátis e bônus Pix são geridos separadamente das comissões.
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-max w-full text-sm">
+              <thead>
+                <tr className="border-b border-[#E5E7EB] bg-[#F9FAFB] text-left text-[11px] font-bold uppercase tracking-wide text-[#6B7280]">
+                  <th className="p-3 pl-5">Cliente</th>
+                  <th className="p-3">Código ref.</th>
+                  <th className="p-3 text-center">Bônus gerados</th>
+                  <th className="p-3 text-right">Bônus Pix pendente</th>
+                  <th className="p-3 text-right">Bônus Pix pago</th>
+                  <th className="p-3 text-center">Jogos grátis disp.</th>
+                  <th className="p-3 pr-5 text-center">Jogos grátis usados</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
+                  <tr>
+                    <td colSpan={7} className="p-4 text-center">
+                      Carregando…
+                    </td>
+                  </tr>
+                ) : indicatorRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="p-12 text-center text-[#9CA3AF] text-sm">
+                      Nenhum cliente indicador listado.
+                    </td>
+                  </tr>
+                ) : (
+                  indicatorRows.map((u) => (
+                    <tr key={u.id} className="border-b border-[#F3F4F6] hover:bg-[#F9FAFB]">
+                      <td className="p-3 pl-5">
+                        <div className="font-semibold text-[#111827]">{u.name}</div>
+                        <div className="text-[11px] text-[#6B7280] break-all">{u.email}</div>
+                      </td>
+                      <td className="p-3 font-mono text-xs">{u.referral_code ?? '—'}</td>
+                      <td className="p-3 text-center tabular-nums">{u.indication_rewards_count}</td>
+                      <td className="p-3 text-right tabular-nums text-amber-800">
+                        {formatCurrency(u.indication_pix_pending_brl)}
+                      </td>
+                      <td className="p-3 text-right tabular-nums text-[#166534]">
+                        {formatCurrency(u.indication_pix_paid_brl)}
+                      </td>
+                      <td className="p-3 text-center font-semibold tabular-nums">{u.referral_bonus_credits ?? 0}</td>
+                      <td className="p-3 pr-5 text-center tabular-nums text-[#374151]">
+                        {u.referral_bonus_credits_used ?? 0}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
         {/* Usuários / vendedores */}
         <section className="bg-white rounded-2xl border border-[#E5E7EB] shadow-[0_1px_3px_rgba(0,0,0,0.06)] overflow-hidden">
           <div className="p-5 sm:p-6 border-b border-[#F3F4F6] flex flex-wrap items-center justify-between gap-3 bg-[#FAFAFB]">
@@ -495,11 +593,7 @@ export default function AdminPartners() {
               <tr className="border-b border-[#E5E7EB] bg-[#F9FAFB] text-left text-[11px] font-bold uppercase tracking-wide text-[#6B7280]">
                 <th className="p-3 min-w-[10rem] pl-5">Vendedor</th>
                 <th className="p-3">Código ref.</th>
-                <th className="p-3 text-center">Qualif. vendas</th>
-                <th className="p-3 text-center">Bonif. disp.</th>
-                <th className="p-3 text-center">Bonif. usadas</th>
-                <th className="p-3 text-center">Bonif. geradas</th>
-                <th className="p-3 text-right">Total vendido via indicação</th>
+                <th className="p-3 text-right">Total vendido via link</th>
                 <th className="p-3 text-center">%</th>
                 <th className="p-3 text-right">Comissão pendente</th>
                 <th className="p-3 text-right">Comissão paga</th>
@@ -535,10 +629,6 @@ export default function AdminPartners() {
                         <div className="text-[11px] text-[#6B7280] break-all mt-0.5">{u.email}</div>
                       </td>
                       <td className="p-3 font-mono text-xs text-[#374151] whitespace-nowrap">{u.referral_code ?? '—'}</td>
-                      <td className="p-3 text-center tabular-nums text-[#374151]">{u.referral_qualifying_sales_count ?? 0}</td>
-                      <td className="p-3 text-center font-semibold tabular-nums text-[#111827]">{u.referral_bonus_credits ?? 0}</td>
-                      <td className="p-3 text-center tabular-nums text-[#374151]">{u.referral_bonus_credits_used ?? 0}</td>
-                      <td className="p-3 text-center tabular-nums text-[#374151]">{u.referral_credits_generated_milestones}</td>
                       <td className="p-3 text-right tabular-nums font-medium text-[#111827]">
                         {formatCurrency(Number(u.total_sold_via_referral_brl || 0))}
                       </td>
@@ -624,13 +714,13 @@ export default function AdminPartners() {
           {/* MODIFIQUEI AQUI — legenda técnica curta */}
           <div className="p-5 text-[11px] text-[#6B7280] border-t border-[#F3F4F6] bg-[#FAFAFB] space-y-1.5 leading-relaxed">
             <p>
-              “Qualif. vendas” = vendas <strong>pagas</strong> válidas já contabilizadas na fila das “de 10”. A listagem{' '}
-              <strong>P / Q / Cx</strong> aparece na caixa <strong>&quot;Registros na tabela de comissões&quot;</strong> acima desta legenda.
+              {/* MODIFIQUEI AQUI */}
+              Comissões só entram quando o comprador usou link de <strong>cambista</strong> e o pagamento foi confirmado. O percentual
+              pode ser sobrescrito <strong>por bolão</strong> no formulário do concurso.
             </p>
-            <p>Comissão considera apenas vendas onde o cliente era <strong>vendedor</strong> (% &gt; 0) quando o PIX foi quitado.</p>
-            {/* MODIFIQUEI AQUI — ativar/inativar conta do cliente: ADM → Participantes */}
             <p className="text-[#6B7280]">
-              Para <strong>bloquear ou liberar compras</strong> de um usuário (campo <strong>is_active</strong> no perfil), utilize a página <strong>Participantes</strong> no painel.
+              Para <strong>bloquear ou liberar compras</strong> de um usuário (campo <strong>is_active</strong> no perfil), utilize a página{' '}
+              <strong>Participantes</strong> no painel.
             </p>
           </div>
         </section>
@@ -651,13 +741,14 @@ export default function AdminPartners() {
                 <th className="p-2 text-center">%</th>
                 <th className="p-2 text-right">Valor comissão</th>
                 <th className="p-2 text-center">Estado</th>
+                <th className="p-2 text-left min-w-[7rem]">Obs. Pix / data</th>
                 <th className="p-3 pr-5"></th>
               </tr>
             </thead>
             <tbody>
               {!loading && commissions.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="p-12 text-center text-[#9CA3AF] text-sm">
+                  <td colSpan={8} className="p-12 text-center text-[#9CA3AF] text-sm">
                     Nenhum registro de comissão ainda.
                   </td>
                 </tr>
@@ -672,15 +763,34 @@ export default function AdminPartners() {
                   <td className="p-2 text-center">{Number(cRow.commission_percent).toLocaleString('pt-BR')}%</td>
                   <td className="p-2 text-right tabular-nums">{formatCurrency(Number(cRow.commission_value))}</td>
                   <td className="p-2 text-center uppercase text-xs">{cRow.status}</td>
+                  <td className="p-2 text-[11px] text-[#374151] max-w-[14rem]">
+                    {cRow.paid_at && (
+                      <div className="text-[#166534] font-semibold">{new Date(cRow.paid_at).toLocaleString('pt-BR')}</div>
+                    )}
+                    {cRow.admin_payment_note && <div>{cRow.admin_payment_note}</div>}
+                    {cRow.status === 'pending' && (
+                      <input
+                        type="text"
+                        className="mt-1 w-full border border-[#E5E7EB] rounded-lg px-2 py-1 text-xs"
+                        placeholder="Observação após Pix"
+                        value={commissionPayNotes[cRow.id] ?? ''}
+                        onChange={(e) =>
+                          setCommissionPayNotes((s) => ({ ...s, [cRow.id]: e.target.value }))
+                        }
+                      />
+                    )}
+                  </td>
                   <td className="p-3 pr-5 flex gap-2 justify-end flex-wrap">
                     {cRow.status === 'pending' && (
                       <>
                         <button
                           type="button"
                           className="text-xs text-green-700 underline"
-                          onClick={() => void setCommissionPaidState(cRow.id, 'paid')}
+                          onClick={() =>
+                            void setCommissionPaidState(cRow.id, 'paid', commissionPayNotes[cRow.id])
+                          }
                         >
-                          Marcar pago
+                          Marcar pago via Pix
                         </button>
                         <button
                           type="button"
@@ -699,39 +809,91 @@ export default function AdminPartners() {
           </div>
         </section>
 
-        {/* Eventos bonificação 10 */}
+        {/* MODIFIQUEI AQUI — bônus por indicação (novo modelo por bolão) */}
         <section className="bg-white rounded-2xl border border-[#E5E7EB] shadow-[0_1px_3px_rgba(0,0,0,0.06)] overflow-hidden mb-16">
           <div className="p-5 sm:p-6 border-b border-[#F3F4F6]">
-            <h2 className="text-lg font-bold text-[#111827]">Bonificações geradas</h2>
-            <p className="text-xs text-[#6B7280] mt-1">Créditos atribuídos a cada marco de 10 vendas pagas válidas</p>
+            <h2 className="text-lg font-bold text-[#111827]">Bônus «Indique e Ganhe»</h2>
+            <p className="text-xs text-[#6B7280] mt-1">
+              Jogos grátis (entregue automaticamente como crédito) ou bônus Pix pendente até o ADM marcar pago após pagamento manual.
+            </p>
           </div>
           <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
             <thead className="bg-[#F9FAFB] text-[11px] font-bold uppercase tracking-wide text-[#6B7280] border-b border-[#E5E7EB]">
               <tr>
                 <th className="p-3 pl-5 text-left">Beneficiário</th>
-                <th className="p-2 text-center">Marco (# vendas pagas válidas)</th>
-                <th className="p-2 text-center">Créditos</th>
-                <th className="p-3 pr-5 text-left">Em</th>
+                <th className="p-2 text-left">Bolão</th>
+                <th className="p-2 text-center">Tipo</th>
+                <th className="p-2 text-right">Valor</th>
+                <th className="p-2 text-center">Meta (# vendas)</th>
+                <th className="p-2 text-center">Estado</th>
+                <th className="p-2 text-left">Obs. / pago em</th>
+                <th className="p-3 pr-5"></th>
               </tr>
             </thead>
             <tbody>
-              {!loading && bonusEvents.length === 0 && (
+              {!loading && indicationRewards.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="p-12 text-center text-[#9CA3AF] text-sm">
-                    Nenhum evento de bonificação registado.
+                  <td colSpan={8} className="p-12 text-center text-[#9CA3AF] text-sm">
+                    Nenhum bônus por indicação registado (aplique a migração 043 e configure metas no concurso).
                   </td>
                 </tr>
               )}
-              {bonusEvents.map((ev) => (
+              {indicationRewards.map((ev) => (
                 <tr key={ev.id} className="border-b border-[#F3F4F6] hover:bg-[#F9FAFB]">
-                  <td className="p-2 text-xs">
+                  <td className="p-2 text-xs pl-5">
                     <span className="font-medium">{userMap.get(ev.beneficiary_profile_id)?.name || '—'}</span>
-                    <div className="font-mono text-[10px] text-[#1F1F1F]/40">{ev.beneficiary_profile_id}</div>
                   </td>
-                  <td className="p-2 text-center tabular-nums">{ev.milestone_total}</td>
-                  <td className="p-2 text-center tabular-nums">{ev.credits_granted}</td>
-                  <td className="p-2">{new Date(ev.created_at).toLocaleString('pt-BR')}</td>
+                  <td className="p-2 text-xs max-w-[10rem] break-words">
+                    {allContestsById.get(ev.contest_id)?.name ?? ev.contest_id.slice(0, 8)}
+                  </td>
+                  <td className="p-2 text-center text-xs">
+                    {ev.reward_type === 'free_ticket' ? 'Jogo grátis' : 'Pix manual'}
+                  </td>
+                  <td className="p-2 text-right tabular-nums">
+                    {ev.reward_type === 'manual_pix_bonus' ? formatCurrency(Number(ev.amount_brl ?? 0)) : '—'}
+                  </td>
+                  <td className="p-2 text-center tabular-nums">{ev.sales_milestone_total}</td>
+                  <td className="p-2 text-center uppercase text-xs">{ev.status}</td>
+                  <td className="p-2 text-[11px] text-[#374151] max-w-[14rem]">
+                    {ev.paid_at && (
+                      <div className="text-[#166534] font-semibold">{new Date(ev.paid_at).toLocaleString('pt-BR')}</div>
+                    )}
+                    {ev.admin_payment_note && <div>{ev.admin_payment_note}</div>}
+                    {ev.reward_type === 'manual_pix_bonus' && ev.status === 'pending' && (
+                      <input
+                        type="text"
+                        className="mt-1 w-full border border-[#E5E7EB] rounded-lg px-2 py-1 text-xs"
+                        placeholder="Observação após Pix"
+                        value={indicationPayNotes[ev.id] ?? ''}
+                        onChange={(e) =>
+                          setIndicationPayNotes((s) => ({ ...s, [ev.id]: e.target.value }))
+                        }
+                      />
+                    )}
+                  </td>
+                  <td className="p-3 pr-5">
+                    {ev.reward_type === 'manual_pix_bonus' && ev.status === 'pending' && (
+                      <div className="flex flex-wrap gap-2 justify-end">
+                        <button
+                          type="button"
+                          className="text-xs text-green-700 underline"
+                          onClick={() =>
+                            void setIndicationRewardState(ev.id, 'paid', indicationPayNotes[ev.id])
+                          }
+                        >
+                          Marcar pago via Pix
+                        </button>
+                        <button
+                          type="button"
+                          className="text-xs text-red-600 underline"
+                          onClick={() => void setIndicationRewardState(ev.id, 'canceled')}
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>

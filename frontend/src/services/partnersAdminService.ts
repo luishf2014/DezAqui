@@ -13,14 +13,49 @@ export type SellerCommissionRow = {
   commission_value: number
   status: 'pending' | 'paid' | 'canceled'
   created_at: string
+  paid_at?: string | null
+  admin_payment_note?: string | null
 }
 
-export type ReferralBonusEventRow = {
+export type ReferralIndicationRewardAdminRow = {
   id: string
   beneficiary_profile_id: string
-  milestone_total: number
-  credits_granted: number
+  contest_id: string
+  sales_milestone_total: number
+  reward_type: string
+  amount_brl: number | null
+  status: string
+  admin_payment_note: string | null
+  paid_at: string | null
   created_at: string
+}
+
+export async function fetchReferralIndicationRewardsForAdmin(): Promise<ReferralIndicationRewardAdminRow[]> {
+  const { data, error } = await supabase
+    .from('referral_indication_rewards')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(500)
+  if (error) throw new Error(error.message)
+  return (data || []) as ReferralIndicationRewardAdminRow[]
+}
+
+export async function updateReferralIndicationRewardAdmin(params: {
+  id: string
+  status: 'pending' | 'paid' | 'canceled'
+  admin_payment_note?: string | null
+}): Promise<void> {
+  const patch: Record<string, unknown> = { status: params.status }
+  if (params.status === 'paid') {
+    patch.paid_at = new Date().toISOString()
+  } else {
+    patch.paid_at = null
+  }
+  if (params.admin_payment_note !== undefined) {
+    patch.admin_payment_note = params.admin_payment_note
+  }
+  const { error } = await supabase.from('referral_indication_rewards').update(patch).eq('id', params.id)
+  if (error) throw new Error(error.message)
 }
 
 export async function fetchCommissionsForAdmin(): Promise<SellerCommissionRow[]> {
@@ -32,20 +67,21 @@ export async function fetchCommissionsForAdmin(): Promise<SellerCommissionRow[]>
   return (data || []) as SellerCommissionRow[]
 }
 
-export async function fetchReferralBonusEventsForAdmin(): Promise<ReferralBonusEventRow[]> {
-  const { data, error } = await supabase
-    .from('referral_bonus_events')
-    .select('*')
-    .order('created_at', { ascending: false })
-  if (error) throw new Error(error.message)
-  return (data || []) as ReferralBonusEventRow[]
-}
-
 export async function updateCommissionStatusAdmin(
   id: string,
-  status: 'pending' | 'paid' | 'canceled'
+  status: 'pending' | 'paid' | 'canceled',
+  options?: { admin_payment_note?: string | null }
 ): Promise<void> {
-  const { error } = await supabase.from('seller_commissions').update({ status }).eq('id', id)
+  const patch: Record<string, unknown> = { status }
+  if (status === 'paid') {
+    patch.paid_at = new Date().toISOString()
+  } else {
+    patch.paid_at = null
+  }
+  if (options?.admin_payment_note !== undefined) {
+    patch.admin_payment_note = options.admin_payment_note
+  }
+  const { error } = await supabase.from('seller_commissions').update(patch).eq('id', id)
   if (error) throw new Error(error.message)
 }
 
@@ -97,7 +133,9 @@ export async function adminCreateBonusParticipationRpc(params: {
 
 /** MODIFIQUEI AQUI: totais do ADM para vendedores / indicação (R$ só em comissões reais pagas/indicadas). */
 export type PartnerUserRow = User & {
-  referral_credits_generated_milestones: number
+  indication_rewards_count: number
+  indication_pix_pending_brl: number
+  indication_pix_paid_brl: number
   commissions_sale_count_pending: number
   commissions_sale_count_paid: number
   commissions_sale_count_canceled: number
@@ -117,12 +155,12 @@ export async function listUsersWithTotalsForPartners(): Promise<PartnerUserRow[]
 
   if (users.error) throw new Error(users.error.message)
 
-  const [{ data: commRows, error: cErr }, { data: evtRows, error: eErr }] = await Promise.all([
+  const [{ data: commRows, error: cErr }, { data: rewRows, error: rErr }] = await Promise.all([
     supabase.from('seller_commissions').select('seller_user_id, status, sale_value, commission_value'),
-    supabase.from('referral_bonus_events').select('beneficiary_profile_id, credits_granted'),
+    supabase.from('referral_indication_rewards').select('beneficiary_profile_id, reward_type, status, amount_brl'),
   ])
   if (cErr) throw new Error(cErr.message)
-  if (eErr) throw new Error(eErr.message)
+  if (rErr) throw new Error(rErr.message)
 
   type Agg = {
     pendN: number
@@ -167,16 +205,24 @@ export async function listUsersWithTotalsForPartners(): Promise<PartnerUserRow[]
     }
   }
 
-  const milestonesSum = new Map<string, number>()
-  for (const ev of evtRows || []) {
-    const bid = ev.beneficiary_profile_id as string
-    const g = Number(ev.credits_granted ?? 1)
-    milestonesSum.set(bid, (milestonesSum.get(bid) ?? 0) + g)
+  const rewAgg = new Map<string, { n: number; pend: number; paid: number }>()
+  for (const r of rewRows || []) {
+    const bid = r.beneficiary_profile_id as string
+    if (!rewAgg.has(bid)) rewAgg.set(bid, { n: 0, pend: 0, paid: 0 })
+    const a = rewAgg.get(bid)!
+    a.n += 1
+    const rt = r.reward_type as string
+    const st = r.status as string
+    const am = Number(r.amount_brl ?? 0)
+    if (rt === 'manual_pix_bonus' && st === 'pending') a.pend += am
+    if (rt === 'manual_pix_bonus' && st === 'paid') a.paid += am
   }
 
   return ((users.data || []) as User[]).map((u) => ({
     ...u,
-    referral_credits_generated_milestones: milestonesSum.get(u.id) ?? 0,
+    indication_rewards_count: rewAgg.get(u.id)?.n ?? 0,
+    indication_pix_pending_brl: rewAgg.get(u.id)?.pend ?? 0,
+    indication_pix_paid_brl: rewAgg.get(u.id)?.paid ?? 0,
     commissions_sale_count_pending: agg.get(u.id)?.pendN ?? 0,
     commissions_sale_count_paid: agg.get(u.id)?.paidN ?? 0,
     commissions_sale_count_canceled: agg.get(u.id)?.cancN ?? 0,

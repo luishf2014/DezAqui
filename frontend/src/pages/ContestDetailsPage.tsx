@@ -21,7 +21,9 @@ import { formatOfficialRefDate } from '../utils/contestOfficialRefUtils'
 import { formatCurrency, formatContestDateTimeDisplay } from '../utils/formatters'
 import OfficialContestNumbersBadges from '../components/OfficialContestNumbersBadges'
 import ContestPrizePoolInfo from '../components/ContestPrizePoolInfo'
+import ContestSocialShareButtons from '../components/ContestSocialShareButtons'
 import { setPendingReferralCodeFromQuery } from '../utils/referralCodeStorage'
+import { normalizeIsSellerFlag } from '../services/profilesService'
 
 export default function ContestDetailsPage() {
   const { id } = useParams<{ id: string }>()
@@ -267,6 +269,22 @@ export default function ContestDetailsPage() {
             </div>
           </div>
         </div>
+
+        {/* MODIFIQUEI AQUI — partilha com ref do cliente (não cambista) */}
+        {id && contest && (
+          <div className="container mx-auto px-4 mb-4 max-w-7xl">
+            <div className="rounded-2xl border border-[#E5E5E5] bg-white p-4 shadow-sm max-w-md">
+              <p className="text-xs font-semibold text-[#1F1F1F]/55 uppercase mb-2">Compartilhar bolão</p>
+              <ContestSocialShareButtons
+                contestId={id}
+                contestName={contest.name}
+                referralCode={
+                  user && !normalizeIsSellerFlag(profile?.is_seller) ? profile?.referral_code : null
+                }
+              />
+            </div>
+          </div>
+        )}
 
         {/* Cards de Informações */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-6 sm:mb-8">

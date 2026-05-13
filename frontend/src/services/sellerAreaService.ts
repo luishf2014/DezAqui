@@ -6,9 +6,6 @@ import { supabase } from '../lib/supabase'
 export type SellerAreaProfileSnip = {
   referral_code: string
   commission_percent: number
-  referral_bonus_credits: number
-  referral_bonus_credits_used: number
-  referral_qualifying_sales_count: number
 }
 
 export type SellerAreaStats = {
@@ -59,9 +56,6 @@ export async function fetchSellerAreaDashboardRpc(): Promise<SellerAreaDashboard
     profile: {
       referral_code: String(profile.referral_code ?? ''),
       commission_percent: Number(profile.commission_percent ?? 0),
-      referral_bonus_credits: Number(profile.referral_bonus_credits ?? 0),
-      referral_bonus_credits_used: Number(profile.referral_bonus_credits_used ?? 0),
-      referral_qualifying_sales_count: Number(profile.referral_qualifying_sales_count ?? 0),
     },
     stats: {
       paid_sales_via_commission_lines: Number(stats.paid_sales_via_commission_lines ?? 0),

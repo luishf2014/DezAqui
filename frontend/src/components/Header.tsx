@@ -7,7 +7,7 @@
  * @component
  * @returns {JSX.Element | null} Header component ou null se usuário não autenticado
  */
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { useCart } from '../contexts/CartContext'
@@ -33,11 +33,16 @@ export default function Header() {
   const { user, isAdmin, logout, profile } = useAuth()
   /** MODIFIQUEI AQUI — menu «Meu link» para todo cambista com perfil válido */
   const isSellerUser = normalizeIsSellerFlag(profile?.is_seller)
+  /** MODIFIQUEI AQUI — clientes comuns usam «Indique e Ganhe», não cambistas */
+  const isClientReferrerUi = Boolean(user && !isSellerUser)
   const { getItemCount } = useCart()
   const [showProfileMenu, setShowProfileMenu] = useState(false)
   const [isLoggingOut, setIsLoggingOut] = useState(false)
   const [isFadingOut, setIsFadingOut] = useState(false)
   const profileMenuRef = useRef<HTMLDivElement>(null)
+  /** Painel do dropdown: altura máx. = espaço até ao fundo da viewport (evita cortar «Sair»). */
+  const profileDropdownPanelRef = useRef<HTMLDivElement>(null)
+  const [profileMenuMaxHeightPx, setProfileMenuMaxHeightPx] = useState<number | null>(null)
   // MODIFIQUEI AQUI - Só contar itens quando estiver logado
   const cartItemCount = user ? getItemCount() : 0
 
@@ -282,6 +287,36 @@ export default function Header() {
     }
   }, [showProfileMenu, showNotifMenu, closeProfileMenu])
 
+  useLayoutEffect(() => {
+    if (!showProfileMenu) {
+      setProfileMenuMaxHeightPx(null)
+      return
+    }
+    const panel = profileDropdownPanelRef.current
+    if (!panel) return
+
+    const updateMaxHeight = () => {
+      const el = profileDropdownPanelRef.current
+      if (!el) return
+      const rect = el.getBoundingClientRect()
+      const vv = window.visualViewport
+      const bottomLimit = vv ? vv.offsetTop + vv.height : window.innerHeight
+      const gapPx = 10
+      const raw = Math.floor(bottomLimit - rect.top - gapPx)
+      setProfileMenuMaxHeightPx(Math.max(180, raw))
+    }
+
+    updateMaxHeight()
+    window.addEventListener('resize', updateMaxHeight)
+    window.visualViewport?.addEventListener('resize', updateMaxHeight)
+    window.visualViewport?.addEventListener('scroll', updateMaxHeight)
+    return () => {
+      window.removeEventListener('resize', updateMaxHeight)
+      window.visualViewport?.removeEventListener('resize', updateMaxHeight)
+      window.visualViewport?.removeEventListener('scroll', updateMaxHeight)
+    }
+  }, [showProfileMenu])
+
   return (
     <>
       {/* MODIFIQUEI AQUI - Overlay de fade-out durante logout */}
@@ -467,6 +502,15 @@ export default function Header() {
                 </Link>
               )}
 
+              {/* {user && isClientReferrerUi && (
+                <Link
+                  to="/indique-e-ganhe"
+                  className="px-4 py-2 text-white/90 hover:text-white font-semibold text-sm rounded-lg hover:bg-white/10 transition-all border border-white/25"
+                >
+                  Indique e Ganhe
+                </Link>
+              )} */}
+
               {/* Link "Última Compra" visível apenas quando autenticado */}
               {user && (
                 <Link
@@ -477,7 +521,7 @@ export default function Header() {
                 </Link>
               )}
 
-              {/* MODIFIQUEI AQUI — cambista: painel próprio (não substitui o ADM). */}
+              {/* MODIFIQUEI AQUI — cambista: painel próprio (não substitui o ADM).
               {user && isSellerUser && (
                 <Link
                   to="/meu-link"
@@ -485,7 +529,7 @@ export default function Header() {
                 >
                   Área do vendedor
                 </Link>
-              )}
+              )} */}
 
               {/* Apenas link "Dashboard" quando admin e autenticado */}
               {user && isAdmin && (
@@ -666,12 +710,19 @@ export default function Header() {
                 {/* Menu Dropdown do Perfil */}
                 {showProfileMenu && (
                   <div
-                    className="absolute right-0 mt-3 w-56 sm:w-64 rounded-2xl border border-[#E5E5E5] bg-white shadow-2xl z-50 overflow-hidden animate-[slideDown_0.2s_ease-out]"
+                    ref={profileDropdownPanelRef}
+                    className="absolute right-0 mt-3 w-56 sm:w-64 flex flex-col rounded-2xl border border-[#E5E5E5] bg-white shadow-2xl z-50 overflow-hidden animate-[slideDown_0.2s_ease-out]"
+                    style={{
+                      maxHeight:
+                        profileMenuMaxHeightPx != null
+                          ? `${profileMenuMaxHeightPx}px`
+                          : 'min(85vh, calc(100dvh - 5.5rem))',
+                    }}
                     role="menu"
                     aria-orientation="vertical"
                   >
                     {/* Cabeçalho do menu com informações do usuário */}
-                    <div className="p-5 bg-gradient-to-br from-[#F9F9F9] to-white border-b border-[#E5E5E5]">
+                    <div className="shrink-0 p-5 bg-gradient-to-br from-[#F9F9F9] to-white border-b border-[#E5E5E5]">
                       <div className="flex items-center gap-3 mb-2">
                         <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#1E7F43] text-white text-sm font-bold shadow-md">
                           {getUserInitial()}
@@ -692,8 +743,12 @@ export default function Header() {
                       </div>
                     </div>
 
-                    {/* Itens do menu */}
-                    <div className="p-2" role="group">
+                    {/* Itens do menu — rolagem quando não cabe na viewport */}
+                    <div
+                      className="p-2 pt-2 pb-8 flex-1 min-h-0 overflow-y-auto overscroll-y-contain"
+                      role="group"
+                      style={{ scrollPaddingBottom: '1.5rem' }}
+                    >
                       {/* Painel Administrativo (admin) */}
                       {isAdmin && (
                         <Link
@@ -752,6 +807,20 @@ export default function Header() {
                       </Link>
 
                       {/* MODIFIQUEI AQUI */}
+                      {isClientReferrerUi && (
+                        <Link
+                          to="/indique-e-ganhe"
+                          onClick={closeProfileMenu}
+                          role="menuitem"
+                          className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold text-[#1E7F43] hover:bg-[#F4C430]/15 transition-all border border-[#F4C430]/25"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-[#1E7F43]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                          </svg>
+                          Indique e Ganhe
+                        </Link>
+                      )}
+
                       {isSellerUser && (
                         <Link
                           to="/meu-link"

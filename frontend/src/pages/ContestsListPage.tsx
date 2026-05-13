@@ -16,11 +16,15 @@ import Header from '../components/Header'
 import Footer from '../components/Footer'
 import ContestStatusBadge from '../components/ContestStatusBadge'
 import ContestPrizePoolInfo from '../components/ContestPrizePoolInfo'
+import ContestSocialShareButtons from '../components/ContestSocialShareButtons'
 import { formatCurrency } from '../utils/formatters'
+import { useAuth } from '../contexts/AuthContext'
+import { normalizeIsSellerFlag } from '../services/profilesService'
 
 type TabType = 'active' | 'history'
 
 export default function ContestsListPage() {
+  const { user, profile } = useAuth()
   const [poolCountByContest, setPoolCountByContest] = useState<Record<string, number>>({})
   const [poolCollectedByContest, setPoolCollectedByContest] = useState<Record<string, number>>({})
   const [activeTab, setActiveTab] = useState<TabType>('active')
@@ -408,6 +412,17 @@ export default function ContestsListPage() {
                   participationsCount={poolCountByContest[contest.id]}
                   collectedAmountOverride={poolCollectedByContest[contest.id]}
                 />
+
+                <div className="mt-3 mb-3">
+                  <p className="text-[11px] font-semibold text-[#1F1F1F]/50 uppercase mb-2">Compartilhar bolão</p>
+                  <ContestSocialShareButtons
+                    contestId={contest.id}
+                    contestName={contest.name}
+                    referralCode={
+                      user && !normalizeIsSellerFlag(profile?.is_seller) ? profile?.referral_code : null
+                    }
+                  />
+                </div>
 
                 {/* Botão */}
                 <Link

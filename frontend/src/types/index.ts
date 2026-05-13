@@ -66,6 +66,11 @@ export interface Contest {
   created_by: string
   created_at: string
   updated_at: string
+  // MODIFIQUEI AQUI — «Indique e Ganhe» por bolão + comissão cambista por bolão
+  referral_target_sales?: number | null
+  referral_reward_type?: 'free_ticket' | 'manual_pix_bonus' | null
+  referral_reward_value?: number | null
+  seller_commission_percent_override?: number | null
 }
 
 // MODIFIQUEI AQUI - Referência de concurso oficial (múltiplas por bolão, informativas)

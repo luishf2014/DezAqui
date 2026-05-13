@@ -1,6 +1,7 @@
 /**
  * MODIFIQUEI AQUI — página do cambista (/meu-link e /minhas-vendas): link vem sempre do seu próprio perfil (RLS);
- * totais opcionais via RPC servidor (precisa migração 041 aplicada no Supabase).
+ * totais opcionais via RPC servidor (precisa migração 041+ aplicada no Supabase).
+ * Cambista não participa do «Indique e Ganhe»; apenas comissão % sobre vendas pagas (sem carteira).
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Header from '../components/Header'
@@ -13,14 +14,14 @@ import {
   type SellerAreaDashboardPayload,
   type SellerAreaSaleRow,
 } from '../services/sellerAreaService'
-import { redeemReferralFreeCreditParticipation } from '../services/participationsService'
 import { formatCurrency } from '../utils/formatters'
+import { shareTelegramUrl, shareWhatsAppUrl } from '../utils/contestShareLink'
 import type { Contest } from '../types'
 
 function commissionStatusPt(s: string): string {
   const v = String(s || '').toLowerCase()
-  if (v === 'pending') return 'Pendente (repasse)'
-  if (v === 'paid') return 'Paga'
+  if (v === 'pending') return 'Pendente (pagamento manual via Pix)'
+  if (v === 'paid') return 'Paga via Pix'
   if (v === 'canceled') return 'Cancelada'
   return s || '—'
 }
@@ -48,11 +49,6 @@ export default function SellerAreaPage() {
   const [linkContestId, setLinkContestId] = useState('')
   const [copiedNotice, setCopiedNotice] = useState(false)
 
-  const [creditNumbersRaw, setCreditNumbersRaw] = useState('')
-  const [creditContestId, setCreditContestId] = useState('')
-  const [redeemBusy, setRedeemBusy] = useState(false)
-  const [redeemMsg, setRedeemMsg] = useState<string | null>(null)
-
   /** MODIFIQUEI AQUI — código de referência sempre do perfil próprio (+ fallback RPC) */
   const referralCode = useMemo(() => {
     const p = profile?.referral_code?.trim() ?? ''
@@ -74,6 +70,18 @@ export default function SellerAreaPage() {
     return `${origin}/concursos/${encodeURIComponent(linkContestId)}?ref=${encodeURIComponent(referralCode)}`
   }, [referralCode, linkContestId])
 
+  const shareLine = 'Olá! Use meu link para participar do bolão na DezAqui — comissões só após pagamento confirmado.'
+
+  const shareWhatsAppHref = useMemo(() => {
+    if (!fullSellerLink.trim()) return '#'
+    return shareWhatsAppUrl(shareLine, fullSellerLink.trim())
+  }, [fullSellerLink])
+
+  const shareTelegramHref = useMemo(() => {
+    if (!fullSellerLink.trim()) return '#'
+    return shareTelegramUrl(shareLine, fullSellerLink.trim())
+  }, [fullSellerLink])
+
   const loadContests = useCallback(async () => {
     setContestsLoading(true)
     setContestsError(null)
@@ -81,11 +89,6 @@ export default function SellerAreaPage() {
       const cs = await listActiveContests()
       setContests(cs)
       setLinkContestId((prev) => {
-        if (!cs.length) return ''
-        const ok = prev && cs.some((c) => c.id === prev)
-        return ok ? prev : cs[0].id
-      })
-      setCreditContestId((prev) => {
         if (!cs.length) return ''
         const ok = prev && cs.some((c) => c.id === prev)
         return ok ? prev : cs[0].id
@@ -109,7 +112,7 @@ export default function SellerAreaPage() {
       setDashError(
         e instanceof Error
           ? e.message
-          : 'Não foi possível carregar o resumo de vendas/comissões. O link continua disponível usando seu código de perfil; confirme no Supabase a migração 041.'
+          : 'Não foi possível carregar o resumo de vendas/comissões. O link continua disponível usando seu código de perfil; confirme no Supabase as migrações 041+.'
       )
     } finally {
       setDashLoading(false)
@@ -144,60 +147,6 @@ export default function SellerAreaPage() {
     }
   }
 
-  const contestCredit = contests.find((c) => c.id === creditContestId)
-
-  /** MODIFIQUEI AQUI */
-  const handleRedeemCredit = async () => {
-    if (!creditContestId) {
-      setRedeemMsg('Escolha um bolão primeiro.')
-      return
-    }
-    const nums = creditNumbersRaw
-      .split(/[\s,;]+/)
-      .map((s) => parseInt(s.trim(), 10))
-      .filter((n) => Number.isInteger(n))
-    if (!contestCredit) {
-      setRedeemMsg('Bolão não encontrado.')
-      return
-    }
-    if (nums.length !== contestCredit.numbers_per_participation) {
-      setRedeemMsg(
-        `Informe exatamente ${contestCredit.numbers_per_participation} número(s) para este bolão.`
-      )
-      return
-    }
-    if (nums.some((n) => n < contestCredit.min_number || n > contestCredit.max_number)) {
-      setRedeemMsg(`Números devem ficar entre ${contestCredit.min_number} e ${contestCredit.max_number}.`)
-      return
-    }
-    if ((profile?.referral_bonus_credits ?? 0) < 1) {
-      setRedeemMsg('Você não tem créditos disponíveis.')
-      return
-    }
-    if (profile?.is_active === false) {
-      setRedeemMsg('Conta inativa — entre em contato com o administrador.')
-      return
-    }
-    setRedeemBusy(true)
-    setRedeemMsg(null)
-    try {
-      const res = await redeemReferralFreeCreditParticipation({
-        contestId: creditContestId,
-        numbers: nums,
-      })
-      setRedeemMsg(
-        `Bilhete bonificado criado! Código ${res.ticket_code ?? '(ver em Meus tickets)'} — sem Pix nem comissão.`
-      )
-      setCreditNumbersRaw('')
-      await refreshProfile()
-      await loadDashboard()
-    } catch (e) {
-      setRedeemMsg(e instanceof Error ? e.message : 'Falha ao usar crédito')
-    } finally {
-      setRedeemBusy(false)
-    }
-  }
-
   if (authLoading) {
     return (
       <div className="min-h-screen bg-[#F9F9F9] flex flex-col">
@@ -210,8 +159,6 @@ export default function SellerAreaPage() {
     )
   }
 
-  const creditsAvail = dash?.profile.referral_bonus_credits ?? profile?.referral_bonus_credits ?? 0
-
   return (
     <div className="min-h-screen bg-[#F9F9F9] flex flex-col">
       <Header />
@@ -223,9 +170,10 @@ export default function SellerAreaPage() {
           <p className="text-base font-semibold text-[#1E7F43]">{sellerDisplayName}</p>
           <p className="text-sm text-[#1F1F1F]/65 max-w-2xl mt-2">
             {/* MODIFIQUEI AQUI */}
-            Comissões só aparecem <strong>após pagamento confirmado</strong>.
-            {' '}Cada <strong>10 vendas pagas qualificadas</strong> pela sua indicação podem liberar{' '}
-            <strong>1 jogo bonificado gratuito</strong> (bilhetes grátis não somam à arrecadação nem geram nova comissão).
+            Você <strong>não participa</strong> do programa «Indique e Ganhe» de clientes. Suas vendas pelo link geram{' '}
+            <strong>comissão percentual</strong> apenas após <strong>pagamento confirmado</strong>. Participações grátis (
+            <strong>jogo grátis</strong>) não geram comissão. <strong>Não há carteira interna</strong> — as comissões são pagas
+            manualmente pela administração via Pix.
           </p>
         </div>
 
@@ -246,7 +194,7 @@ export default function SellerAreaPage() {
 
         {/* MODIFIQUEI AQUI — bloco obrigatório */}
         <section className="rounded-2xl border-2 border-[#1E7F43]/30 bg-white p-6 shadow-sm space-y-4">
-          <h2 className="text-lg font-bold text-[#1F1F1F]">Seu código e link de indicação</h2>
+          <h2 className="text-lg font-bold text-[#1F1F1F]">Seu código e link de venda</h2>
 
           {!referralCode && (
             <p className="text-sm text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
@@ -295,15 +243,42 @@ export default function SellerAreaPage() {
             />
           </div>
 
-          <div className="flex flex-wrap items-center gap-4">
+          <div className="d-flex flex-wrap align-items-center gap-3">
             <button
               type="button"
               disabled={contestsLoading || !fullSellerLink.trim()}
               onClick={() => void copyLink()}
-              className="inline-flex items-center px-6 py-2.5 rounded-xl bg-[#1E7F43] text-white font-semibold hover:bg-[#3CCB7F] disabled:opacity-50 transition-colors"
+              className="btn fw-semibold px-4 py-2 text-white border-0"
+              style={{ backgroundColor: '#1E7F43' }}
             >
               Copiar link
             </button>
+            <a
+              href={shareWhatsAppHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={`btn d-inline-flex align-items-center gap-2 px-4 py-2 fw-semibold text-white border-0 ${
+                fullSellerLink.trim() ? '' : 'disabled opacity-50 pe-none'
+              }`}
+              style={fullSellerLink.trim() ? { backgroundColor: '#25D366' } : undefined}
+              tabIndex={fullSellerLink.trim() ? 0 : -1}
+            >
+              <i className="bi bi-whatsapp fs-5" aria-hidden />
+              WhatsApp
+            </a>
+            <a
+              href={shareTelegramHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={`btn d-inline-flex align-items-center gap-2 px-4 py-2 fw-semibold text-white border-0 ${
+                fullSellerLink.trim() ? '' : 'disabled opacity-50 pe-none'
+              }`}
+              style={fullSellerLink.trim() ? { backgroundColor: '#229ED9' } : undefined}
+              tabIndex={fullSellerLink.trim() ? 0 : -1}
+            >
+              <i className="bi bi-telegram fs-5" aria-hidden />
+              Telegram
+            </a>
             {copiedNotice && (
               <span className="text-sm font-bold text-[#1E7F43]" role="status">
                 Link copiado com sucesso
@@ -314,21 +289,21 @@ export default function SellerAreaPage() {
           {!contestsLoading && referralCode && linkContestId && (
             <p className="text-[11px] text-[#1F1F1F]/50">
               Moldura esperada pela plataforma:{' '}
-              <strong>https://{typeof window !== 'undefined' ? window.location.host : ''}/concursos/{linkContestId}?ref={referralCode}</strong>
+              <strong>
+                https://{typeof window !== 'undefined' ? window.location.host : ''}/concursos/{linkContestId}?ref={referralCode}
+              </strong>
             </p>
           )}
         </section>
 
-        {/* MODIFIQUEI AQUI — 4 cartões solicitados */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* MODIFIQUEI AQUI — cartões de comissão */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <div className="rounded-2xl border border-[#E5E5E5] bg-white p-4 shadow-sm">
             <div className="text-xs uppercase font-semibold text-[#1F1F1F]/55">Total de vendas pagas pelo seu link*</div>
             <div className="text-2xl font-extrabold tabular-nums mt-1 text-[#1F1F1F]">
               {dashLoading ? '…' : dash?.stats?.paid_sales_via_commission_lines ?? '—'}
             </div>
-            <p className="text-[10px] text-[#999] mt-1">
-              *Só conta após confirmação de pagamento; exige servidor com migração 041 quando mostra número — senão aparece travessão ou consulte ADM.
-            </p>
+            <p className="text-[10px] text-[#999] mt-1">*Somente bilhetes pagos; jogos grátis não entram.</p>
           </div>
           <div className="rounded-2xl border border-[#E5E5E5] bg-white p-4 shadow-sm">
             <div className="text-xs uppercase font-semibold text-[#1F1F1F]/55">Total vendido (via você)</div>
@@ -341,11 +316,7 @@ export default function SellerAreaPage() {
             <div className="text-xl font-extrabold tabular-nums mt-1 text-[#1F1F1F]">
               {dashLoading ? '…' : dash ? formatCurrency(dash.stats.commission_generated_total_brl) : '—'}
             </div>
-            <p className="text-[10px] text-[#999] mt-1">**Liquidações finais combinadas com seu administrador</p>
-          </div>
-          <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4 shadow-sm">
-            <div className="text-xs uppercase font-semibold text-[#1F1F1F]/55">Créditos grátis disponíveis</div>
-            <div className="text-3xl font-extrabold tabular-nums mt-1 text-[#1E7F43]">{creditsAvail}</div>
+            <p className="text-[10px] text-[#999] mt-1">**Liquidada manualmente via Pix pelo ADM</p>
           </div>
         </div>
 
@@ -353,67 +324,18 @@ export default function SellerAreaPage() {
           <p className="text-xs text-amber-950 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">{dashError}</p>
         )}
 
-        {/* Resgate opcional mesmo sem RPC de painel */}
-        {(profile?.referral_bonus_credits ?? 0) > 0 && profile?.is_active !== false && (
-          <section className="rounded-2xl border border-amber-200 bg-white p-6 shadow-sm space-y-3">
-            <h3 className="text-lg font-bold text-[#1F1F1F]">Usar crédito em um bolão</h3>
-            <p className="text-sm text-[#1F1F1F]/75">
-              {/* MODIFIQUEI AQUI */}
-              Mesmo fluxo seguro já usado no checkout: bilhete <strong>R$ 0,00</strong>.
-            </p>
-            <div className="max-w-md space-y-1">
-              <label className="text-xs font-semibold">Bolão ativo</label>
-              <CustomSelect
-                value={creditContestId}
-                options={
-                  contests.length
-                    ? contests.map((c) => ({ value: c.id, label: c.name }))
-                    : [{ value: '', label: 'Nenhum bolão ativo' }]
-                }
-                onChange={(v: string) => setCreditContestId(v)}
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-semibold">
-                Números {contestCredit ? `(${contestCredit.numbers_per_participation} valores)` : ''}
-              </label>
-              <input
-                className="w-full border rounded-xl px-3 py-2"
-                placeholder={
-                  contestCredit ? `Ex.: ${Array.from({ length: contestCredit.numbers_per_participation }, () => '05').join(' ')}` : '—'
-                }
-                value={creditNumbersRaw}
-                onChange={(e) => setCreditNumbersRaw(e.target.value)}
-              />
-            </div>
-            <button
-              type="button"
-              disabled={redeemBusy || !creditContestId || contests.length === 0}
-              onClick={() => void handleRedeemCredit()}
-              className="px-6 py-2.5 rounded-xl bg-amber-600 text-white font-semibold hover:bg-amber-700 disabled:opacity-50"
-            >
-              {redeemBusy ? 'Processando…' : 'Resgatar 1 bilhete grátis'}
-            </button>
-            {redeemMsg && <p className="text-sm text-[#1F1F1F]/80">{redeemMsg}</p>}
-          </section>
-        )}
-
         {dash && (
           <>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4">
-                <div className="text-xs uppercase font-semibold text-[#1F1F1F]/50">Vendas p/ bonificação (contador oficial)</div>
-                <div className="text-3xl font-extrabold text-[#1F1F1F]">{dash.profile.referral_qualifying_sales_count}</div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="rounded-2xl border border-[#E5E5E5] bg-white p-4 shadow-sm">
+                <div className="text-xs uppercase font-semibold text-[#1F1F1F]/50">Comissão pendente vs paga</div>
+                <div className="text-lg font-extrabold tabular-nums text-amber-800">{formatCurrency(dash.stats.commission_pending_brl)}</div>
+                <div className="text-lg font-extrabold tabular-nums text-[#3CCB7F]">{formatCurrency(dash.stats.commission_paid_brl)}</div>
               </div>
-              <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4">
-                <div className="text-xs uppercase font-semibold text-[#1F1F1F]/50">Comissões a liquidar vs pagas</div>
-                <div className="text-sm font-semibold tabular-nums">{formatCurrency(dash.stats.commission_pending_brl)}</div>
-                <div className="text-sm font-semibold tabular-nums text-[#3CCB7F]">{formatCurrency(dash.stats.commission_paid_brl)}</div>
-              </div>
-              <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4">
-                <div className="text-xs uppercase font-semibold text-[#1F1F1F]/50">Percentual combinado*</div>
+              <div className="rounded-2xl border border-[#E5E5E5] bg-white p-4 shadow-sm">
+                <div className="text-xs uppercase font-semibold text-[#1F1F1F]/50">Percentual base (perfil)*</div>
                 <div className="text-2xl font-extrabold text-[#1F1F1F]">{Number(dash.profile.commission_percent).toLocaleString('pt-BR')}%</div>
-                <p className="text-[10px] text-[#888] mt-1">*Definido pelo administrador</p>
+                <p className="text-[10px] text-[#888] mt-1">*O bolão pode ter % próprio definido pelo administrador.</p>
               </div>
             </div>
 
@@ -426,7 +348,7 @@ export default function SellerAreaPage() {
 
             <section className="rounded-2xl border border-[#E5E5E5] bg-white shadow-sm overflow-hidden">
               <div className="flex items-center justify-between p-4 border-b bg-[#FAFAFA]">
-                <h2 className="text-lg font-bold text-[#1F1F1F]">Vendas atribuídas ao seu código</h2>
+                <h2 className="text-lg font-bold text-[#1F1F1F]">Minhas vendas</h2>
                 <button type="button" className="text-xs underline text-[#1E7F43]" onClick={() => void loadDashboard()} disabled={dashLoading}>
                   Recarregar
                 </button>

@@ -135,6 +135,11 @@ export interface CreateContestInput {
   official_contest_code?: string | null
   official_contest_numbers?: string | null
   official_contest_date?: string | null
+  // MODIFIQUEI AQUI
+  referral_target_sales?: number | null
+  referral_reward_type?: 'free_ticket' | 'manual_pix_bonus' | null
+  referral_reward_value?: number | null
+  seller_commission_percent_override?: number | null
 }
 
 export async function createContest(input: CreateContestInput): Promise<Contest> {
@@ -219,6 +224,11 @@ export interface UpdateContestInput {
   official_contest_code?: string | null
   official_contest_numbers?: string | null
   official_contest_date?: string | null
+  // MODIFIQUEI AQUI
+  referral_target_sales?: number | null
+  referral_reward_type?: 'free_ticket' | 'manual_pix_bonus' | null
+  referral_reward_value?: number | null
+  seller_commission_percent_override?: number | null
 }
 
 export async function updateContest(

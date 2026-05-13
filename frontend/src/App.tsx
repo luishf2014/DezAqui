@@ -36,6 +36,7 @@ import AdminFinance from './pages/admin/AdminFinance'
 import AdminReports from './pages/admin/AdminReports'
 import AdminPartners from './pages/admin/AdminPartners'
 import SellerAreaPage from './pages/SellerAreaPage'
+import ReferAndEarnPage from './pages/ReferAndEarnPage'
 import RequireSeller from './routes/RequireSeller'
 
 function LegacyConcursosContestRedirect({ suffix }: { suffix?: string }) {
@@ -84,6 +85,7 @@ function App() {
             {/* MODIFIQUEI AQUI — apenas profiles.is_seller (guard no RequireSeller). */}
             <Route path="/meu-link" element={<RequireSeller><SellerAreaPage /></RequireSeller>} />
             <Route path="/minhas-vendas" element={<RequireSeller><SellerAreaPage /></RequireSeller>} />
+            <Route path="/indique-e-ganhe" element={<ReferAndEarnPage />} />
 
             {/* Páginas institucionais */}
             <Route path="/como-funciona" element={<ComoFuncionaPage />} />
