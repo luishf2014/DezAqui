@@ -44,4 +44,31 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 // Criação e exportação do cliente Supabase
 // Este cliente será usado em toda a aplicação para acessar o backend
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+  },
+})
+
+/**
+ * Com o separador em segundo plano, o browser atrasa timers e o refresh do token pode falhar.
+ * Ao voltar, a sessão fica “stale” e os pedidos podem falhar ou parecer timeout.
+ * Padrão recomendado pelo Supabase para SPAs.
+ */
+if (typeof document !== 'undefined') {
+  const syncAuthAutoRefresh = () => {
+    try {
+      if (document.visibilityState === 'visible') {
+        void supabase.auth.startAutoRefresh()
+      } else {
+        supabase.auth.stopAutoRefresh()
+      }
+    } catch {
+      // ignora ambientes estranhos (SSR, WebView, etc.)
+    }
+  }
+  document.addEventListener('visibilitychange', syncAuthAutoRefresh)
+  syncAuthAutoRefresh()
+}

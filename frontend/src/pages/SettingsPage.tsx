@@ -118,7 +118,7 @@ export default function SettingsPage() {
       if (user?.id) {
         try {
           const timeoutPromise = new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('Timeout')), 10000)
+            setTimeout(() => reject(new Error('Timeout')), 25000)
           )
 
           const prefsPromise = supabase

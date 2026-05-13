@@ -208,6 +208,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
+  // Recuperação ao voltar ao separador: revalida sessão e força refresh se o token estiver velho
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return
+      void (async () => {
+        try {
+          const { data: { session } } = await supabase.auth.getSession()
+          if (!session?.expires_at) return
+          const now = Math.floor(Date.now() / 1000)
+          const skew = 120
+          if (session.expires_at <= now + skew) {
+            await supabase.auth.refreshSession()
+          }
+        } catch (e) {
+          console.warn('[AuthContext] Ao retomar o separador, sessão não renovada:', e)
+        }
+      })()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('focus', onVisible)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('focus', onVisible)
+    }
+  }, [])
+
   // MODIFIQUEI AQUI - Calcular isAdmin exclusivamente como profile?.is_admin === true
   // Se profile não existe ainda (novo usuário), assume que não é admin
   const isAdmin = profile?.is_admin === true
