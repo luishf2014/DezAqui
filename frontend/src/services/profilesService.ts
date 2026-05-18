@@ -5,7 +5,8 @@
  * Funções para buscar e verificar permissões de usuários
  */
 import { supabase } from '../lib/supabase'
-import { User } from '../types'
+import { User, type SellerCommissionMode } from '../types'
+import { peekPendingReferralCode, clearPendingReferralCode } from '../utils/referralCodeStorage'
 
 /** MODIFIQUEI AQUI: PostgREST/JSON pode devolver boolean estranho; o menu do vendedor depende deste campo. */
 export function normalizeIsSellerFlag(raw: unknown): boolean {
@@ -13,6 +14,12 @@ export function normalizeIsSellerFlag(raw: unknown): boolean {
   if (typeof raw === 'string') return raw.trim().toLowerCase() === 'true' || raw.trim() === '1'
   if (typeof raw === 'number') return raw !== 0
   return false
+}
+
+/** MODIFIQUEI AQUI — valor vindo do Postgres para o modo de comissão do cambista */
+export function normalizeCommissionMode(raw: unknown): SellerCommissionMode {
+  const s = String(raw ?? '').trim()
+  return s === 'first_purchase_only' ? 'first_purchase_only' : 'recurring_purchases'
 }
 
 // MODIFIQUEI AQUI - Interface para tipar erros do Supabase
@@ -48,7 +55,7 @@ export async function getCurrentUserProfile(): Promise<User | null> {
     const { data, error } = await supabase
       .from('profiles')
       .select(
-        'id, email, name, phone, cpf, birth_date, is_admin, is_active, referral_code, referral_bonus_credits, referral_bonus_credits_used, referral_qualifying_sales_count, is_seller, commission_percent, created_at, updated_at'
+        'id, email, name, phone, cpf, birth_date, is_admin, is_active, referral_code, referral_bonus_credits, referral_bonus_credits_used, referral_qualifying_sales_count, is_seller, commission_percent, commission_mode, created_at, updated_at'
       )
       .eq('id', authUser.id)
       .maybeSingle()
@@ -71,6 +78,7 @@ export async function getCurrentUserProfile(): Promise<User | null> {
         : Boolean(data.is_admin),
       // MODIFIQUEI AQUI
       is_seller: normalizeIsSellerFlag((data as { is_seller?: unknown }).is_seller),
+      commission_mode: normalizeCommissionMode((data as { commission_mode?: unknown }).commission_mode),
       is_active:
         typeof (data as { is_active?: boolean }).is_active === 'boolean'
           ? (data as { is_active: boolean }).is_active
@@ -99,7 +107,7 @@ export async function getUserProfileById(userId: string): Promise<User | null> {
     const byId = await supabase
       .from('profiles')
       .select(
-        'id, email, name, phone, cpf, birth_date, is_admin, is_active, referral_code, referral_bonus_credits, referral_bonus_credits_used, referral_qualifying_sales_count, is_seller, commission_percent, created_at, updated_at'
+        'id, email, name, phone, cpf, birth_date, is_admin, is_active, referral_code, referral_bonus_credits, referral_bonus_credits_used, referral_qualifying_sales_count, is_seller, commission_percent, commission_mode, created_at, updated_at'
       )
       .eq('id', userId)
       .maybeSingle()
@@ -116,6 +124,7 @@ export async function getUserProfileById(userId: string): Promise<User | null> {
           : Boolean(byId.data.is_admin),
         // MODIFIQUEI AQUI
         is_seller: normalizeIsSellerFlag((byId.data as { is_seller?: unknown }).is_seller),
+        commission_mode: normalizeCommissionMode((byId.data as { commission_mode?: unknown }).commission_mode),
         is_active:
           typeof byId.data.is_active === 'boolean'
             ? byId.data.is_active
@@ -175,7 +184,7 @@ export async function listAllUsers(): Promise<User[]> {
     const { data, error } = await supabase
       .from('profiles')
       .select(
-        'id, email, name, phone, cpf, birth_date, is_admin, is_active, referral_code, referral_bonus_credits, referral_bonus_credits_used, referral_qualifying_sales_count, is_seller, commission_percent, created_at, updated_at'
+        'id, email, name, phone, cpf, birth_date, is_admin, is_active, referral_code, referral_bonus_credits, referral_bonus_credits_used, referral_qualifying_sales_count, is_seller, commission_percent, commission_mode, created_at, updated_at'
       )
       .order('name')
     
@@ -192,6 +201,7 @@ export async function listAllUsers(): Promise<User[]> {
         : Boolean(user.is_admin),
       // MODIFIQUEI AQUI
       is_seller: normalizeIsSellerFlag(user.is_seller),
+      commission_mode: normalizeCommissionMode(user.commission_mode),
       is_active:
         typeof user.is_active === 'boolean' ? user.is_active : user.is_active !== false,
     }))
@@ -201,5 +211,32 @@ export async function listAllUsers(): Promise<User[]> {
   } catch (error) {
     console.error('[profilesService] Erro inesperado ao buscar todos os usuários:', error)
     throw error
+  }
+}
+
+/**
+ * MODIFIQUEI AQUI — grava no Supabase o cambista indicador quando `?ref=` é código de vendedor (1× por cliente).
+ */
+export async function tryClaimSellerReferralFromPendingStorage(): Promise<void> {
+  const code = peekPendingReferralCode()
+  if (!code?.trim()) return
+
+  try {
+    const { data, error } = await supabase.rpc('rpc_claim_pending_seller_referral', {
+      p_code: code.trim(),
+    })
+    if (error) {
+      console.warn('[profilesService] rpc_claim_pending_seller_referral:', error.message)
+      return
+    }
+    const raw = data as { claimed?: boolean; reason?: string } | null
+    const reason = raw?.reason != null ? String(raw.reason) : ''
+    /* MODIFIQUEI AQUI — não limpar em «already_bound»: código pendente pode ser indicação de cliente */
+    const clearReasons = new Set(['self_referral'])
+    if (raw?.claimed === true || clearReasons.has(reason)) {
+      clearPendingReferralCode()
+    }
+  } catch (e) {
+    console.warn('[profilesService] tryClaimSellerReferralFromPendingStorage:', e)
   }
 }

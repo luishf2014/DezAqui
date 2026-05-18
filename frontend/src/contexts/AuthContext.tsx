@@ -7,7 +7,7 @@
 import { createContext, useContext, useEffect, useState, useRef } from 'react'
 import { User } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
-import { getUserProfileById } from '../services/profilesService'
+import { getUserProfileById, tryClaimSellerReferralFromPendingStorage } from '../services/profilesService'
 import { User as ProfileUser } from '../types'
 
 interface AuthContextType {
@@ -45,6 +45,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
+      // MODIFIQUEI AQUI — persiste vínculo cambista antes de ler o perfil (evita «corrida» na primeira compra)
+      await tryClaimSellerReferralFromPendingStorage()
+
       // MODIFIQUEI AQUI - Buscar perfil diretamente usando getUserProfileById
       const userProfile = await getUserProfileById(userId)
       

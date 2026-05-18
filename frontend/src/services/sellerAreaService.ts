@@ -6,6 +6,8 @@ import { supabase } from '../lib/supabase'
 export type SellerAreaProfileSnip = {
   referral_code: string
   commission_percent: number
+  /** MODIFIQUEI AQUI */
+  commission_mode: 'first_purchase_only' | 'recurring_purchases'
 }
 
 export type SellerAreaStats = {
@@ -15,6 +17,8 @@ export type SellerAreaStats = {
   commission_pending_brl: number
   commission_paid_brl: number
   commission_canceled_rows: number
+  /** MODIFIQUEI AQUI — clientes distintos com pelo menos uma venda paga atribuída a este cambista */
+  referred_buyers_with_paid_sale_count: number
 }
 
 export type SellerAreaSaleRow = {
@@ -52,10 +56,15 @@ export async function fetchSellerAreaDashboardRpc(): Promise<SellerAreaDashboard
   const stats = j.stats as Record<string, unknown>
   const sales = Array.isArray(j.sales) ? (j.sales as Record<string, unknown>[]) : []
 
+  const modeRaw = String(profile.commission_mode ?? 'recurring_purchases').trim()
+  const commission_mode =
+    modeRaw === 'first_purchase_only' ? ('first_purchase_only' as const) : ('recurring_purchases' as const)
+
   return {
     profile: {
       referral_code: String(profile.referral_code ?? ''),
       commission_percent: Number(profile.commission_percent ?? 0),
+      commission_mode,
     },
     stats: {
       paid_sales_via_commission_lines: Number(stats.paid_sales_via_commission_lines ?? 0),
@@ -64,6 +73,7 @@ export async function fetchSellerAreaDashboardRpc(): Promise<SellerAreaDashboard
       commission_pending_brl: Number(stats.commission_pending_brl ?? 0),
       commission_paid_brl: Number(stats.commission_paid_brl ?? 0),
       commission_canceled_rows: Number(stats.commission_canceled_rows ?? 0),
+      referred_buyers_with_paid_sale_count: Number(stats.referred_buyers_with_paid_sale_count ?? 0),
     },
     sales: sales.map((r) => ({
       commission_id: String(r.commission_id ?? ''),

@@ -171,9 +171,10 @@ export default function SellerAreaPage() {
           <p className="text-sm text-[#1F1F1F]/65 max-w-2xl mt-2">
             {/* MODIFIQUEI AQUI */}
             Você <strong>não participa</strong> do programa «Indique e Ganhe» de clientes. Suas vendas pelo link geram{' '}
-            <strong>comissão percentual</strong> apenas após <strong>pagamento confirmado</strong>. Participações grátis (
-            <strong>jogo grátis</strong>) não geram comissão. <strong>Não há carteira interna</strong> — as comissões são pagas
-            manualmente pela administração via Pix.
+            <strong>comissão percentual</strong> apenas após <strong>pagamento confirmado</strong>, conforme o modo definido pelo
+            administrador: <strong>só na primeira compra paga</strong> de cada cliente ou em <strong>todas as compras pagas</strong>.
+            Participações grátis (<strong>jogo grátis</strong>) não geram comissão. <strong>Não há carteira interna</strong> — as comissões
+            são pagas manualmente pela administração via Pix.
           </p>
         </div>
 
@@ -190,6 +191,18 @@ export default function SellerAreaPage() {
           <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-amber-950 text-sm">
             {contestsError}
           </div>
+        )}
+
+        {dash && !dashLoading && (
+          <section className="rounded-2xl border border-[#1E7F43]/25 bg-[#F0FDF4]/80 px-4 py-3 text-sm text-[#14532D]">
+            {/* MODIFIQUEI AQUI */}
+            <span className="text-[11px] font-bold uppercase tracking-wide text-[#166534]/90">Modo de comissão actual</span>
+            <p className="mt-1 font-semibold text-[#166534]">
+              {dash.profile.commission_mode === 'first_purchase_only'
+                ? 'Apenas na primeira compra paga de cada cliente indicado.'
+                : 'Em todas as compras pagas dos clientes indicados (recorrente).'}
+            </p>
+          </section>
         )}
 
         {/* MODIFIQUEI AQUI — bloco obrigatório */}
@@ -297,7 +310,14 @@ export default function SellerAreaPage() {
         </section>
 
         {/* MODIFIQUEI AQUI — cartões de comissão */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="rounded-2xl border border-[#E5E5E5] bg-white p-4 shadow-sm">
+            <div className="text-xs uppercase font-semibold text-[#1F1F1F]/55">Clientes com venda paga*</div>
+            <div className="text-2xl font-extrabold tabular-nums mt-1 text-[#1F1F1F]">
+              {dashLoading ? '…' : dash?.stats?.referred_buyers_with_paid_sale_count ?? '—'}
+            </div>
+            <p className="text-[10px] text-[#999] mt-1">*Distintos (via código ou vínculo gravado).</p>
+          </div>
           <div className="rounded-2xl border border-[#E5E5E5] bg-white p-4 shadow-sm">
             <div className="text-xs uppercase font-semibold text-[#1F1F1F]/55">Total de vendas pagas pelo seu link*</div>
             <div className="text-2xl font-extrabold tabular-nums mt-1 text-[#1F1F1F]">

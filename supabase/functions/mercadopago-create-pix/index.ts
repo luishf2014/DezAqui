@@ -107,7 +107,7 @@ serve(async (req) => {
 
     const { data: buyerProf, error: buyerErr } = await admin
       .from('profiles')
-      .select('is_active')
+      .select('is_active, referred_by_seller_profile_id')
       .eq('id', user.id)
       .maybeSingle()
 
@@ -115,7 +115,30 @@ serve(async (req) => {
       return jsonResponse({ error: 'Conta inativa. Não é possível gerar Pix.', debug: { step: 'inactive_user' } }, 403)
     }
 
-    const referrerResolved = await resolveReferrerSnapshot(admin, body?.referrerCode)
+    // MODIFIQUEI AQUI — vínculo cambista gravado no perfil prevalece sobre o código enviado no body
+    let refId: string | null = null
+    let refSnap: string | null = null
+    const boundSellerId = (buyerProf as { referred_by_seller_profile_id?: string | null } | null)
+      ?.referred_by_seller_profile_id
+    if (boundSellerId && boundSellerId !== user.id) {
+      const { data: boundSeller } = await admin
+        .from('profiles')
+        .select('id, referral_code, is_seller, is_active')
+        .eq('id', boundSellerId)
+        .maybeSingle()
+      const ok =
+        boundSeller &&
+        (boundSeller as { is_seller?: boolean }).is_seller === true &&
+        (boundSeller as { is_active?: boolean }).is_active !== false
+      if (ok) {
+        refId = boundSellerId
+        const rc = trim((boundSeller as { referral_code?: string }).referral_code ?? '')
+        refSnap = rc || null
+      }
+    }
+
+    const referrerResolved =
+      refId == null ? await resolveReferrerSnapshot(admin, body?.referrerCode) : { snapshot: refSnap, referredById: refId }
 
     const contestId = trim(body?.contestId)
     const selectedNumbersRaw = body?.selectedNumbers
@@ -178,11 +201,11 @@ serve(async (req) => {
 
     const customerEmail = trim(body.customerEmail) || undefined
 
-    const refId =
+    refId =
       referrerResolved.referredById && referrerResolved.referredById !== user.id
         ? referrerResolved.referredById
         : null
-    const refSnap = refId ? referrerResolved.snapshot : null
+    refSnap = refId ? referrerResolved.snapshot : null
 
     if (isCartFlow) {
       // ============================================

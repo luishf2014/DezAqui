@@ -10,6 +10,9 @@
 // ============================================
 // Usuário
 // ============================================
+/** MODIFIQUEI AQUI — modo de comissão configurável pelo ADM para cambistas */
+export type SellerCommissionMode = 'first_purchase_only' | 'recurring_purchases'
+
 export interface User {
   id: string
   email: string
@@ -28,6 +31,8 @@ export interface User {
   referral_qualifying_sales_count?: number
   is_seller?: boolean
   commission_percent?: number
+  /** MODIFIQUEI AQUI — só cambistas; default no servidor «recurring_purchases» */
+  commission_mode?: SellerCommissionMode
   created_at: string
   updated_at: string
 }

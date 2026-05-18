@@ -3,6 +3,7 @@
  */
 import { supabase } from '../lib/supabase'
 import type { User } from '../types'
+import { normalizeCommissionMode, normalizeIsSellerFlag } from './profilesService'
 
 export type SellerCommissionRow = {
   id: string
@@ -89,11 +90,14 @@ export async function updateUserSellerFieldsAdmin(params: {
   userId: string
   is_seller?: boolean
   commission_percent?: number
+  /** MODIFIQUEI AQUI */
+  commission_mode?: 'first_purchase_only' | 'recurring_purchases'
   is_active?: boolean
 }): Promise<void> {
   const patch: Record<string, unknown> = {}
   if (params.is_seller !== undefined) patch.is_seller = params.is_seller
   if (params.commission_percent !== undefined) patch.commission_percent = params.commission_percent
+  if (params.commission_mode !== undefined) patch.commission_mode = params.commission_mode
   if (params.is_active !== undefined) patch.is_active = params.is_active
   if (Object.keys(patch).length === 0) return
   const { error } = await supabase.from('profiles').update(patch).eq('id', params.userId)
@@ -142,19 +146,52 @@ export type PartnerUserRow = User & {
   total_sold_via_referral_brl: number
   commissions_total_pending_brl: number
   commissions_total_paid_brl: number
+  /** MODIFIQUEI AQUI — pendente + paga (linhas não canceladas) */
+  commissions_generated_total_brl: number
   commissions_total_canceled_sale_brl: number
+  /** MODIFIQUEI AQUI — clientes distintos com pelo menos uma participação atribuída ao cambista */
+  seller_indicated_clients_count: number
 }
 
 export async function listUsersWithTotalsForPartners(): Promise<PartnerUserRow[]> {
   const users = await supabase
     .from('profiles')
     .select(
-      'id, email, name, phone, cpf, birth_date, is_admin, is_active, referral_code, referral_bonus_credits, referral_bonus_credits_used, referral_qualifying_sales_count, is_seller, commission_percent, created_at, updated_at'
+      'id, email, name, phone, cpf, birth_date, is_admin, is_active, referral_code, referral_bonus_credits, referral_bonus_credits_used, referral_qualifying_sales_count, is_seller, commission_percent, commission_mode, created_at, updated_at'
     )
     .order('name')
 
   if (users.error) throw new Error(users.error.message)
 
+  const sellerIds = (users.data || [])
+    .filter((row) => normalizeIsSellerFlag((row as { is_seller?: unknown }).is_seller))
+    .map((row) => (row as { id: string }).id)
+
+  const buyerCountBySeller = new Map<string, number>()
+  if (sellerIds.length > 0) {
+    const { data: partRows, error: partErr } = await supabase
+      .from('participations')
+      .select('user_id, referred_by_profile_id, is_bonus')
+      .in('referred_by_profile_id', sellerIds)
+
+    if (partErr) throw new Error(partErr.message)
+
+    const sets = new Map<string, Set<string>>()
+    for (const sid of sellerIds) sets.set(sid, new Set())
+
+    for (const row of partRows || []) {
+      const r = row as { user_id?: string; referred_by_profile_id?: string; is_bonus?: boolean | null }
+      if (r.is_bonus) continue
+      const ref = r.referred_by_profile_id
+      const uid = r.user_id
+      if (!ref || !uid || !sets.has(ref)) continue
+      sets.get(ref)!.add(uid)
+    }
+
+    for (const [sid, set] of sets.entries()) {
+      buyerCountBySeller.set(sid, set.size)
+    }
+  }
   const [{ data: commRows, error: cErr }, { data: rewRows, error: rErr }] = await Promise.all([
     supabase.from('seller_commissions').select('seller_user_id, status, sale_value, commission_value'),
     supabase.from('referral_indication_rewards').select('beneficiary_profile_id, reward_type, status, amount_brl'),
@@ -220,6 +257,8 @@ export async function listUsersWithTotalsForPartners(): Promise<PartnerUserRow[]
 
   return ((users.data || []) as User[]).map((u) => ({
     ...u,
+    commission_mode: normalizeCommissionMode((u as { commission_mode?: unknown }).commission_mode),
+    is_seller: normalizeIsSellerFlag(u.is_seller),
     indication_rewards_count: rewAgg.get(u.id)?.n ?? 0,
     indication_pix_pending_brl: rewAgg.get(u.id)?.pend ?? 0,
     indication_pix_paid_brl: rewAgg.get(u.id)?.paid ?? 0,
@@ -229,6 +268,8 @@ export async function listUsersWithTotalsForPartners(): Promise<PartnerUserRow[]
     total_sold_via_referral_brl: (agg.get(u.id)?.pendSale ?? 0) + (agg.get(u.id)?.paidSale ?? 0),
     commissions_total_pending_brl: agg.get(u.id)?.pendComm ?? 0,
     commissions_total_paid_brl: agg.get(u.id)?.paidComm ?? 0,
+    commissions_generated_total_brl: (agg.get(u.id)?.pendComm ?? 0) + (agg.get(u.id)?.paidComm ?? 0),
     commissions_total_canceled_sale_brl: agg.get(u.id)?.cancSale ?? 0,
+    seller_indicated_clients_count: buyerCountBySeller.get(u.id) ?? 0,
   }))
 }

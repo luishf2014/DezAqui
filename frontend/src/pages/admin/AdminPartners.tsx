@@ -1,7 +1,8 @@
 /**
  * ADMIN — MODIFIQUEI AQUI: Cambistas/indicações, comissões e bonificações
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useNavigate } from 'react-router-dom'
 import Header from '../../components/Header'
 import Footer from '../../components/Footer'
 import CustomSelect from '../../components/CustomSelect'
@@ -19,7 +20,7 @@ import {
 } from '../../services/partnersAdminService'
 import { listAllContests, updateContest } from '../../services/contestsService'
 import type { Contest } from '../../types'
-import { formatCurrency } from '../../utils/formatters'
+import { formatCurrency, navigateToTop } from '../../utils/formatters'
 import { normalizeIsSellerFlag } from '../../services/profilesService'
 
 function contestStatusLabelPt(status: Contest['status']): string {
@@ -30,6 +31,90 @@ function contestStatusLabelPt(status: Contest['status']): string {
     cancelled: 'Cancelado',
   }
   return m[status] ?? status
+}
+
+/** MODIFIQUEI AQUI — moldura visual consistente com o painel DezAqui (verde + neutros + sombra suave). */
+function AdminSection({
+  title,
+  description,
+  variant = 'neutral',
+  actions,
+  children,
+}: {
+  title: string
+  description?: ReactNode
+  variant?: 'neutral' | 'emerald' | 'amber'
+  actions?: ReactNode
+  children: ReactNode
+}) {
+  const dot =
+    variant === 'emerald' ? 'bg-[#1E7F43]' : variant === 'amber' ? 'bg-[#F59E0B]' : 'bg-[#64748B]'
+  const grad =
+    variant === 'emerald'
+      ? 'from-[#ECFDF5]/95 via-[#FAFFFE] to-white'
+      : variant === 'amber'
+        ? 'from-[#FFFBEB]/95 via-[#FFFCF7] to-white'
+        : 'from-[#F8FAFC] via-white to-[#FAFBFC]'
+  return (
+    <section className="rounded-2xl border border-[#E5E7EB] bg-white shadow-[0_2px_16px_rgba(31,31,31,0.06)] overflow-hidden ring-1 ring-[#1F1F1F]/[0.04]">
+      <div
+        className={`flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between px-5 sm:px-6 py-4 sm:py-5 border-b border-[#EEF1F6] bg-gradient-to-br ${grad}`}
+      >
+        <div className="min-w-0 space-y-1.5">
+          <div className="flex items-center gap-2.5">
+            <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${dot}`} aria-hidden />
+            <h2 className="text-lg sm:text-xl font-bold text-[#1F1F1F] tracking-tight">{title}</h2>
+          </div>
+          {description ? (
+            <div className="text-sm text-[#4B5563] leading-relaxed max-w-4xl">{description}</div>
+          ) : null}
+        </div>
+        {actions ? (
+          <div className="shrink-0 flex flex-wrap items-center gap-2 justify-end">{actions}</div>
+        ) : null}
+      </div>
+      {children}
+    </section>
+  )
+}
+
+function StatusBadge({
+  children,
+  tone,
+}: {
+  children: ReactNode
+  tone: 'success' | 'warning' | 'muted' | 'danger'
+}) {
+  const cls =
+    tone === 'success'
+      ? 'bg-emerald-50 text-emerald-900 border-emerald-200/90'
+      : tone === 'warning'
+        ? 'bg-amber-50 text-amber-950 border-amber-200/90'
+        : tone === 'danger'
+          ? 'bg-red-50 text-red-900 border-red-200/90'
+          : 'bg-[#F3F4F6] text-[#374151] border-[#E5E7EB]'
+  return (
+    <span
+      className={`inline-flex items-center rounded-lg border px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${cls}`}
+    >
+      {children}
+    </span>
+  )
+}
+
+function contestStatusTone(status: Contest['status']): 'success' | 'warning' | 'muted' | 'danger' {
+  if (status === 'active') return 'success'
+  if (status === 'draft') return 'muted'
+  if (status === 'finished') return 'warning'
+  return 'danger'
+}
+
+function payoutRowCommissionPt(raw: string): { label: string; tone: 'success' | 'warning' | 'muted' | 'danger' } {
+  const v = String(raw || '').toLowerCase()
+  if (v === 'pending') return { label: 'Pendente', tone: 'warning' }
+  if (v === 'paid') return { label: 'Paga', tone: 'success' }
+  if (v === 'canceled' || v === 'cancelled') return { label: 'Cancelada', tone: 'danger' }
+  return { label: raw || '—', tone: 'muted' }
 }
 
 type ReferralIndicationDraft = {
@@ -66,6 +151,7 @@ function buildReferralDraftsFromContests(cts: Contest[]): Record<string, Referra
 }
 
 export default function AdminPartners() {
+  const navigate = useNavigate()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -115,8 +201,10 @@ export default function AdminPartners() {
   )
 
   const contestsReferralOverview = useMemo(() => {
-    const arr = Array.from(allContestsById.values())
-    const order: Record<string, number> = { active: 0, draft: 1, finished: 2, cancelled: 3 }
+    const arr = Array.from(allContestsById.values()).filter(
+      (c) => c.status !== 'cancelled' && c.status !== 'finished'
+    )
+    const order: Record<string, number> = { active: 0, draft: 1 }
     return arr.sort((a, b) => {
       const da = order[a.status] ?? 99
       const db = order[b.status] ?? 99
@@ -124,6 +212,21 @@ export default function AdminPartners() {
       return a.name.localeCompare(b.name, 'pt')
     })
   }, [allContestsById])
+
+  const partnerStats = useMemo(() => {
+    const commissionsPending = commissions.filter((c) => c.status === 'pending').length
+    const pixBonusesPending = indicationRewards.filter(
+      (r) => r.reward_type === 'manual_pix_bonus' && r.status === 'pending'
+    ).length
+    const commissionsPaidRows = commissions.filter((c) => c.status === 'paid').length
+    return {
+      sellers: sellerRows.length,
+      indicators: indicatorRows.length,
+      commissionsPending,
+      commissionsPaidRows,
+      pixBonusesPending,
+    }
+  }, [commissions, indicationRewards, sellerRows.length, indicatorRows.length])
 
   const reload = async () => {
     setLoading(true)
@@ -181,6 +284,35 @@ export default function AdminPartners() {
       await reload()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erro ao salvar percentual')
+    } finally {
+      setUpdatingUid(null)
+    }
+  }
+
+  /** MODIFIQUEI AQUI — modo de comissão do cambista */
+  const saveCommissionMode = async (
+    userId: string,
+    mode: 'first_purchase_only' | 'recurring_purchases'
+  ) => {
+    setUpdatingUid(userId)
+    try {
+      await updateUserSellerFieldsAdmin({ userId, commission_mode: mode })
+      await reload()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erro ao guardar modo de comissão')
+    } finally {
+      setUpdatingUid(null)
+    }
+  }
+
+  /** MODIFIQUEI AQUI — conta activa (compras na plataforma) */
+  const setSellerAccountActive = async (userId: string, next: boolean) => {
+    setUpdatingUid(userId)
+    try {
+      await updateUserSellerFieldsAdmin({ userId, is_active: next })
+      await reload()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erro ao alterar estado da conta')
     } finally {
       setUpdatingUid(null)
     }
@@ -398,52 +530,112 @@ export default function AdminPartners() {
     }
   }
 
-  const theadCols = 7 // MODIFIQUEI AQUI — grelha cambista simplificada
+  const theadCols = 11 // MODIFIQUEI AQUI — grelha cambista (modo, estado, totais)
 
   return (
-    <div className="min-h-screen bg-[#F3F4F6] flex flex-col">
+    <div className="min-h-screen bg-[#F9F9F9] flex flex-col">
       <Header />
 
-      <main className="flex-1 container mx-auto px-4 py-10 max-w-[100rem] space-y-10">
-        <header className="rounded-2xl border border-[#E5E7EB] bg-white p-6 sm:p-8 shadow-[0_1px_3px_rgba(0,0,0,0.06)]">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div className="max-w-3xl">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-[#1E7F43]/80 mb-1">Administração</p>
-              <h1 className="text-2xl sm:text-3xl font-extrabold text-[#111827] tracking-tight mb-3">
-                Parceiros e comissões
-              </h1>
-              <p className="text-[15px] text-[#374151] leading-relaxed">
+      <main className="flex-1 container mx-auto px-4 sm:px-6 lg:px-8 py-8 max-w-[100rem] space-y-8">
+        <div className="relative overflow-hidden rounded-2xl border border-[#E5E7EB] bg-white shadow-[0_4px_24px_rgba(31,31,31,0.07)] ring-1 ring-[#1F1F1F]/[0.05]">
+          <div
+            className="pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-[#1E7F43] via-[#259d54] to-[#F4C430]"
+            aria-hidden
+          />
+          <div className="relative px-5 sm:px-8 pt-8 pb-6 sm:pt-10 sm:pb-8 flex flex-col gap-8 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0 max-w-3xl space-y-4">
+              <button
+                type="button"
+                onClick={() => navigateToTop(navigate, '/admin')}
+                className="text-[#1E7F43] hover:text-[#3CCB7F] font-semibold flex items-center gap-2 text-left"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-5 w-5 shrink-0"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  aria-hidden
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+                Voltar ao Dashboard
+              </button>
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-[#1E7F43]/85 mb-2">
+                  Administração financeira
+                </p>
+                <h1 className="text-3xl sm:text-4xl font-extrabold text-[#1F1F1F] tracking-tight leading-[1.15]">
+                  Parceiros e comissões
+                </h1>
+              </div>
+              <p className="text-[15px] text-[#4B5563] leading-relaxed">
                 {/* MODIFIQUEI AQUI */}
-                Separação explícita: <strong>clientes indicadores</strong> (programa «Indique e Ganhe», sem comissão) e{' '}
-                <strong>cambistas</strong> (comissão % só sobre vendas <strong>pagas</strong>, sem carteira interna). Pagamentos de
-                comissão e de bônus Pix são sempre <strong>manuais via Pix</strong>, registados aqui como pendentes ou pagos.
+                Separação explícita entre <strong className="text-[#374151]">clientes indicadores</strong> (programa «Indique e
+                Ganhe», sem comissão) e <strong className="text-[#374151]">cambistas</strong> (comissão percentual só sobre vendas{' '}
+                <strong>pagas</strong>, sem carteira interna). Repasses de comissão e bónus Pix são sempre{' '}
+                <strong>manuais via Pix</strong>, registados como pendentes ou pagos neste painel.
               </p>
             </div>
-            {/* MODIFIQUEI AQUI: link de venda ficou apenas na área do vendedor (logado) */}
-            <div className="shrink-0 rounded-xl bg-[#F0FDF4] border border-[#1E7F43]/20 px-4 py-3 text-sm text-[#14532D] max-w-md">
-              <p className="font-semibold text-[#166534]">Link de indicação</p>
-              <p className="mt-1 text-[13px] leading-snug text-[#15803d]/95">
-                Cada vendedor copia e partilha o próprio URL em <strong>Meu link</strong> na navegação, após iniciar sessão.
-                Mantém segurança (só vê o código próprio).
+            <aside className="shrink-0 w-full lg:max-w-[22rem] rounded-xl border border-[#1E7F43]/18 bg-gradient-to-br from-[#F0FDF4] via-[#F7FEF9] to-[#ECFDF5] px-5 py-4 text-sm text-[#14532D] shadow-[inset_0_1px_0_rgba(255,255,255,0.65)]">
+              <p className="font-bold text-[#166534] flex items-center gap-2">
+                <span
+                  className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#1E7F43]/12 text-[#1E7F43]"
+                  aria-hidden
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
+                    />
+                  </svg>
+                </span>
+                Link de venda
               </p>
-            </div>
+              <p className="mt-2 text-[13px] leading-snug text-[#15803d]/98">
+                Cada cambista usa <strong className="text-[#166534]">Meu link</strong> na navegação após iniciar sessão — só vê o
+                próprio código, com segurança e auditoria centralizada aqui.
+              </p>
+            </aside>
           </div>
-        </header>
 
-        <section className="bg-white rounded-2xl border border-[#E5E7EB] shadow-[0_1px_3px_rgba(0,0,0,0.06)] overflow-hidden">
-          <div className="p-5 sm:p-6 border-b border-[#F3F4F6] bg-gradient-to-r from-[#ECFDF5] to-[#F0FDF4]">
-            <h2 className="text-lg font-bold text-[#111827]">Indique e Ganhe e % cambista (por bolão)</h2>
-            <p className="text-sm text-[#374151] mt-2 leading-relaxed max-w-4xl">
-              Defina aqui a <strong>meta</strong> de indicação (a cada quantas <strong>vendas pagas</strong> ao código do indicador) e o{' '}
-              <strong>prémio</strong>: <strong>jogo grátis</strong> (crédito automático, sem Pix) ou <strong>valor em R$</strong> (bónus
-              Pix pendente até marcar pago mais abaixo). Deixe a meta vazia para desactivar o programa automático neste bolão.{' '}
-              <strong>% cambista neste bolão</strong> substitui temporariamente o percentual do perfil do vendedor só para este concurso —
-              deixe vazio para usar o do perfil.
-            </p>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 border-t border-[#EEF1F6] bg-gradient-to-b from-[#FAFBFC] to-[#F6F8FA] px-5 sm:px-8 py-4 sm:py-5">
+            <div className="rounded-xl border border-[#E5E7EB]/90 bg-white px-4 py-3 shadow-sm">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-[#6B7280]">Cambistas</p>
+              <p className="mt-1 text-2xl font-extrabold tabular-nums text-[#1F1F1F]">{partnerStats.sellers}</p>
+            </div>
+            <div className="rounded-xl border border-[#E5E7EB]/90 bg-white px-4 py-3 shadow-sm">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-[#6B7280]">Indicadores</p>
+              <p className="mt-1 text-2xl font-extrabold tabular-nums text-[#1F1F1F]">{partnerStats.indicators}</p>
+            </div>
+            <div className="rounded-xl border border-amber-200/70 bg-white px-4 py-3 shadow-sm ring-1 ring-amber-500/10">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-900/80">Comissões pendentes</p>
+              <p className="mt-1 text-2xl font-extrabold tabular-nums text-amber-950">{partnerStats.commissionsPending}</p>
+              <p className="mt-0.5 text-[10px] text-[#92400e]/85">{partnerStats.commissionsPaidRows} linhas já pagas</p>
+            </div>
+            <div className="rounded-xl border border-[#BFDBFE]/80 bg-white px-4 py-3 shadow-sm ring-1 ring-sky-500/10">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-sky-900/75">Bónus Pix pendentes</p>
+              <p className="mt-1 text-2xl font-extrabold tabular-nums text-[#0C4A6E]">{partnerStats.pixBonusesPending}</p>
+            </div>
           </div>
+        </div>
+
+        <AdminSection
+          variant="emerald"
+          title="Indique e Ganhe e % cambista (por bolão)"
+          description={
+            <>
+              Defina a <strong className="text-[#374151]">meta</strong> de indicação (vendas pagas ao código do indicador) e o{' '}
+              <strong className="text-[#374151]">prémio</strong>: jogo grátis ou valor em R$ (Pix manual até marcar pago). Deixe a meta
+              vazia para desactivar no bolão. O <strong className="text-[#374151]">% cambista neste bolão</strong> substitui o % do perfil
+              só naquele concurso — vazio usa o perfil.
+            </>
+          }
+        >
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
-              <thead className="bg-[#F9FAFB] text-[11px] font-bold uppercase tracking-wide text-[#6B7280] border-b border-[#E5E7EB]">
+              <thead className="bg-[#F1F5F9] text-[11px] font-bold uppercase tracking-wide text-[#64748B] border-b border-[#E2E8F0]">
                 <tr>
                   <th className="p-3 pl-5 text-left">Bolão</th>
                   <th className="p-3 text-left">Estado</th>
@@ -464,7 +656,7 @@ export default function AdminPartners() {
                 ) : contestsReferralOverview.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="p-8 text-center text-[#9CA3AF]">
-                      Nenhum concurso encontrado.
+                      Nenhum bolão em rascunho ou activo — cancelados e finalizados não são listados aqui.
                     </td>
                   </tr>
                 ) : (
@@ -475,20 +667,14 @@ export default function AdminPartners() {
                       value: '',
                       sellerPctOverride: '',
                     }
-                    const disabledRow = c.status === 'cancelled'
                     const saving = savingReferralContestId === c.id
                     return (
-                      <tr key={c.id} className="border-b border-[#F3F4F6] hover:bg-[#F9FAFB] align-top">
+                      <tr key={c.id} className="border-b border-[#EEF2F7] hover:bg-[#F8FAFC]/90 transition-colors align-top">
                         <td className="p-3 pl-5">
                           <div className="font-semibold text-[#111827]">{c.name}</div>
-                          {disabledRow && (
-                            <p className="text-[11px] text-amber-800 mt-1">Bolão cancelado — não editável.</p>
-                          )}
                         </td>
                         <td className="p-3 whitespace-nowrap">
-                          <span className="inline-flex rounded-lg bg-[#F3F4F6] px-2 py-1 text-xs font-semibold text-[#374151]">
-                            {contestStatusLabelPt(c.status)}
-                          </span>
+                          <StatusBadge tone={contestStatusTone(c.status)}>{contestStatusLabelPt(c.status)}</StatusBadge>
                         </td>
                         <td className="p-3">
                           <input
@@ -496,8 +682,7 @@ export default function AdminPartners() {
                             min={1}
                             step={1}
                             inputMode="numeric"
-                            disabled={disabledRow}
-                            className="w-24 min-w-[5.5rem] border border-[#E5E7EB] rounded-lg px-2 py-2 text-sm tabular-nums disabled:opacity-50"
+                            className="w-24 min-w-[5.5rem] border border-[#E5E7EB] rounded-lg px-2 py-2 text-sm tabular-nums focus:border-[#1E7F43] focus:ring-2 focus:ring-[#1E7F43]/15 outline-none transition-shadow"
                             placeholder="—"
                             value={d.target}
                             onChange={(e) => patchReferralDraft(c.id, { target: e.target.value.replace(/\D/g, '') })}
@@ -506,8 +691,7 @@ export default function AdminPartners() {
                         </td>
                         <td className="p-3">
                           <select
-                            className="w-full max-w-[14rem] border border-[#E5E7EB] rounded-lg px-2 py-2 text-sm bg-white disabled:opacity-50"
-                            disabled={disabledRow}
+                            className="w-full max-w-[14rem] border border-[#E5E7EB] rounded-lg px-2 py-2 text-sm bg-white focus:border-[#1E7F43] focus:ring-2 focus:ring-[#1E7F43]/15 outline-none"
                             value={d.rewardType}
                             onChange={(e) => {
                               const v = e.target.value as ReferralIndicationDraft['rewardType']
@@ -526,8 +710,8 @@ export default function AdminPartners() {
                           <input
                             type="text"
                             inputMode="decimal"
-                            disabled={disabledRow || d.rewardType !== 'manual_pix_bonus'}
-                            className="w-28 min-w-[7rem] border border-[#E5E7EB] rounded-lg px-2 py-2 text-sm tabular-nums disabled:bg-[#F3F4F6]"
+                            disabled={d.rewardType !== 'manual_pix_bonus'}
+                            className="w-28 min-w-[7rem] border border-[#E5E7EB] rounded-lg px-2 py-2 text-sm tabular-nums disabled:bg-[#F3F4F6] focus:border-[#1E7F43] focus:ring-2 focus:ring-[#1E7F43]/15 outline-none"
                             placeholder="0,00"
                             value={d.value}
                             onChange={(e) => patchReferralDraft(c.id, { value: e.target.value })}
@@ -537,8 +721,7 @@ export default function AdminPartners() {
                           <input
                             type="text"
                             inputMode="decimal"
-                            disabled={disabledRow}
-                            className="w-20 min-w-[4.5rem] border border-[#E5E7EB] rounded-lg px-2 py-2 text-sm tabular-nums disabled:opacity-50"
+                            className="w-20 min-w-[4.5rem] border border-[#E5E7EB] rounded-lg px-2 py-2 text-sm tabular-nums focus:border-[#1E7F43] focus:ring-2 focus:ring-[#1E7F43]/15 outline-none"
                             placeholder="—"
                             title="Vazio = percentual do perfil do cambista"
                             value={d.sellerPctOverride}
@@ -551,9 +734,9 @@ export default function AdminPartners() {
                         <td className="p-3 pr-5 text-right">
                           <button
                             type="button"
-                            disabled={disabledRow || saving || loading}
+                            disabled={saving || loading}
                             onClick={() => void saveIndicationRulesForContest(c.id)}
-                            className="inline-flex items-center justify-center min-h-[40px] px-4 py-2 rounded-xl bg-[#1E7F43] text-white text-xs font-bold hover:bg-[#196c3a] disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="inline-flex items-center justify-center min-h-[40px] px-4 py-2 rounded-xl bg-[#1E7F43] text-white text-xs font-bold hover:bg-[#196c3a] shadow-sm hover:shadow disabled:opacity-50 disabled:cursor-not-allowed transition-shadow"
                           >
                             {saving ? 'A guardar…' : 'Guardar'}
                           </button>
@@ -565,10 +748,10 @@ export default function AdminPartners() {
               </tbody>
             </table>
           </div>
-        </section>
+        </AdminSection>
 
         {error && (
-          <div className="flex flex-wrap items-center gap-3 p-4 bg-red-50 border border-red-200 rounded-xl text-red-800 text-sm">
+          <div className="flex flex-wrap items-center gap-3 p-4 bg-red-50 border border-red-200 rounded-2xl text-red-900 text-sm shadow-sm">
             <span className="flex-1 min-w-[12rem]">{error}</span>
             <button
               type="button"
@@ -584,11 +767,11 @@ export default function AdminPartners() {
         )}
 
         {bonusCreateOkMsg && (
-          <div className="flex flex-wrap items-center gap-3 p-4 bg-green-50 border border-green-200 rounded-xl text-green-900 text-sm">
+          <div className="flex flex-wrap items-center gap-3 p-4 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-950 text-sm shadow-sm">
             <span className="flex-1 min-w-[12rem]">{bonusCreateOkMsg}</span>
             <button
               type="button"
-              className="shrink-0 px-3 py-1.5 rounded-lg bg-white border border-green-200 text-green-900 text-xs font-semibold hover:bg-green-100/80"
+              className="shrink-0 px-3 py-1.5 rounded-lg bg-white border border-emerald-200 text-emerald-950 text-xs font-semibold hover:bg-emerald-50"
               onClick={() => setBonusCreateOkMsg(null)}
             >
               Fechar
@@ -596,16 +779,24 @@ export default function AdminPartners() {
           </div>
         )}
 
-        {/* MODIFIQUEI AQUI — bilhete bonificado manual */}
-        <section className="bg-white rounded-2xl border border-[#E5E7EB] p-4 sm:p-6 md:p-8 shadow-[0_1px_3px_rgba(0,0,0,0.06)]">
-          <h2 className="text-lg font-bold text-[#111827] mb-1">Nova participação bonificada</h2>
-          <p className="text-xs text-[#6B7280] mb-5 font-medium">Uso restrito ao painel administrativo</p>
-          <p className="text-xs text-[#374151]/80 mb-6 leading-relaxed max-w-4xl">
-            Gera bilhete com valor <strong>R$ 0,00</strong>, não gera comissão e <strong>não altera</strong> a arrecadação
-            públicamente contabilizada. <strong>O cliente não precisa ter créditos de indicação</strong>: deixando a opção abaixo
-            desmarcada é uma bonificação puramente institucional. Só marque <strong>Debitar 1 crédito…</strong> quando quiser debitar{' '}
-            <strong>1 crédito</strong> da fila de bonificação (o motivo será complementado para auditoria).
-          </p>
+        <AdminSection
+          variant="neutral"
+          title="Nova participação bonificada"
+          description={
+            <>
+              <span className="block text-[11px] font-semibold uppercase tracking-wide text-[#64748B] mb-2">
+                Uso restrito ao painel administrativo
+              </span>
+              <span className="text-sm text-[#4B5563] leading-relaxed">
+                Gera bilhete com valor <strong className="text-[#374151]">R$ 0,00</strong>, não gera comissão e{' '}
+                <strong className="text-[#374151]">não altera</strong> a arrecadação públicamente contabilizada. O cliente{' '}
+                <strong className="text-[#374151]">não precisa ter créditos de indicação</strong>: sem debitar crédito trata-se de
+                bonificação institucional. Use <strong className="text-[#374151]">Debitar 1 crédito…</strong> apenas quando quiser consumir um crédito da fila de indicação (auditoria).
+              </span>
+            </>
+          }
+        >
+          <div className="px-4 sm:px-6 md:px-8 pb-6 md:pb-8 pt-2 space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="md:col-span-2">
               <label className="block text-[11px] font-bold uppercase tracking-wide text-[#6B7280] mb-1.5">
@@ -737,20 +928,18 @@ export default function AdminPartners() {
               </p>
             )}
           </div>
-        </section>
-
-        {/* MODIFIQUEI AQUI — clientes indicadores (não cambistas) */}
-        <section className="bg-white rounded-2xl border border-[#E5E7EB] shadow-[0_1px_3px_rgba(0,0,0,0.06)] overflow-hidden">
-          <div className="p-5 sm:p-6 border-b border-[#F3F4F6] bg-[#FFFBEB]">
-            <h2 className="text-lg font-bold text-[#111827]">Clientes indicadores</h2>
-            <p className="text-xs text-[#6B7280] mt-1">
-              Utilizadores que participam do «Indique e Ganhe» (não marcar como cambista). Jogos grátis e bônus Pix são geridos separadamente das comissões.
-            </p>
           </div>
+        </AdminSection>
+
+        <AdminSection
+          variant="amber"
+          title="Clientes indicadores"
+          description="Programa «Indique e Ganhe» — não confundir com cambistas. Créditos de jogos grátis e bónus Pix por bolão aparecem nesta vista."
+        >
           <div className="overflow-x-auto">
             <table className="min-w-max w-full text-sm">
               <thead>
-                <tr className="border-b border-[#E5E7EB] bg-[#F9FAFB] text-left text-[11px] font-bold uppercase tracking-wide text-[#6B7280]">
+                <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC] text-left text-[11px] font-bold uppercase tracking-wide text-[#64748B]">
                   <th className="p-3 pl-5">Cliente</th>
                   <th className="p-3">Código ref.</th>
                   <th className="p-3 text-center">Bônus gerados</th>
@@ -775,7 +964,7 @@ export default function AdminPartners() {
                   </tr>
                 ) : (
                   indicatorRows.map((u) => (
-                    <tr key={u.id} className="border-b border-[#F3F4F6] hover:bg-[#F9FAFB]">
+                    <tr key={u.id} className="border-b border-[#EEF2F7] hover:bg-[#FFFBEB]/40 transition-colors">
                       <td className="p-3 pl-5">
                         <div className="font-semibold text-[#111827]">{u.name}</div>
                         <div className="text-[11px] text-[#6B7280] break-all">{u.email}</div>
@@ -798,29 +987,24 @@ export default function AdminPartners() {
               </tbody>
             </table>
           </div>
-        </section>
+        </AdminSection>
 
-        {/* Usuários / vendedores */}
-        <section className="bg-white rounded-2xl border border-[#E5E7EB] shadow-[0_1px_3px_rgba(0,0,0,0.06)] overflow-hidden">
-          <div className="p-5 sm:p-6 border-b border-[#F3F4F6] flex flex-wrap items-center justify-between gap-3 bg-[#FAFAFB]">
-            <div>
-              <h2 className="text-lg font-bold text-[#111827]">Vendedores</h2>
-              <p className="text-xs text-[#6B7280] mt-0.5">
-                Lista só usuários marcados como vendedores. Código ref. para auditoria; clientes não vendedores não entram aqui.
-              </p>
-            </div>
+        <AdminSection
+          variant="emerald"
+          title="Vendedores (cambistas)"
+          description="Percentuais, modo de comissão (primeira compra ou recorrente), conta activa e totais consolidados. Promova novos cambistas sem alterar o papel dos clientes indicadores."
+          actions={
             <button
               type="button"
               onClick={() => void reload().catch(() => {})}
-              className="text-sm px-4 py-2 rounded-xl border border-[#E5E7EB] bg-white font-semibold text-[#374151] hover:border-[#1E7F43]/35 hover:text-[#1E7F43] disabled:opacity-50 transition-colors"
+              className="inline-flex items-center justify-center rounded-xl border border-[#D1D5DB] bg-white px-4 py-2.5 text-sm font-semibold text-[#374151] shadow-sm hover:border-[#1E7F43]/45 hover:text-[#1E7F43] disabled:opacity-45 transition-colors"
               disabled={loading}
             >
-              Atualizar lista
+              Atualizar dados
             </button>
-          </div>
-
-          {/* MODIFIQUEI AQUI — novo vendedor sem listar toda base na tabela */}
-          <div className="px-5 sm:px-6 pb-5 border-b border-[#F3F4F6] bg-[#FAFAFB]">
+          }
+        >
+          <div className="px-5 sm:px-6 py-5 border-b border-[#EEF1F6] bg-gradient-to-r from-[#F8FAFC] to-white">
             <p className="text-xs font-semibold text-[#111827] mb-2">Marcar novo vendedor</p>
             <p className="text-[11px] text-[#6B7280] mb-3 leading-relaxed max-w-3xl">
               Escolha um cliente registado na plataforma que ainda <strong>não</strong> seja cambista para adicioná-lo à tabela ao lado.
@@ -859,14 +1043,18 @@ export default function AdminPartners() {
           <div className="overflow-x-auto">
           <table className="min-w-max w-full text-sm">
             <thead>
-              <tr className="border-b border-[#E5E7EB] bg-[#F9FAFB] text-left text-[11px] font-bold uppercase tracking-wide text-[#6B7280]">
+              <tr className="border-b border-[#E5E7EB] bg-[#F1F5F9] text-left text-[11px] font-bold uppercase tracking-wide text-[#64748B]">
                 <th className="p-3 min-w-[10rem] pl-5">Vendedor</th>
-                <th className="p-3">Código ref.</th>
-                <th className="p-3 text-right">Total vendido via link</th>
-                <th className="p-3 text-center">%</th>
-                <th className="p-3 text-right">Comissão pendente</th>
-                <th className="p-3 text-right">Comissão paga</th>
-                <th className="p-3 pr-5 text-center">Papel vendedor</th>
+                <th className="p-3 whitespace-nowrap">Código ref.</th>
+                <th className="p-3 text-center whitespace-nowrap">Conta activa</th>
+                <th className="p-3 min-w-[9rem]">Modo comissão</th>
+                <th className="p-3 text-center whitespace-nowrap">%</th>
+                <th className="p-3 text-center whitespace-nowrap">Clientes indicados</th>
+                <th className="p-3 text-right whitespace-nowrap">Total vendido</th>
+                <th className="p-3 text-right whitespace-nowrap">Comissão gerada</th>
+                <th className="p-3 text-right whitespace-nowrap">Comissão pendente</th>
+                <th className="p-3 text-right whitespace-nowrap">Comissão paga</th>
+                <th className="p-3 pr-5 text-center whitespace-nowrap">Papel vendedor</th>
               </tr>
             </thead>
             <tbody>
@@ -892,14 +1080,48 @@ export default function AdminPartners() {
               ) : (
                 sellerRows.map((u) => {
                   return (
-                    <tr key={u.id} className="border-b border-[#F3F4F6] hover:bg-[#F9FAFB] transition-colors bg-[#F0FDF4]/40">
+                    <tr key={u.id} className="border-b border-[#EEF2F7] hover:bg-[#ECFDF5]/35 transition-colors bg-[#FAFFFE]/80">
                       <td className="p-3 align-top pl-5">
                         <div className="font-semibold text-[#111827]">{u.name}</div>
                         <div className="text-[11px] text-[#6B7280] break-all mt-0.5">{u.email}</div>
                       </td>
                       <td className="p-3 font-mono text-xs text-[#374151] whitespace-nowrap">{u.referral_code ?? '—'}</td>
-                      <td className="p-3 text-right tabular-nums font-medium text-[#111827]">
-                        {formatCurrency(Number(u.total_sold_via_referral_brl || 0))}
+                      <td className="p-3 text-center align-middle">
+                        <input
+                          type="checkbox"
+                          className="rounded border-[#D1D5DB] text-[#1E7F43] focus:ring-[#1E7F43]"
+                          checked={u.is_active !== false}
+                          onChange={(ev) => void setSellerAccountActive(u.id, ev.target.checked)}
+                          disabled={updatingUid === u.id}
+                          title="Utilizador pode iniciar sessão e comprar"
+                          aria-label="Conta activa"
+                        />
+                      </td>
+                      <td className="p-3 align-top">
+                        <div className="flex flex-col gap-1.5 text-[11px] text-[#374151] leading-snug">
+                          <label className="flex items-start gap-2 cursor-pointer">
+                            <input
+                              type="radio"
+                              name={`seller_comm_mode_${u.id}`}
+                              className="mt-0.5 shrink-0 accent-[#1E7F43]"
+                              checked={u.commission_mode === 'first_purchase_only'}
+                              onChange={() => void saveCommissionMode(u.id, 'first_purchase_only')}
+                              disabled={updatingUid === u.id}
+                            />
+                            <span>Apenas primeira compra</span>
+                          </label>
+                          <label className="flex items-start gap-2 cursor-pointer">
+                            <input
+                              type="radio"
+                              name={`seller_comm_mode_${u.id}`}
+                              className="mt-0.5 shrink-0 accent-[#1E7F43]"
+                              checked={u.commission_mode !== 'first_purchase_only'}
+                              onChange={() => void saveCommissionMode(u.id, 'recurring_purchases')}
+                              disabled={updatingUid === u.id}
+                            />
+                            <span>Compras recorrentes</span>
+                          </label>
+                        </div>
                       </td>
                       <td className="p-3 align-top">
                         <form
@@ -925,6 +1147,15 @@ export default function AdminPartners() {
                           </button>
                         </form>
                       </td>
+                      <td className="p-3 text-center tabular-nums font-semibold text-[#111827]">
+                        {u.seller_indicated_clients_count ?? 0}
+                      </td>
+                      <td className="p-3 text-right tabular-nums font-medium text-[#111827]">
+                        {formatCurrency(Number(u.total_sold_via_referral_brl || 0))}
+                      </td>
+                      <td className="p-3 text-right tabular-nums font-semibold text-[#111827]">
+                        {formatCurrency(Number(u.commissions_generated_total_brl ?? 0))}
+                      </td>
                       <td className="p-3 text-right tabular-nums text-[#B45309]">{formatCurrency(u.commissions_total_pending_brl)}</td>
                       <td className="p-3 text-right tabular-nums text-[#166534]">{formatCurrency(u.commissions_total_paid_brl)}</td>
                       <td className="p-3 pr-5 text-center">
@@ -934,6 +1165,7 @@ export default function AdminPartners() {
                           checked={Boolean(u.is_seller)}
                           onChange={(ev) => void toggleSeller(u.id, ev.target.checked)}
                           disabled={updatingUid === u.id}
+                          aria-label="É cambista"
                         />
                       </td>
                     </tr>
@@ -981,28 +1213,30 @@ export default function AdminPartners() {
           )}
 
           {/* MODIFIQUEI AQUI — legenda técnica curta */}
-          <div className="p-5 text-[11px] text-[#6B7280] border-t border-[#F3F4F6] bg-[#FAFAFB] space-y-1.5 leading-relaxed">
+          <div className="p-5 text-[11px] text-[#64748B] border-t border-[#EEF1F6] bg-[#FAFBFC] space-y-1.5 leading-relaxed">
             <p>
               Comissões só entram quando o comprador usou link de <strong>cambista</strong> e o pagamento foi confirmado. O percentual
               vem do <strong>perfil do vendedor</strong>, salvo <strong>substituição por bolão</strong> na tabela{' '}
-              <strong>Indique e Ganhe e % cambista</strong> no topo desta página.
+              <strong>Indique e Ganhe e % cambista</strong> no topo desta página.{' '}
+              {/* MODIFIQUEI AQUI */}
+              <strong>Modo comissão</strong>: «Apenas primeira compra» limita comissões à primeira venda{' '}
+              <strong>paga e confirmada</strong> por cliente; «Compras recorrentes» mantém comissão em todas as vendas pagas (como antes).
             </p>
             <p className="text-[#6B7280]">
               Para <strong>bloquear ou liberar compras</strong> de um usuário (campo <strong>is_active</strong> no perfil), utilize a página{' '}
               <strong>Participantes</strong> no painel.
             </p>
           </div>
-        </section>
+        </AdminSection>
 
-        {/* Comissões */}
-        <section className="bg-white rounded-2xl border border-[#E5E7EB] shadow-[0_1px_3px_rgba(0,0,0,0.06)] overflow-hidden">
-          <div className="p-5 sm:p-6 border-b border-[#F3F4F6]">
-            <h2 className="text-lg font-bold text-[#111827]">Comissões por venda confirmada</h2>
-            <p className="text-xs text-[#6B7280] mt-1">Uma linha por participação ligada ao vendedor após pagamento</p>
-          </div>
+        <AdminSection
+          variant="neutral"
+          title="Comissões por venda confirmada"
+          description="Uma linha por participação ligada ao cambista após o pagamento estar confirmado no sistema. Use as acções para registar repasses Pix manuais."
+        >
           <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
-            <thead className="bg-[#F9FAFB] text-[11px] font-bold uppercase tracking-wide text-[#6B7280] border-b border-[#E5E7EB]">
+            <thead className="bg-[#F1F5F9] text-[11px] font-bold uppercase tracking-wide text-[#64748B] border-b border-[#E2E8F0]">
               <tr>
                 <th className="p-3 pl-5 text-left">Participação</th>
                 <th className="p-2 text-left">Vendedor</th>
@@ -1022,16 +1256,20 @@ export default function AdminPartners() {
                   </td>
                 </tr>
               )}
-              {commissions.map((cRow) => (
-                <tr key={cRow.id} className="border-b border-[#F3F4F6] hover:bg-[#F9FAFB]">
+              {commissions.map((cRow) => {
+                const cs = payoutRowCommissionPt(cRow.status)
+                return (
+                  <tr key={cRow.id} className="border-b border-[#EEF2F7] hover:bg-[#F8FAFC] transition-colors">
                   <td className="p-3 pl-5 font-mono text-xs text-[#374151]">{cRow.participation_id.slice(0, 8)}…</td>
-                  <td className="p-2 text-xs">
+                  <td className="p-2 text-xs font-medium text-[#374151]">
                     {(userMap.get(cRow.seller_user_id)?.name || '—') + ''}
                   </td>
                   <td className="p-2 text-right tabular-nums">{formatCurrency(Number(cRow.sale_value))}</td>
-                  <td className="p-2 text-center">{Number(cRow.commission_percent).toLocaleString('pt-BR')}%</td>
-                  <td className="p-2 text-right tabular-nums">{formatCurrency(Number(cRow.commission_value))}</td>
-                  <td className="p-2 text-center uppercase text-xs">{cRow.status}</td>
+                  <td className="p-2 text-center tabular-nums">{Number(cRow.commission_percent).toLocaleString('pt-BR')}%</td>
+                  <td className="p-2 text-right tabular-nums font-semibold text-[#166534]">{formatCurrency(Number(cRow.commission_value))}</td>
+                  <td className="p-2 text-center">
+                    <StatusBadge tone={cs.tone}>{cs.label}</StatusBadge>
+                  </td>
                   <td className="p-2 text-[11px] text-[#374151] max-w-[14rem]">
                     {cRow.paid_at && (
                       <div className="text-[#166534] font-semibold">{new Date(cRow.paid_at).toLocaleString('pt-BR')}</div>
@@ -1040,7 +1278,7 @@ export default function AdminPartners() {
                     {cRow.status === 'pending' && (
                       <input
                         type="text"
-                        className="mt-1 w-full border border-[#E5E7EB] rounded-lg px-2 py-1 text-xs"
+                        className="mt-1 w-full border border-[#E5E7EB] rounded-lg px-2 py-1.5 text-xs focus:border-[#1E7F43] focus:ring-2 focus:ring-[#1E7F43]/15 outline-none"
                         placeholder="Observação após Pix"
                         value={commissionPayNotes[cRow.id] ?? ''}
                         onChange={(e) =>
@@ -1049,46 +1287,46 @@ export default function AdminPartners() {
                       />
                     )}
                   </td>
-                  <td className="p-3 pr-5 flex gap-2 justify-end flex-wrap">
+                  <td className="p-3 pr-5">
+                    <div className="flex flex-wrap gap-2 justify-end">
                     {cRow.status === 'pending' && (
                       <>
                         <button
                           type="button"
-                          className="text-xs text-green-700 underline"
+                          className="inline-flex items-center rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-900 hover:bg-emerald-100 transition-colors"
                           onClick={() =>
                             void setCommissionPaidState(cRow.id, 'paid', commissionPayNotes[cRow.id])
                           }
                         >
-                          Marcar pago via Pix
+                          Marcar pago
                         </button>
                         <button
                           type="button"
-                          className="text-xs text-red-600 underline"
+                          className="inline-flex items-center rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-900 hover:bg-red-100 transition-colors"
                           onClick={() => void setCommissionPaidState(cRow.id, 'canceled')}
                         >
                           Cancelar
                         </button>
                       </>
                     )}
+                    </div>
                   </td>
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
           </table>
           </div>
-        </section>
+        </AdminSection>
 
-        {/* MODIFIQUEI AQUI — bônus por indicação (novo modelo por bolão) */}
-        <section className="bg-white rounded-2xl border border-[#E5E7EB] shadow-[0_1px_3px_rgba(0,0,0,0.06)] overflow-hidden mb-16">
-          <div className="p-5 sm:p-6 border-b border-[#F3F4F6]">
-            <h2 className="text-lg font-bold text-[#111827]">Bônus «Indique e Ganhe»</h2>
-            <p className="text-xs text-[#6B7280] mt-1">
-              Jogos grátis (entregue automaticamente como crédito) ou bônus Pix pendente até o ADM marcar pago após pagamento manual.
-            </p>
-          </div>
+        <AdminSection
+          variant="amber"
+          title="Bónus «Indique e Ganhe»"
+          description="Jogos grátis (crédito automático na conta) ou valores Pix manuais — marque o pagamento aqui após transferência."
+        >
           <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
-            <thead className="bg-[#F9FAFB] text-[11px] font-bold uppercase tracking-wide text-[#6B7280] border-b border-[#E5E7EB]">
+            <thead className="bg-[#F1F5F9] text-[11px] font-bold uppercase tracking-wide text-[#64748B] border-b border-[#E2E8F0]">
               <tr>
                 <th className="p-3 pl-5 text-left">Beneficiário</th>
                 <th className="p-2 text-left">Bolão</th>
@@ -1108,22 +1346,28 @@ export default function AdminPartners() {
                   </td>
                 </tr>
               )}
-              {indicationRewards.map((ev) => (
-                <tr key={ev.id} className="border-b border-[#F3F4F6] hover:bg-[#F9FAFB]">
+              {indicationRewards.map((ev) => {
+                const st = payoutRowCommissionPt(ev.status)
+                return (
+                  <tr key={ev.id} className="border-b border-[#EEF2F7] hover:bg-[#FFFBEB]/35 transition-colors">
                   <td className="p-2 text-xs pl-5">
-                    <span className="font-medium">{userMap.get(ev.beneficiary_profile_id)?.name || '—'}</span>
+                    <span className="font-semibold text-[#374151]">{userMap.get(ev.beneficiary_profile_id)?.name || '—'}</span>
                   </td>
-                  <td className="p-2 text-xs max-w-[10rem] break-words">
+                  <td className="p-2 text-xs max-w-[10rem] break-words text-[#4B5563]">
                     {allContestsById.get(ev.contest_id)?.name ?? ev.contest_id.slice(0, 8)}
                   </td>
                   <td className="p-2 text-center text-xs">
-                    {ev.reward_type === 'free_ticket' ? 'Jogo grátis' : 'Pix manual'}
+                    <span className="inline-flex rounded-md bg-[#F3F4F6] px-2 py-0.5 font-medium text-[#374151]">
+                      {ev.reward_type === 'free_ticket' ? 'Jogo grátis' : 'Pix manual'}
+                    </span>
                   </td>
-                  <td className="p-2 text-right tabular-nums">
+                  <td className="p-2 text-right tabular-nums font-medium">
                     {ev.reward_type === 'manual_pix_bonus' ? formatCurrency(Number(ev.amount_brl ?? 0)) : '—'}
                   </td>
                   <td className="p-2 text-center tabular-nums">{ev.sales_milestone_total}</td>
-                  <td className="p-2 text-center uppercase text-xs">{ev.status}</td>
+                  <td className="p-2 text-center">
+                    <StatusBadge tone={st.tone}>{st.label}</StatusBadge>
+                  </td>
                   <td className="p-2 text-[11px] text-[#374151] max-w-[14rem]">
                     {ev.paid_at && (
                       <div className="text-[#166534] font-semibold">{new Date(ev.paid_at).toLocaleString('pt-BR')}</div>
@@ -1132,7 +1376,7 @@ export default function AdminPartners() {
                     {ev.reward_type === 'manual_pix_bonus' && ev.status === 'pending' && (
                       <input
                         type="text"
-                        className="mt-1 w-full border border-[#E5E7EB] rounded-lg px-2 py-1 text-xs"
+                        className="mt-1 w-full border border-[#E5E7EB] rounded-lg px-2 py-1.5 text-xs focus:border-[#1E7F43] focus:ring-2 focus:ring-[#1E7F43]/15 outline-none"
                         placeholder="Observação após Pix"
                         value={indicationPayNotes[ev.id] ?? ''}
                         onChange={(e) =>
@@ -1146,16 +1390,16 @@ export default function AdminPartners() {
                       <div className="flex flex-wrap gap-2 justify-end">
                         <button
                           type="button"
-                          className="text-xs text-green-700 underline"
+                          className="inline-flex items-center rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-900 hover:bg-emerald-100 transition-colors"
                           onClick={() =>
                             void setIndicationRewardState(ev.id, 'paid', indicationPayNotes[ev.id])
                           }
                         >
-                          Marcar pago via Pix
+                          Marcar pago
                         </button>
                         <button
                           type="button"
-                          className="text-xs text-red-600 underline"
+                          className="inline-flex items-center rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-900 hover:bg-red-100 transition-colors"
                           onClick={() => void setIndicationRewardState(ev.id, 'canceled')}
                         >
                           Cancelar
@@ -1164,11 +1408,13 @@ export default function AdminPartners() {
                     )}
                   </td>
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
           </table>
           </div>
-        </section>
+        </AdminSection>
+
       </main>
 
       <Footer />
