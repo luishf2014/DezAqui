@@ -41,6 +41,14 @@ export type SellerAreaDashboardPayload = {
   sales: SellerAreaSaleRow[]
 }
 
+export type SellerBonusClientRow = {
+  id: string
+  name: string
+  email: string
+  referral_bonus_credits: number
+  referral_bonus_credits_used: number
+}
+
 /** MODIFIQUEI AQUI — confia no servidor (is_seller + escopo apenas do uid). */
 export async function fetchSellerAreaDashboardRpc(): Promise<SellerAreaDashboardPayload> {
   const { data, error } = await supabase.rpc('rpc_get_seller_area_dashboard')
@@ -90,4 +98,47 @@ export async function fetchSellerAreaDashboardRpc(): Promise<SellerAreaDashboard
       commission_status: String(r.commission_status ?? ''),
     })),
   }
+}
+
+/** MODIFIQUEI AQUI — clientes vinculados ao cambista para bonificação. */
+export async function listSellerBonusClientsRpc(): Promise<SellerBonusClientRow[]> {
+  const { data, error } = await supabase.rpc('rpc_seller_list_bonus_clients')
+  if (error) throw new Error(error.message)
+
+  const rows = Array.isArray(data) ? data : []
+  return rows.map((raw) => {
+    const r = raw as Record<string, unknown>
+    return {
+      id: String(r.id ?? ''),
+      name: String(r.name ?? ''),
+      email: String(r.email ?? ''),
+      referral_bonus_credits: Number(r.referral_bonus_credits ?? 0),
+      referral_bonus_credits_used: Number(r.referral_bonus_credits_used ?? 0),
+    }
+  })
+}
+
+export async function sellerCreateBonusParticipationRpc(params: {
+  userId: string
+  contestId: string
+  numbers: number[]
+  reason: string
+}): Promise<string> {
+  const { data, error } = await supabase.rpc('rpc_seller_create_bonus_participation', {
+    p_user_id: params.userId,
+    p_contest_id: params.contestId,
+    p_numbers: params.numbers,
+    p_reason: params.reason,
+  })
+  if (error) {
+    const code = error.code != null ? String(error.code).trim() : ''
+    const bits = [
+      error.message,
+      error.details && typeof error.details === 'string' && error.details.trim() ? error.details.trim() : null,
+      error.hint && typeof error.hint === 'string' && error.hint.trim() ? error.hint.trim() : null,
+      code ? `código ${code}` : null,
+    ].filter(Boolean) as string[]
+    throw new Error(bits.join(' · '))
+  }
+  return data as string
 }

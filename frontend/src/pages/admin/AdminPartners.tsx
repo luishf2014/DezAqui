@@ -1,12 +1,12 @@
 /**
  * ADMIN — MODIFIQUEI AQUI: Cambistas/indicações, comissões e bonificações
  */
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Header from '../../components/Header'
 import Footer from '../../components/Footer'
 import CustomSelect from '../../components/CustomSelect'
-import NumberPicker from '../../components/NumberPicker'
+import BonusParticipationSection from '../../components/BonusParticipationSection'
 import {
   fetchCommissionsForAdmin,
   fetchReferralIndicationRewardsForAdmin,
@@ -161,24 +161,9 @@ export default function AdminPartners() {
   const [contests, setContests] = useState<Contest[]>([])
   const [allContestsById, setAllContestsById] = useState<Map<string, Contest>>(new Map())
   const [updatingUid, setUpdatingUid] = useState<string | null>(null)
-  const [bonusCreateOkMsg, setBonusCreateOkMsg] = useState<string | null>(null)
-  const [bonusSubmitting, setBonusSubmitting] = useState(false)
-  /** Erro próximo ao botão (banner global pode ficar fora da vista quando o cartão está em baixo na página). */
-  const [bonusInlineError, setBonusInlineError] = useState<string | null>(null)
-  const bonusFeedbackRef = useRef<HTMLDivElement>(null)
 
   const [referralDraftById, setReferralDraftById] = useState<Record<string, ReferralIndicationDraft>>({})
   const [savingReferralContestId, setSavingReferralContestId] = useState<string | null>(null)
-
-  const [bonusForm, setBonusForm] = useState({
-    userId: '',
-    contestId: '',
-    /** MODIFIQUEI AQUI: seleção no volante (substitui digitar texto) */
-    selectedNumbers: [] as number[],
-    reason: '',
-    /** MODIFIQUEI AQUI: debitar 1 crédito da fila referral_bonus_credits do cliente */
-    consumeCredit: false,
-  })
 
   const [promoteToSellerUserId, setPromoteToSellerUserId] = useState('') /** MODIFIQUEI AQUI — picker para novo vendedor */
 
@@ -427,109 +412,6 @@ export default function AdminPartners() {
     }
   }
 
-  const contestForBonusPick = contests.find((c) => c.id === bonusForm.contestId)
-  const userForBonusPick = users.find((u) => u.id === bonusForm.userId)
-
-  /** Mobile: Safari costuma responder melhor a block center + scroll sem animação quando pointer coarse */
-  const scrollBonusFeedbackIntoView = () => {
-    const el = bonusFeedbackRef.current
-    if (!el || typeof window === 'undefined') return
-    const reduceMotion =
-      typeof window.matchMedia === 'function' &&
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    const coarse =
-      typeof window.matchMedia === 'function' &&
-      window.matchMedia('(pointer: coarse)').matches
-
-    requestAnimationFrame(() => {
-      el.scrollIntoView({
-        behavior: reduceMotion ? 'auto' : coarse ? 'auto' : 'smooth',
-        block: coarse ? 'center' : 'nearest',
-        inline: 'nearest',
-      })
-    })
-  }
-
-  const showBonusProblem = (msg: string) => {
-    setError(msg)
-    setBonusInlineError(msg)
-    scrollBonusFeedbackIntoView()
-  }
-
-  const submitAdminBonus = async () => {
-    const nums = [...bonusForm.selectedNumbers].sort((a, b) => a - b)
-    setBonusCreateOkMsg(null)
-    setBonusInlineError(null)
-
-    if (!bonusForm.userId || !bonusForm.contestId || nums.length === 0) {
-      showBonusProblem(
-        nums.length === 0 && contestForBonusPick
-          ? `Selecione exatamente ${contestForBonusPick.numbers_per_participation} número(s) no grid abaixo.`
-          : 'Preencha cliente, bolão ativo e a quantidade certa de números.'
-      )
-      return
-    }
-
-    const c = contests.find((x) => x.id === bonusForm.contestId)
-    if (!c || nums.length !== c.numbers_per_participation) {
-      showBonusProblem(
-        `Quantidade inválida: este bolão exige exatamente ${c?.numbers_per_participation ?? '?'} número(s).`
-      )
-      return
-    }
-
-    const outOfRange = nums.some((n) => n < c.min_number || n > c.max_number)
-    if (outOfRange) {
-      showBonusProblem(`Números precisam estar entre ${c.min_number} e ${c.max_number}.`)
-      return
-    }
-
-    if (bonusForm.consumeCredit) {
-      if (!userForBonusPick || (userForBonusPick.referral_bonus_credits ?? 0) < 1) {
-        showBonusProblem('Cliente sem crédito de bonificação disponível (ou usuário não selecionado).')
-        return
-      }
-    }
-
-    if (!bonusForm.reason.trim()) {
-      showBonusProblem('Informe o motivo (auditoria) para esta bonificação.')
-      return
-    }
-
-    setError(null)
-    setBonusInlineError(null)
-    setBonusSubmitting(true)
-
-    try {
-      await adminCreateBonusParticipationRpc({
-        userId: bonusForm.userId,
-        contestId: bonusForm.contestId,
-        numbers: nums,
-        reason: bonusForm.reason.trim(),
-        consumeReferralCredit: bonusForm.consumeCredit,
-      })
-    } catch (e) {
-      showBonusProblem(e instanceof Error ? e.message : 'Erro ao criar bilhete bonificado')
-      return
-    } finally {
-      setBonusSubmitting(false)
-    }
-
-    setBonusForm({ userId: '', contestId: '', selectedNumbers: [], reason: '', consumeCredit: false })
-    setBonusCreateOkMsg('Bilhete bonificado criado com sucesso.')
-    scrollBonusFeedbackIntoView()
-
-    try {
-      await reload()
-    } catch (e) {
-      showBonusProblem(
-        e instanceof Error
-          ? `${e.message} (o bilhete pode já ter sido criado — actualize esta página ou confira em Participações)`
-          : 'Falhou ao atualizar a lista — o bilhete pode já ter sido criado; actualize a página.'
-      )
-    }
-  }
-
   const theadCols = 11 // MODIFIQUEI AQUI — grelha cambista (modo, estado, totais)
 
   return (
@@ -756,32 +638,14 @@ export default function AdminPartners() {
             <button
               type="button"
               className="shrink-0 px-3 py-1.5 rounded-lg bg-white border border-red-200 text-red-900 text-xs font-semibold hover:bg-red-100/80"
-              onClick={() => {
-                setError(null)
-                setBonusInlineError(null)
-              }}
+              onClick={() => setError(null)}
             >
               Fechar
             </button>
           </div>
         )}
 
-        {bonusCreateOkMsg && (
-          <div className="flex flex-wrap items-center gap-3 p-4 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-950 text-sm shadow-sm">
-            <span className="flex-1 min-w-[12rem]">{bonusCreateOkMsg}</span>
-            <button
-              type="button"
-              className="shrink-0 px-3 py-1.5 rounded-lg bg-white border border-emerald-200 text-emerald-950 text-xs font-semibold hover:bg-emerald-50"
-              onClick={() => setBonusCreateOkMsg(null)}
-            >
-              Fechar
-            </button>
-          </div>
-        )}
-
-        <AdminSection
-          variant="neutral"
-          title="Nova participação bonificada"
+        <BonusParticipationSection
           description={
             <>
               <span className="block text-[11px] font-semibold uppercase tracking-wide text-[#64748B] mb-2">
@@ -795,141 +659,34 @@ export default function AdminPartners() {
               </span>
             </>
           }
-        >
-          <div className="px-4 sm:px-6 md:px-8 pb-6 md:pb-8 pt-2 space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="md:col-span-2">
-              <label className="block text-[11px] font-bold uppercase tracking-wide text-[#6B7280] mb-1.5">
-                Cliente
-              </label>
-              <CustomSelect
-                value={bonusForm.userId}
-                options={[{ value: '', label: 'Escolha o usuário…' }, ...users.map((u) => ({
-                  value: u.id,
-                  label: `${u.name} (${u.email})`,
-                }))]}
-                onChange={(v: string) => setBonusForm((s) => ({ ...s, userId: v }))}
-              />
-            </div>
-
-            <div className="md:col-span-2 md:grid md:grid-cols-1">
-              <label className="block text-[11px] font-bold uppercase tracking-wide text-[#6B7280] mb-1.5">
-                Bolão ativo
-              </label>
-              <CustomSelect
-                value={bonusForm.contestId}
-                options={[{ value: '', label: 'Escolha o bolão…' }, ...contests.map((c) => ({
-                  value: c.id,
-                  label: `${c.name} • ${c.numbers_per_participation} número(s) • ${formatCurrency(Number(c.participation_value ?? 0))}`,
-                }))]}
-                onChange={(v: string) => setBonusForm((s) => ({ ...s, contestId: v, selectedNumbers: [] }))}
-              />
-              {!!contestForBonusPick && (
-                <p className="mt-1 text-xs text-[#6B7280]">
-                  Regra atual:{' '}
-                  <strong>{contestForBonusPick.numbers_per_participation}</strong> números, intervalo{' '}
-                  {contestForBonusPick.min_number}–{contestForBonusPick.max_number}.
-                </p>
-              )}
-            </div>
-
-            <div className="md:col-span-2">
-              {/* MODIFIQUEI AQUI — mesmo volante das participações públicas */}
-              <label className="block text-[11px] font-bold uppercase tracking-wide text-[#6B7280] mb-2">
-                Números{' '}
-                {contestForBonusPick
-                  ? `(${contestForBonusPick.numbers_per_participation} valores · toque nos botões)`
-                  : '(escolha o bolão primeiro)'}
-              </label>
-              {contestForBonusPick ? (
-                <div className="rounded-xl border border-[#E5E7EB] bg-[#FAFAFB] p-4">
-                  <NumberPicker
-                    min={contestForBonusPick.min_number}
-                    max={contestForBonusPick.max_number}
-                    maxSelected={contestForBonusPick.numbers_per_participation}
-                    selectedNumbers={bonusForm.selectedNumbers}
-                    onChange={(numbers) => setBonusForm((s) => ({ ...s, selectedNumbers: numbers }))}
-                  />
-                </div>
-              ) : (
-                <p className="text-sm text-[#6B7280]">Selecione um bolão ativo para abrir o painel numérico.</p>
-              )}
-            </div>
-            <div className="md:col-span-2 flex items-start gap-3 rounded-xl border border-[#E5E7EB] bg-[#FAFAFB] px-3 py-3 sm:px-4">
-              {/* Área tocável ≥44×44 px (WCAG/mobile) centrando o checkbox nativo pequeno */}
-              <span className="mt-1 flex h-11 min-h-[44px] w-11 min-w-[44px] shrink-0 items-center justify-center self-start">
-                <input
-                  id="bonus-consume-credit"
-                  type="checkbox"
-                  className="h-7 w-7 cursor-pointer accent-[#1E7F43] touch-manipulation"
-                  aria-label="Debitar um crédito de bonificação do cliente"
-                  checked={bonusForm.consumeCredit}
-                  onChange={(ev) => {
-                    const credits = userForBonusPick?.referral_bonus_credits ?? 0
-                    if (ev.target.checked && credits < 1) return
-                    setBonusForm((s) => ({ ...s, consumeCredit: ev.target.checked }))
-                  }}
-                />
-              </span>
-              <label
-                htmlFor="bonus-consume-credit"
-                className="min-w-0 flex-1 text-sm leading-snug text-[#374151] touch-manipulation"
-              >
-                <strong>Debitar 1 crédito de bonificação do cliente (opcional)</strong>
-                {!userForBonusPick && (
-                  <span className="block text-xs text-[#6B7280] mt-0.5">Escolha um cliente para ver o saldo de créditos.</span>
-                )}
-                {!!userForBonusPick && (
-                  <span className="block text-xs text-[#6B7280] mt-0.5">
-                    Sem marcar esta opção, criar mesmo com <strong>0</strong> créditos disponíveis é permitido — bilhete
-                    institucional, sem tocar na arrecadação. Disponível agora:{' '}
-                    <strong>{userForBonusPick.referral_bonus_credits ?? 0}</strong>; já utilizados (consumo nesta fila):{' '}
-                    <strong>{userForBonusPick.referral_bonus_credits_used ?? 0}</strong>.
-                  </span>
-                )}
-              </label>
-            </div>
-
-            <div className="md:col-span-2">
-              <label className="block text-[11px] font-bold uppercase tracking-wide text-[#6B7280] mb-1.5">
-                Motivo (auditoria)
-              </label>
-              <input
-                type="text"
-                enterKeyHint="done"
-                className="w-full min-h-[48px] border border-[#E5E7EB] rounded-xl px-3 py-3 sm:py-2.5 text-[16px] md:text-[15px] text-[#111827] focus:ring-2 focus:ring-[#1E7F43]/25 focus:border-[#1E7F43]"
-                value={bonusForm.reason}
-                onChange={(e) => setBonusForm((s) => ({ ...s, reason: e.target.value }))}
-                placeholder="Ex.: Promoção institucional, correção cadastral, etc."
-              />
-            </div>
-          </div>
-          <div
-            ref={bonusFeedbackRef}
-            className="mt-6 space-y-3 scroll-mt-28 sm:scroll-mt-24"
-            aria-live="polite"
-          >
-            <button
-              type="button"
-              onClick={() => {
-                void submitAdminBonus().catch((e) => {
-                  console.error('[AdminPartners] submitAdminBonus', e)
-                  showBonusProblem(e instanceof Error ? e.message : 'Erro inesperado ao criar bilhete.')
-                })
-              }}
-              disabled={bonusSubmitting}
-              className="w-full sm:w-auto min-h-[48px] px-6 py-3 sm:py-2.5 rounded-xl bg-[#1E7F43] text-white text-[15px] sm:text-sm font-bold shadow-sm hover:bg-[#196c3a] transition-colors disabled:opacity-60 disabled:cursor-not-allowed touch-manipulation active:brightness-95"
-            >
-              {bonusSubmitting ? 'A criar…' : 'Criar bilhete bonificado'}
-            </button>
-            {bonusInlineError && (
-              <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-3 sm:py-2 break-words overflow-x-hidden [overflow-wrap:anywhere] leading-relaxed">
-                {bonusInlineError}
-              </p>
-            )}
-          </div>
-          </div>
-        </AdminSection>
+          users={users}
+          contests={contests}
+          usersLoading={loading}
+          contestsLoading={loading}
+          onSubmit={async (params) => {
+            try {
+              await adminCreateBonusParticipationRpc({
+                userId: params.userId,
+                contestId: params.contestId,
+                numbers: params.numbers,
+                reason: params.reason,
+                consumeReferralCredit: params.consumeCredit,
+              })
+            } catch (e) {
+              throw e instanceof Error ? e : new Error('Erro ao criar bilhete bonificado')
+            }
+            try {
+              await reload()
+            } catch (e) {
+              throw new Error(
+                e instanceof Error
+                  ? `${e.message} (o bilhete pode já ter sido criado — actualize esta página ou confira em Participações)`
+                  : 'Falhou ao atualizar a lista — o bilhete pode já ter sido criado; actualize a página.'
+              )
+            }
+          }}
+          onError={(msg) => setError(msg)}
+        />
 
         <AdminSection
           variant="amber"
