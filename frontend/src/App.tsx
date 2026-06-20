@@ -38,6 +38,7 @@ import AdminPartners from './pages/admin/AdminPartners'
 import SellerAreaPage from './pages/SellerAreaPage'
 import ReferAndEarnPage from './pages/ReferAndEarnPage'
 import RequireSeller from './routes/RequireSeller'
+import MustChangePasswordGate from './components/MustChangePasswordGate'
 
 function LegacyConcursosContestRedirect({ suffix }: { suffix?: string }) {
   const { id } = useParams<{ id: string }>()
@@ -52,6 +53,7 @@ function App() {
     <AuthProvider>
       <CartProvider>
         <BrowserRouter>
+          <MustChangePasswordGate />
           <Routes>
             {/* Redirecionar para /contests ao abrir o site */}
             <Route path="/" element={<Navigate to="/contests" replace />} />

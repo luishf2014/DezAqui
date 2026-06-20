@@ -2,6 +2,7 @@
  * MODIFIQUEI AQUI: área do vendedor (leituras restritas pelo RPC no Supabase).
  */
 import { supabase } from '../lib/supabase'
+import type { CreatePixPaymentResponse } from './mercadopagoService'
 
 export type SellerAreaProfileSnip = {
   referral_code: string
@@ -45,6 +46,8 @@ export type SellerBonusClientRow = {
   id: string
   name: string
   email: string
+  phone?: string | null
+  cpf?: string | null
   referral_bonus_credits: number
   referral_bonus_credits_used: number
 }
@@ -112,6 +115,8 @@ export async function listSellerBonusClientsRpc(): Promise<SellerBonusClientRow[
       id: String(r.id ?? ''),
       name: String(r.name ?? ''),
       email: String(r.email ?? ''),
+      phone: r.phone == null ? null : String(r.phone),
+      cpf: r.cpf == null ? null : String(r.cpf),
       referral_bonus_credits: Number(r.referral_bonus_credits ?? 0),
       referral_bonus_credits_used: Number(r.referral_bonus_credits_used ?? 0),
     }
@@ -141,4 +146,165 @@ export async function sellerCreateBonusParticipationRpc(params: {
     throw new Error(bits.join(' · '))
   }
   return data as string
+}
+
+export type SellerCreateClientResult = {
+  clientId: string
+  name: string
+  phone: string
+  loginPhone: string
+  temporaryPassword: string
+  sellerBound: boolean
+}
+
+export async function sellerCreateClient(params: {
+  name: string
+  phone: string
+  countryDial: string
+  email: string
+  cpf: string
+  birthDate: string
+}): Promise<SellerCreateClientResult> {
+  const { data: { user }, error: userError } = await supabase.auth.getUser()
+  if (userError || !user) {
+    throw new Error('Sessão expirada. Inicie sessão novamente.')
+  }
+
+  const { data, error } = await supabase.functions.invoke('seller-create-client', {
+    body: {
+      name: params.name.trim(),
+      phone: params.phone,
+      countryDial: params.countryDial,
+      email: params.email.trim(),
+      cpf: params.cpf.replace(/\D/g, ''),
+      birthDate: params.birthDate,
+    },
+  })
+
+  if (error) {
+    throw new Error(error.message || 'Erro ao cadastrar cliente')
+  }
+
+  const response = (data ?? {}) as Record<string, unknown>
+  if (response.error) {
+    throw new Error(String(response.error))
+  }
+
+  if (!response.clientId || !response.temporaryPassword) {
+    throw new Error('Resposta inválida do servidor')
+  }
+
+  return {
+    clientId: String(response.clientId),
+    name: String(response.name ?? params.name),
+    phone: String(response.phone ?? ''),
+    loginPhone: String(response.loginPhone ?? response.phone ?? ''),
+    temporaryPassword: String(response.temporaryPassword),
+    sellerBound: response.sellerBound === true,
+  }
+}
+
+export type SellerCashSaleResult = {
+  participationId: string
+  ticketCode: string
+  amount: number
+}
+
+export async function sellerCreateCashSale(params: {
+  userId: string
+  contestId: string
+  numbers: number[]
+}): Promise<SellerCashSaleResult> {
+  const { data, error } = await supabase.rpc('rpc_seller_create_cash_sale', {
+    p_user_id: params.userId,
+    p_contest_id: params.contestId,
+    p_numbers: params.numbers,
+  })
+  if (error) {
+    const msg = error.message || 'Erro ao registar venda em dinheiro'
+    if (msg.includes('schema cache') || msg.includes('rpc_seller_create_cash_sale')) {
+      throw new Error(
+        'Função de venda em dinheiro não encontrada no Supabase — execute a migração 048_seller_cash_sale_rpc.sql no SQL Editor.'
+      )
+    }
+    throw new Error(msg)
+  }
+
+  const raw = data as Record<string, unknown> | null
+  if (!raw?.participation_id || !raw?.ticket_code) {
+    throw new Error('Resposta inválida ao registar venda')
+  }
+
+  return {
+    participationId: String(raw.participation_id),
+    ticketCode: String(raw.ticket_code),
+    amount: Number(raw.amount ?? 0),
+  }
+}
+
+export async function sellerCancelPendingPixPayment(externalId: string): Promise<void> {
+  const { data, error } = await supabase.rpc('rpc_cancel_pending_pix_payment', {
+    p_external_id: externalId,
+  })
+  if (error) {
+    throw new Error(error.message || 'Erro ao cancelar Pix pendente')
+  }
+  const raw = data as { cancelled?: boolean; reason?: string } | null
+  if (raw?.cancelled !== true && raw?.reason !== 'not_found_or_already_final') {
+    throw new Error('Não foi possível cancelar o Pix')
+  }
+}
+
+export async function sellerCreatePixSale(params: {
+  buyerUserId: string
+  contestId: string
+  numbers: number[]
+  amount: number
+  customerName: string
+  customerEmail?: string
+  customerPhone?: string
+  customerCpfCnpj?: string
+}): Promise<CreatePixPaymentResponse> {
+  const { data: { user }, error: userError } = await supabase.auth.getUser()
+  if (userError || !user) {
+    throw new Error('Sessão expirada. Inicie sessão novamente.')
+  }
+
+  const { data, error } = await supabase.functions.invoke('mercadopago-create-pix', {
+    body: {
+      buyerUserId: params.buyerUserId,
+      contestId: params.contestId,
+      selectedNumbers: params.numbers,
+      amount: params.amount,
+      description: 'Venda cambista — DezAqui',
+      customerName: params.customerName,
+      customerEmail: params.customerEmail,
+      customerPhone: params.customerPhone,
+      customerCpfCnpj: params.customerCpfCnpj,
+    },
+  })
+
+  if (error) {
+    throw new Error(error.message || 'Erro ao gerar Pix')
+  }
+
+  const response = (data ?? {}) as Record<string, unknown>
+  if (response.error) {
+    throw new Error(String(response.error))
+  }
+  if (!response.id || !(response.qrCode as Record<string, unknown>)?.encodedImage) {
+    throw new Error('Resposta inválida do servidor Pix')
+  }
+
+  const qr = response.qrCode as Record<string, string>
+  return {
+    id: String(response.id),
+    status: String(response.status ?? 'pending'),
+    expirationDate: String(response.expirationDate ?? qr.expirationDate ?? ''),
+    qrCode: {
+      payload: qr.payload,
+      encodedImage: qr.encodedImage,
+      expirationDate: qr.expirationDate || String(response.expirationDate ?? ''),
+    },
+  }
 }

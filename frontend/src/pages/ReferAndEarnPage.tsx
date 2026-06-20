@@ -184,6 +184,12 @@ export default function ReferAndEarnPage() {
       <Header />
 
       <main className="flex-1 container mx-auto px-3 sm:px-4 py-6 sm:py-10 max-w-lg sm:max-w-2xl space-y-6">
+      <Link
+          to="/contests"
+          className="inline-flex text-sm font-bold text-[#1E7F43]"
+        >
+          ← Voltar aos bolões
+        </Link>
         <div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-[#1F1F1F] tracking-tight">
             Indique e Ganhe
@@ -350,13 +356,6 @@ export default function ReferAndEarnPage() {
             </ul>
           </section>
         )}
-
-        <Link
-          to="/contests"
-          className="inline-flex text-sm font-bold text-[#1E7F43] underline underline-offset-2"
-        >
-          ← Voltar aos bolões
-        </Link>
       </main>
 
       <Footer />

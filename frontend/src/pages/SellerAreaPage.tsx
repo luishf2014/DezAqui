@@ -7,13 +7,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Header from '../components/Header'
 import Footer from '../components/Footer'
 import CustomSelect from '../components/CustomSelect'
-import BonusParticipationSection from '../components/BonusParticipationSection'
+import SellerOperationsPanel from '../components/SellerOperationsPanel'
 import { useAuth } from '../contexts/AuthContext'
 import { listActiveContests } from '../services/contestsService'
 import {
   fetchSellerAreaDashboardRpc,
   listSellerBonusClientsRpc,
-  sellerCreateBonusParticipationRpc,
   type SellerAreaDashboardPayload,
   type SellerAreaSaleRow,
   type SellerBonusClientRow,
@@ -117,7 +116,7 @@ export default function SellerAreaPage() {
       setBonusClients(rows)
     } catch (e) {
       setBonusClients([])
-      setBonusClientsError(e instanceof Error ? e.message : 'Erro ao carregar clientes para bonificação')
+      setBonusClientsError(e instanceof Error ? e.message : 'Erro ao carregar clientes vinculados')
     } finally {
       setBonusClientsLoading(false)
     }
@@ -196,11 +195,11 @@ export default function SellerAreaPage() {
           <p className="text-base font-semibold text-[#1E7F43]">{sellerDisplayName}</p>
           <p className="text-sm text-[#1F1F1F]/65 max-w-2xl mt-2">
             {/* MODIFIQUEI AQUI */}
-            Você <strong>não participa</strong> do programa «Indique e Ganhe» de clientes. Suas vendas pelo link geram{' '}
+            Você <strong>não participa</strong> do programa «Indique e Ganhe» de clientes.             Suas vendas pelo link geram{' '}
             <strong>comissão percentual</strong> após <strong>pagamento confirmado</strong>, conforme o modo definido pelo
             administrador: <strong>só na primeira compra paga</strong> de cada cliente ou em <strong>todas as compras pagas</strong>.
-            Bilhetes bonificados que <strong>você criar</strong> para clientes vinculados também geram comissão (sobre o valor do bolão), sem
-            cobrar o cliente. <strong>Não há carteira interna</strong> — as comissões são pagas manualmente pela administração via Pix.
+            Você também pode <strong>registrar vendas</strong> e <strong>cadastrar clientes</strong> directamente nesta área.{' '}
+            <strong>Não há carteira interna</strong> — as comissões são pagas manualmente pela administração via Pix.
           </p>
         </div>
 
@@ -341,36 +340,16 @@ export default function SellerAreaPage() {
           </div>
         )}
 
-        <BonusParticipationSection
-          showConsumeCreditOption={false}
-          description={
-            <>
-              <span className="block text-[11px] font-semibold uppercase tracking-wide text-[#64748B] mb-2">
-                Uso restrito à área do cambista
-              </span>
-              <span className="text-sm text-[#4B5563] leading-relaxed">
-                Gera bilhete com valor <strong className="text-[#374151]">R$ 0,00</strong> para o cliente e{' '}
-                <strong className="text-[#374151]">não altera</strong> a arrecadação pública do bolão. Para você, gera comissão{' '}
-                <strong className="text-[#374151]">pendente</strong> calculada sobre o valor do bolão e o percentual configurado pelo
-                administrador (respeitando o modo «primeira compra» ou «recorrente», se aplicável). Só aparecem clientes{' '}
-                <strong className="text-[#374151]">vinculados ao seu código</strong> ou com compra anterior pelo seu link.
-              </span>
-            </>
-          }
-          users={bonusClients}
+        <SellerOperationsPanel
+          clients={bonusClients}
+          clientsLoading={bonusClientsLoading}
           contests={contests}
-          usersLoading={bonusClientsLoading}
           contestsLoading={contestsLoading}
-          onSubmit={async (params) => {
-            await sellerCreateBonusParticipationRpc({
-              userId: params.userId,
-              contestId: params.contestId,
-              numbers: params.numbers,
-              reason: params.reason,
-            })
-            await Promise.all([loadBonusClients(), loadDashboard()])
-          }}
+          commissionPercent={dash?.profile.commission_percent}
+          commissionMode={dash?.profile.commission_mode}
           onError={(msg) => setGlobalError(msg)}
+          onClientCreated={() => loadBonusClients()}
+          onSaleCompleted={() => Promise.all([loadBonusClients(), loadDashboard()])}
         />
 
         {/* MODIFIQUEI AQUI — cartões de comissão */}

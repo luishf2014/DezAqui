@@ -163,6 +163,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           console.log('[AuthContext] Token atualizado para o mesmo usuário, mantendo estado')
           return
         }
+        if (_event === 'USER_UPDATED') {
+          setUser(session?.user ?? null)
+          return
+        }
         if (_event === 'SIGNED_IN' && profileRef.current) {
           console.log('[AuthContext] SIGNED_IN para usuário já autenticado com perfil, ignorando')
           return

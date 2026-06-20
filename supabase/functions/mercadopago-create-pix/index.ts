@@ -52,6 +52,58 @@ async function resolveReferrerSnapshot(
   return { snapshot: c, referredById: (activeRows[0] as { id: string }).id }
 }
 
+async function assertSellerLinkedClient(
+  admin: ReturnType<typeof createClient>,
+  sellerId: string,
+  clientId: string
+): Promise<{ ok: boolean; error?: string }> {
+  const { data: sellerProf } = await admin
+    .from('profiles')
+    .select('id, is_seller, is_active, referral_code')
+    .eq('id', sellerId)
+    .maybeSingle()
+
+  if (
+    !sellerProf ||
+    (sellerProf as { is_seller?: boolean }).is_seller !== true ||
+    (sellerProf as { is_active?: boolean }).is_active === false
+  ) {
+    return { ok: false, error: 'Apenas cambistas activos podem vender para clientes' }
+  }
+
+  const { data: clientProf } = await admin
+    .from('profiles')
+    .select('id, is_active, is_seller, is_admin, referred_by_seller_profile_id')
+    .eq('id', clientId)
+    .maybeSingle()
+
+  if (
+    !clientProf ||
+    (clientProf as { is_active?: boolean }).is_active === false ||
+    (clientProf as { is_seller?: boolean }).is_seller === true ||
+    (clientProf as { is_admin?: boolean }).is_admin === true
+  ) {
+    return { ok: false, error: 'Cliente inválido ou inactivo' }
+  }
+
+  const bound = (clientProf as { referred_by_seller_profile_id?: string | null }).referred_by_seller_profile_id
+  if (bound === sellerId) {
+    return { ok: true }
+  }
+
+  const { count } = await admin
+    .from('participations')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', clientId)
+    .eq('referred_by_profile_id', sellerId)
+
+  if ((count ?? 0) > 0) {
+    return { ok: true }
+  }
+
+  return { ok: false, error: 'Cliente não vinculado a este cambista' }
+}
+
 // ============================================
 // Edge Function
 // ============================================
@@ -105,40 +157,72 @@ serve(async (req) => {
 
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY)
 
-    const { data: buyerProf, error: buyerErr } = await admin
-      .from('profiles')
-      .select('is_active, referred_by_seller_profile_id')
-      .eq('id', user.id)
-      .maybeSingle()
+    const buyerUserIdRaw = trim(body?.buyerUserId)
+    const isSellerSale = Boolean(buyerUserIdRaw)
+    const effectiveUserId = isSellerSale ? buyerUserIdRaw : user.id
 
-    if (!buyerErr && buyerProf && buyerProf.is_active === false) {
-      return jsonResponse({ error: 'Conta inativa. Não é possível gerar Pix.', debug: { step: 'inactive_user' } }, 403)
+    if (isSellerSale && buyerUserIdRaw === user.id) {
+      return jsonResponse({ error: 'Cliente inválido para venda cambista' }, 400)
     }
 
-    // MODIFIQUEI AQUI — vínculo cambista gravado no perfil prevalece sobre o código enviado no body
+    const profileSelect =
+      'is_active, referred_by_seller_profile_id, name, email, phone, cpf, is_seller, is_admin'
+
+    const { data: buyerProf, error: buyerErr } = await admin
+      .from('profiles')
+      .select(profileSelect)
+      .eq('id', effectiveUserId)
+      .maybeSingle()
+
+    if (buyerErr || !buyerProf) {
+      return jsonResponse({ error: 'Perfil do comprador não encontrado' }, 404)
+    }
+
+    if ((buyerProf as { is_active?: boolean }).is_active === false) {
+      return jsonResponse({ error: 'Conta inactiva. Não é possível gerar Pix.', debug: { step: 'inactive_user' } }, 403)
+    }
+
     let refId: string | null = null
     let refSnap: string | null = null
-    const boundSellerId = (buyerProf as { referred_by_seller_profile_id?: string | null } | null)
-      ?.referred_by_seller_profile_id
-    if (boundSellerId && boundSellerId !== user.id) {
-      const { data: boundSeller } = await admin
+
+    if (isSellerSale) {
+      const linkCheck = await assertSellerLinkedClient(admin, user.id, effectiveUserId)
+      if (!linkCheck.ok) {
+        return jsonResponse({ error: linkCheck.error || 'Cliente não vinculado' }, 403)
+      }
+
+      const { data: sellerProf } = await admin
         .from('profiles')
-        .select('id, referral_code, is_seller, is_active')
-        .eq('id', boundSellerId)
+        .select('referral_code')
+        .eq('id', user.id)
         .maybeSingle()
-      const ok =
-        boundSeller &&
-        (boundSeller as { is_seller?: boolean }).is_seller === true &&
-        (boundSeller as { is_active?: boolean }).is_active !== false
-      if (ok) {
-        refId = boundSellerId
-        const rc = trim((boundSeller as { referral_code?: string }).referral_code ?? '')
-        refSnap = rc || null
+
+      refId = user.id
+      refSnap = trim((sellerProf as { referral_code?: string } | null)?.referral_code ?? '') || null
+    } else {
+      const boundSellerId = (buyerProf as { referred_by_seller_profile_id?: string | null }).referred_by_seller_profile_id
+      if (boundSellerId && boundSellerId !== user.id) {
+        const { data: boundSeller } = await admin
+          .from('profiles')
+          .select('id, referral_code, is_seller, is_active')
+          .eq('id', boundSellerId)
+          .maybeSingle()
+        const ok =
+          boundSeller &&
+          (boundSeller as { is_seller?: boolean }).is_seller === true &&
+          (boundSeller as { is_active?: boolean }).is_active !== false
+        if (ok) {
+          refId = boundSellerId
+          const rc = trim((boundSeller as { referral_code?: string }).referral_code ?? '')
+          refSnap = rc || null
+        }
       }
     }
 
     const referrerResolved =
-      refId == null ? await resolveReferrerSnapshot(admin, body?.referrerCode) : { snapshot: refSnap, referredById: refId }
+      refId == null && !isSellerSale
+        ? await resolveReferrerSnapshot(admin, body?.referrerCode)
+        : { snapshot: refSnap, referredById: refId }
 
     const contestId = trim(body?.contestId)
     const selectedNumbersRaw = body?.selectedNumbers
@@ -186,23 +270,39 @@ serve(async (req) => {
     // ============================================
     // CPF (IGUAL AO SEU PADRÃO: obrigatório)
     // ============================================
-    const normalizedCpf = normalizeDigits(body.customerCpfCnpj)
+    const normalizedCpf = normalizeDigits(
+      isSellerSale
+        ? String(body.customerCpfCnpj ?? (buyerProf as { cpf?: string }).cpf ?? '')
+        : body.customerCpfCnpj
+    )
     if (!normalizedCpf || normalizedCpf.length !== 11) {
       return jsonResponse(
-        { error: 'CPF é obrigatório para pagamentos Pix', debug: { step: 'cpf_validation' } },
+        {
+          error: isSellerSale
+            ? 'Cliente sem CPF cadastrado — actualize o perfil antes de gerar Pix'
+            : 'CPF é obrigatório para pagamentos Pix',
+          debug: { step: 'cpf_validation' },
+        },
         400
       )
     }
 
-    const customerName = trim(body.customerName)
+    const customerName = isSellerSale
+      ? trim(String((buyerProf as { name?: string }).name ?? '')) || trim(body.customerName)
+      : trim(body.customerName)
     if (!customerName) {
       return jsonResponse({ error: 'customerName é obrigatório', debug: { step: 'payer_validation' } }, 400)
     }
 
-    const customerEmail = trim(body.customerEmail) || undefined
+    const customerEmail =
+      trim(
+        isSellerSale
+          ? String((buyerProf as { email?: string }).email ?? body.customerEmail ?? '')
+          : body.customerEmail
+      ) || undefined
 
     refId =
-      referrerResolved.referredById && referrerResolved.referredById !== user.id
+      referrerResolved.referredById && referrerResolved.referredById !== effectiveUserId
         ? referrerResolved.referredById
         : null
     refSnap = refId ? referrerResolved.snapshot : null
@@ -224,7 +324,7 @@ serve(async (req) => {
         const { data: intent, error: intentErr } = await admin
           .from('pix_payment_intents')
           .insert({
-            user_id: user.id,
+            user_id: effectiveUserId,
             contest_id: it.contestId,
             selected_numbers: it.selectedNumbers,
             amount: it.amount,
@@ -316,7 +416,7 @@ serve(async (req) => {
     const { data: intent, error: intentError } = await admin
       .from('pix_payment_intents')
       .insert({
-        user_id: user.id,
+        user_id: effectiveUserId,
         contest_id: contestId,
         selected_numbers: selectedNumbers,
         amount,
@@ -374,7 +474,7 @@ serve(async (req) => {
           external_id: payment.id,
           intent_id: intent.id,
           contest_id: contestId,
-          user_id: user.id,
+          user_id: effectiveUserId,
         })
       }
     } catch (err) {
