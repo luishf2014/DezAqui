@@ -79,22 +79,27 @@ serve(async (req) => {
       return jsonResponse({ error: 'Token inválido ou expirado' }, 401)
     }
 
-    const sellerId = sellerAuth.id as string
+    const actorId = sellerAuth.id as string
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY)
 
-    const { data: sellerProf, error: sellerErr } = await admin
+    const { data: actorProf, error: actorErr } = await admin
       .from('profiles')
-      .select('id, is_seller, is_active')
-      .eq('id', sellerId)
+      .select('id, is_seller, is_admin, is_active')
+      .eq('id', actorId)
       .maybeSingle()
 
-    if (
-      sellerErr ||
-      !sellerProf ||
-      (sellerProf as { is_seller?: boolean }).is_seller !== true ||
-      (sellerProf as { is_active?: boolean }).is_active === false
-    ) {
-      return jsonResponse({ error: 'Apenas cambistas activos podem cadastrar clientes' }, 403)
+    const isAdminActor =
+      actorProf != null &&
+      (actorProf as { is_admin?: boolean }).is_admin === true &&
+      (actorProf as { is_active?: boolean }).is_active !== false
+
+    const isSellerActor =
+      actorProf != null &&
+      (actorProf as { is_seller?: boolean }).is_seller === true &&
+      (actorProf as { is_active?: boolean }).is_active !== false
+
+    if (actorErr || !actorProf || (!isAdminActor && !isSellerActor)) {
+      return jsonResponse({ error: 'Apenas administradores ou cambistas activos podem cadastrar clientes' }, 403)
     }
 
     const body = await req.json()
@@ -172,7 +177,7 @@ serve(async (req) => {
         cpf,
         birth_date: birthDate,
         must_change_password: true,
-        created_by_seller_id: sellerId,
+        ...(isSellerActor ? { created_by_seller_id: actorId } : { created_by_admin_id: actorId }),
       },
     })
 
@@ -191,16 +196,19 @@ serve(async (req) => {
 
     await new Promise((r) => setTimeout(r, 350))
 
-    const { data: bindResult, error: bindErr } = await admin.rpc('rpc_internal_bind_client_to_seller', {
-      p_seller_id: sellerId,
-      p_client_id: clientId,
-    })
+    let bound = false
+    if (isSellerActor) {
+      const { data: bindResult, error: bindErr } = await admin.rpc('rpc_internal_bind_client_to_seller', {
+        p_seller_id: actorId,
+        p_client_id: clientId,
+      })
 
-    if (bindErr) {
-      console.error('[seller-create-client] bind error:', bindErr.message)
+      if (bindErr) {
+        console.error('[seller-create-client] bind error:', bindErr.message)
+      }
+
+      bound = (bindResult as { bound?: boolean } | null)?.bound === true
     }
-
-    const bound = (bindResult as { bound?: boolean } | null)?.bound === true
 
     return jsonResponse({
       clientId,

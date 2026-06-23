@@ -158,11 +158,34 @@ serve(async (req) => {
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY)
 
     const buyerUserIdRaw = trim(body?.buyerUserId)
-    const isSellerSale = Boolean(buyerUserIdRaw)
-    const effectiveUserId = isSellerSale ? buyerUserIdRaw : user.id
+    const isProxySale = Boolean(buyerUserIdRaw)
+    const effectiveUserId = isProxySale ? buyerUserIdRaw : user.id
 
-    if (isSellerSale && buyerUserIdRaw === user.id) {
-      return jsonResponse({ error: 'Cliente inválido para venda cambista' }, 400)
+    if (isProxySale && buyerUserIdRaw === user.id) {
+      return jsonResponse({ error: 'Cliente inválido para venda em nome de terceiro' }, 400)
+    }
+
+    const { data: callerProf } = await admin
+      .from('profiles')
+      .select('id, is_admin, is_seller, is_active')
+      .eq('id', user.id)
+      .maybeSingle()
+
+    const callerIsAdmin =
+      callerProf != null &&
+      (callerProf as { is_admin?: boolean }).is_admin === true &&
+      (callerProf as { is_active?: boolean }).is_active !== false
+
+    const callerIsSeller =
+      callerProf != null &&
+      (callerProf as { is_seller?: boolean }).is_seller === true &&
+      (callerProf as { is_active?: boolean }).is_active !== false
+
+    const isSellerSale = isProxySale && callerIsSeller && !callerIsAdmin
+    const isAdminProxySale = isProxySale && callerIsAdmin
+
+    if (isProxySale && !callerIsAdmin && !callerIsSeller) {
+      return jsonResponse({ error: 'Sem permissão para vender em nome de outro cliente' }, 403)
     }
 
     const profileSelect =
@@ -199,6 +222,9 @@ serve(async (req) => {
 
       refId = user.id
       refSnap = trim((sellerProf as { referral_code?: string } | null)?.referral_code ?? '') || null
+    } else if (isAdminProxySale) {
+      refId = null
+      refSnap = null
     } else {
       const boundSellerId = (buyerProf as { referred_by_seller_profile_id?: string | null }).referred_by_seller_profile_id
       if (boundSellerId && boundSellerId !== user.id) {
@@ -220,7 +246,7 @@ serve(async (req) => {
     }
 
     const referrerResolved =
-      refId == null && !isSellerSale
+      refId == null && !isSellerSale && !isAdminProxySale
         ? await resolveReferrerSnapshot(admin, body?.referrerCode)
         : { snapshot: refSnap, referredById: refId }
 
@@ -271,14 +297,14 @@ serve(async (req) => {
     // CPF (IGUAL AO SEU PADRÃO: obrigatório)
     // ============================================
     const normalizedCpf = normalizeDigits(
-      isSellerSale
+      isProxySale
         ? String(body.customerCpfCnpj ?? (buyerProf as { cpf?: string }).cpf ?? '')
         : body.customerCpfCnpj
     )
     if (!normalizedCpf || normalizedCpf.length !== 11) {
       return jsonResponse(
         {
-          error: isSellerSale
+          error: isProxySale
             ? 'Cliente sem CPF cadastrado — actualize o perfil antes de gerar Pix'
             : 'CPF é obrigatório para pagamentos Pix',
           debug: { step: 'cpf_validation' },
@@ -287,7 +313,7 @@ serve(async (req) => {
       )
     }
 
-    const customerName = isSellerSale
+    const customerName = isProxySale
       ? trim(String((buyerProf as { name?: string }).name ?? '')) || trim(body.customerName)
       : trim(body.customerName)
     if (!customerName) {
@@ -296,7 +322,7 @@ serve(async (req) => {
 
     const customerEmail =
       trim(
-        isSellerSale
+        isProxySale
           ? String((buyerProf as { email?: string }).email ?? body.customerEmail ?? '')
           : body.customerEmail
       ) || undefined

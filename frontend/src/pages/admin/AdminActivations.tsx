@@ -13,11 +13,14 @@ import { listPendingParticipations, activateParticipation } from '../../services
 import { Participation, Contest } from '../../types'
 import { listAllContests } from '../../services/contestsService'
 import { createCashPayment, getPaymentsByParticipation } from '../../services/paymentsService'
+import { listUsersWithTotalsForPartners, type PartnerUserRow } from '../../services/partnersAdminService'
+import { normalizeIsSellerFlag } from '../../services/profilesService'
 import { Payment } from '../../types'
 
 interface ParticipationWithDetails extends Participation {
   contest: Contest | null
   user: { id: string; name: string; email: string } | null
+  seller?: { id: string; name: string; email: string; is_seller?: boolean } | null
   payment?: Payment | null // MODIFIQUEI AQUI - Pagamento associado à participação
 }
 
@@ -25,9 +28,11 @@ export default function AdminActivations() {
   const navigate = useNavigate()
   const [participations, setParticipations] = useState<ParticipationWithDetails[]>([])
   const [contests, setContests] = useState<Contest[]>([])
+  const [sellers, setSellers] = useState<PartnerUserRow[]>([])
   const [loading, setLoading] = useState(true)
   const [activatingId, setActivatingId] = useState<string | null>(null)
   const [filterContestId, setFilterContestId] = useState<string>('all')
+  const [filterSellerId, setFilterSellerId] = useState<string>('all')
   const [searchTicketCode, setSearchTicketCode] = useState<string>('')
   const [error, setError] = useState<string | null>(null)
   // MODIFIQUEI AQUI - Estados para modal de registro de pagamento
@@ -52,9 +57,10 @@ export default function AdminActivations() {
       setError(null)
       console.log('[AdminActivations] Carregando participações pendentes...')
       
-      const [participationsData, contestsData] = await Promise.all([
+      const [participationsData, contestsData, partnerUsers] = await Promise.all([
         listPendingParticipations(),
         listAllContests(),
+        listUsersWithTotalsForPartners(),
       ])
       
       console.log('[AdminActivations] Participações pendentes encontradas:', participationsData.length)
@@ -82,6 +88,7 @@ export default function AdminActivations() {
       console.log('[AdminActivations] Participações com pagamentos carregadas:', participationsWithPayments.length)
       setParticipations(participationsWithPayments)
       setContests(contestsData)
+      setSellers(partnerUsers.filter((u) => normalizeIsSellerFlag(u.is_seller)))
     } catch (err) {
       console.error('[AdminActivations] Erro ao carregar dados:', err)
       setError(err instanceof Error ? err.message : 'Erro ao carregar participações pendentes')
@@ -296,10 +303,20 @@ export default function AdminActivations() {
     }
   }
 
-  const filteredParticipations = (filterContestId === 'all'
-    ? participations
-    : participations.filter(p => p.contest_id === filterContestId)
-  ).filter(p => {
+  const countBySeller = (sellerKey: string) => {
+    if (sellerKey === 'all') return participations.length
+    if (sellerKey === 'none') return participations.filter((p) => !p.seller?.id).length
+    return participations.filter((p) => p.seller?.id === sellerKey).length
+  }
+
+  const filteredParticipations = participations
+    .filter((p) => (filterContestId === 'all' ? true : p.contest_id === filterContestId))
+    .filter((p) => {
+      if (filterSellerId === 'all') return true
+      if (filterSellerId === 'none') return !p.seller?.id
+      return p.seller?.id === filterSellerId
+    })
+    .filter((p) => {
     // MODIFIQUEI AQUI - Filtrar por código/ticket se houver busca
     if (!searchTicketCode.trim()) return true
     const code = p.ticket_code || ''
@@ -388,7 +405,7 @@ export default function AdminActivations() {
 
         {/* Filtros */}
         <div className="mb-6 bg-white rounded-2xl border border-[#E5E5E5] p-4 shadow-sm">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label htmlFor="contest-filter" className="block text-sm font-semibold text-[#1F1F1F] mb-2">
                 Filtrar por Concurso
@@ -400,6 +417,24 @@ export default function AdminActivations() {
                 options={[
                   { value: 'all', label: `Todos os Concursos (${participations.length})` },
                   ...contests.map((c) => ({ value: c.id, label: `${c.name} (${participations.filter(p => p.contest_id === c.id).length})` })),
+                ]}
+              />
+            </div>
+            <div>
+              <label htmlFor="seller-filter" className="block text-sm font-semibold text-[#1F1F1F] mb-2">
+                Filtrar por Cambista
+              </label>
+              <CustomSelect
+                id="seller-filter"
+                value={filterSellerId}
+                onChange={setFilterSellerId}
+                options={[
+                  { value: 'all', label: `Todos (${countBySeller('all')})` },
+                  { value: 'none', label: `Sem cambista — plataforma/admin (${countBySeller('none')})` },
+                  ...sellers.map((s) => ({
+                    value: s.id,
+                    label: `${s.name} (${countBySeller(s.id)})`,
+                  })),
                 ]}
               />
             </div>
@@ -439,9 +474,9 @@ export default function AdminActivations() {
             </svg>
             <h2 className="text-xl font-bold text-[#1F1F1F] mb-2">Nenhuma Participação Pendente</h2>
             <p className="text-[#1F1F1F]/70 mb-4">
-              {filterContestId === 'all'
+              {filterContestId === 'all' && filterSellerId === 'all' && !searchTicketCode.trim()
                 ? 'Não há participações aguardando ativação no momento.'
-                : 'Não há participações pendentes para este concurso.'}
+                : 'Nenhuma participação pendente corresponde aos filtros seleccionados.'}
             </p>
           </div>
         ) : (
@@ -469,6 +504,13 @@ export default function AdminActivations() {
                         <p className="text-sm text-[#1F1F1F]/70 mb-2">
                           {participation.user?.email || 'Email não disponível'}
                         </p>
+                        {participation.seller ? (
+                          <p className="text-xs text-[#1E7F43] font-semibold mb-2">
+                            Cambista: {participation.seller.name}
+                          </p>
+                        ) : (
+                          <p className="text-xs text-[#6B7280] mb-2">Venda Adm</p>
+                        )}
                       </div>
                       <span className="px-3 py-1 rounded-full text-xs font-semibold bg-[#F4C430]/20 text-[#F4C430] whitespace-nowrap">
                         Pendente

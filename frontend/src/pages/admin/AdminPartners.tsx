@@ -6,7 +6,7 @@ import { useNavigate } from 'react-router-dom'
 import Header from '../../components/Header'
 import Footer from '../../components/Footer'
 import CustomSelect from '../../components/CustomSelect'
-import BonusParticipationSection from '../../components/BonusParticipationSection'
+import SellerOperationsPanel from '../../components/SellerOperationsPanel'
 import {
   fetchCommissionsForAdmin,
   fetchReferralIndicationRewardsForAdmin,
@@ -182,6 +182,34 @@ export default function AdminPartners() {
 
   const nonSellerChoices = useMemo(
     () => users.filter((u) => !normalizeIsSellerFlag(u.is_seller)),
+    [users]
+  )
+
+  const operationClients = useMemo(
+    () =>
+      users
+        .filter((u) => !u.is_admin && !normalizeIsSellerFlag(u.is_seller) && u.is_active !== false)
+        .map((u) => ({
+          id: u.id,
+          name: u.name,
+          email: u.email,
+          phone: u.phone ?? null,
+          cpf: u.cpf ?? null,
+        })),
+    [users]
+  )
+
+  const bonusUsers = useMemo(
+    () =>
+      users
+        .filter((u) => !u.is_admin && !normalizeIsSellerFlag(u.is_seller))
+        .map((u) => ({
+          id: u.id,
+          name: u.name,
+          email: u.email,
+          referral_bonus_credits: u.referral_bonus_credits,
+          referral_bonus_credits_used: u.referral_bonus_credits_used,
+        })),
     [users]
   )
 
@@ -645,36 +673,28 @@ export default function AdminPartners() {
           </div>
         )}
 
-        <BonusParticipationSection
-          description={
-            <>
-              <span className="block text-[11px] font-semibold uppercase tracking-wide text-[#64748B] mb-2">
-                Uso restrito ao painel administrativo
-              </span>
-              <span className="text-sm text-[#4B5563] leading-relaxed">
-                Gera bilhete com valor <strong className="text-[#374151]">R$ 0,00</strong>, não gera comissão e{' '}
-                <strong className="text-[#374151]">não altera</strong> a arrecadação públicamente contabilizada. O cliente{' '}
-                <strong className="text-[#374151]">não precisa ter créditos de indicação</strong>: sem debitar crédito trata-se de
-                bonificação institucional. Use <strong className="text-[#374151]">Debitar 1 crédito…</strong> apenas quando quiser consumir um crédito da fila de indicação (auditoria).
-              </span>
-            </>
-          }
-          users={users}
+        <SellerOperationsPanel
+          variant="admin"
+          clients={operationClients}
+          clientsLoading={loading}
           contests={contests}
-          usersLoading={loading}
           contestsLoading={loading}
-          onSubmit={async (params) => {
-            try {
-              await adminCreateBonusParticipationRpc({
-                userId: params.userId,
-                contestId: params.contestId,
-                numbers: params.numbers,
-                reason: params.reason,
-                consumeReferralCredit: params.consumeCredit,
-              })
-            } catch (e) {
-              throw e instanceof Error ? e : new Error('Erro ao criar bilhete bonificado')
-            }
+          bonusUsers={bonusUsers}
+          onError={(msg) => setError(msg)}
+          onClientCreated={() => void reload().catch(() => {})}
+          onSaleCompleted={async () => {
+            await reload()
+          }}
+          onBonusSubmit={async (params) => {
+            await adminCreateBonusParticipationRpc({
+              userId: params.userId,
+              contestId: params.contestId,
+              numbers: params.numbers,
+              reason: params.reason,
+              consumeReferralCredit: params.consumeCredit,
+            })
+          }}
+          onBonusCompleted={async () => {
             try {
               await reload()
             } catch (e) {
@@ -685,7 +705,6 @@ export default function AdminPartners() {
               )
             }
           }}
-          onError={(msg) => setError(msg)}
         />
 
         <AdminSection

@@ -5,6 +5,7 @@
  * Funções para criar e buscar participações do Supabase
  */
 import { supabase } from '../lib/supabase'
+import { normalizeIsSellerFlag } from './profilesService'
 import { Participation, Contest } from '../types'
 import { generateTicketCode } from '../utils/ticketCodeGenerator'
 import { peekPendingReferralCode } from '../utils/referralCodeStorage'
@@ -294,7 +295,15 @@ export async function listMyParticipations(): Promise<Array<Participation & { co
  * 
  * @returns Lista de participações pendentes com informações do concurso e usuário
  */
-export async function listPendingParticipations(): Promise<Array<Participation & { contest: Contest | null; user: { id: string; name: string; email: string } | null }>> {
+export async function listPendingParticipations(): Promise<
+  Array<
+    Participation & {
+      contest: Contest | null
+      user: { id: string; name: string; email: string } | null
+      seller: { id: string; name: string; email: string; is_seller?: boolean } | null
+    }
+  >
+> {
   const { data, error } = await supabase
     .from('participations')
     .select(`
@@ -315,6 +324,12 @@ export async function listPendingParticipations(): Promise<Array<Participation &
         id,
         name,
         email
+      ),
+      referrer:referred_by_profile_id (
+        id,
+        name,
+        email,
+        is_seller
       )
     `)
     .eq('status', 'pending')
@@ -327,15 +342,33 @@ export async function listPendingParticipations(): Promise<Array<Participation &
     throw new Error(`Erro ao buscar participações pendentes: ${error.message}`)
   }
 
-  return (data || []).map((item: any) => ({
-    ...item,
-    contest: item.contests || null,
-    user: item.profiles ? {
-      id: item.profiles.id,
-      name: item.profiles.name,
-      email: item.profiles.email,
-    } : null,
-  }))
+  return (data || []).map((item: Record<string, unknown>) => {
+    const profiles = item.profiles as { id: string; name: string; email: string } | null
+    const referrer = item.referrer as
+      | { id: string; name: string; email: string; is_seller?: boolean }
+      | null
+    const { contests: _c, profiles: _p, referrer: _r, ...participation } = item
+    return {
+      ...(participation as Participation),
+      contest: (item.contests as Contest | null) || null,
+      user: profiles
+        ? {
+            id: profiles.id,
+            name: profiles.name,
+            email: profiles.email,
+          }
+        : null,
+      seller:
+        referrer && normalizeIsSellerFlag(referrer.is_seller)
+          ? {
+              id: referrer.id,
+              name: referrer.name,
+              email: referrer.email,
+              is_seller: true,
+            }
+          : null,
+    }
+  })
 }
 
 /**

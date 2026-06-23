@@ -367,7 +367,7 @@ export default function AdminDashboard() {
                 <h3 className="font-semibold text-[#1F1F1F]">Parceiros</h3>
               </div>
               <p className="text-sm text-[#1F1F1F]/70">
-                Cambistas, clientes ativos, bonificações e comissões
+                Cambistas, vendas, clientes, bonificações e comissões
               </p>
             </Link>
 
