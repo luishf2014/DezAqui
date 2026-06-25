@@ -1,6 +1,29 @@
 import { supabase } from '../lib/supabase'
 import type { CreatePixPaymentResponse } from './mercadopagoService'
 import type { SellerCreateClientResult } from './sellerAreaService'
+import { FunctionsHttpError } from '@supabase/supabase-js'
+
+async function readEdgeFunctionErrorMessage(error: unknown, data: unknown): Promise<string> {
+  const fromData =
+    data && typeof data === 'object' && 'error' in data && (data as { error?: unknown }).error
+      ? String((data as { error: unknown }).error)
+      : null
+  if (fromData) return fromData
+
+  if (error instanceof FunctionsHttpError) {
+    try {
+      const payload = await error.context.json()
+      if (payload && typeof payload === 'object' && 'error' in payload) {
+        return String((payload as { error: unknown }).error)
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  if (error instanceof Error && error.message) return error.message
+  return 'Erro ao comunicar com o servidor'
+}
 
 export type AdminOperationsClientRow = {
   id: string
@@ -138,6 +161,8 @@ export async function adminCreatePixSale(params: {
   const { data, error } = await supabase.functions.invoke('mercadopago-create-pix', {
     body: {
       buyerUserId: params.buyerUserId,
+      adminProxySale: true,
+      proxyMode: 'admin',
       contestId: params.contestId,
       selectedNumbers: params.numbers,
       amount: params.amount,
@@ -150,7 +175,7 @@ export async function adminCreatePixSale(params: {
   })
 
   if (error) {
-    throw new Error(error.message || 'Erro ao gerar Pix')
+    throw new Error(await readEdgeFunctionErrorMessage(error, data))
   }
 
   const response = (data ?? {}) as Record<string, unknown>

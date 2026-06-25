@@ -28,6 +28,16 @@ function jsonResponse(body: unknown, status = 200) {
 const normalizeDigits = (v?: string) => (v || '').replace(/[^\d]/g, '')
 const trim = (v?: string) => (v || '').trim()
 
+function profileFlagTrue(v: unknown): boolean {
+  if (typeof v === 'boolean') return v
+  if (typeof v === 'string') {
+    const s = v.trim().toLowerCase()
+    return s === 'true' || s === 't' || s === '1'
+  }
+  if (typeof v === 'number') return v !== 0
+  return false
+}
+
 async function resolveReferrerSnapshot(
   admin: ReturnType<typeof createClient>,
   rawCode: unknown
@@ -158,6 +168,7 @@ serve(async (req) => {
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY)
 
     const buyerUserIdRaw = trim(body?.buyerUserId)
+    const adminProxyRequested = body?.adminProxySale === true || trim(body?.proxyMode).toLowerCase() === 'admin'
     const isProxySale = Boolean(buyerUserIdRaw)
     const effectiveUserId = isProxySale ? buyerUserIdRaw : user.id
 
@@ -173,19 +184,23 @@ serve(async (req) => {
 
     const callerIsAdmin =
       callerProf != null &&
-      (callerProf as { is_admin?: boolean }).is_admin === true &&
+      profileFlagTrue((callerProf as { is_admin?: unknown }).is_admin) &&
       (callerProf as { is_active?: boolean }).is_active !== false
 
     const callerIsSeller =
       callerProf != null &&
-      (callerProf as { is_seller?: boolean }).is_seller === true &&
+      profileFlagTrue((callerProf as { is_seller?: unknown }).is_seller) &&
       (callerProf as { is_active?: boolean }).is_active !== false
 
-    const isSellerSale = isProxySale && callerIsSeller && !callerIsAdmin
-    const isAdminProxySale = isProxySale && callerIsAdmin
+    const isAdminProxySale = isProxySale && (adminProxyRequested || callerIsAdmin)
+    const isSellerSale = isProxySale && callerIsSeller && !isAdminProxySale
 
-    if (isProxySale && !callerIsAdmin && !callerIsSeller) {
+    if (isProxySale && !isAdminProxySale && !callerIsSeller) {
       return jsonResponse({ error: 'Sem permissão para vender em nome de outro cliente' }, 403)
+    }
+
+    if (adminProxyRequested && !callerIsAdmin) {
+      return jsonResponse({ error: 'Apenas administradores podem gerar Pix administrativo para clientes' }, 403)
     }
 
     const profileSelect =

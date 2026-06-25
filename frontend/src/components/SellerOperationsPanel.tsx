@@ -26,6 +26,9 @@ import {
   type AdminOperationsClientRow,
 } from '../services/adminOperationsService'
 import SellerPixCheckoutModal from './SellerPixCheckoutModal'
+import SaleReceiptModal from './SaleReceiptModal'
+import { buildSaleReceipt, type SaleReceiptData } from './SaleReceiptCard'
+import { useAuth } from '../contexts/AuthContext'
 import type { BonusParticipationUserOption } from './BonusParticipationSection'
 
 type TabId = 'sale' | 'account' | 'bonus'
@@ -169,6 +172,8 @@ export default function SellerOperationsPanel({
   onBonusCompleted,
 }: SellerOperationsPanelProps) {
   const isAdmin = variant === 'admin'
+  const { profile } = useAuth()
+  const sellerDisplayName = profile?.name?.trim() || (isAdmin ? 'Administração' : 'Cambista')
   const showBonusTab = Boolean(onBonusSubmit)
   const visibleTabs: TabId[] = showBonusTab ? ['sale', 'account', 'bonus'] : ['sale', 'account']
   const [activeTab, setActiveTab] = useState<TabId>('sale')
@@ -211,11 +216,9 @@ export default function SellerOperationsPanel({
   const [bonusInlineError, setBonusInlineError] = useState<string | null>(null)
   const [bonusOkMsg, setBonusOkMsg] = useState<string | null>(null)
 
-  const [cashSuccess, setCashSuccess] = useState<{
-    ticketCode: string
-    amount: number
-    clientName: string
-  } | null>(null)
+  const [saleReceiptData, setSaleReceiptData] = useState<SaleReceiptData | null>(null)
+  const [showSaleCompleteModal, setShowSaleCompleteModal] = useState(false)
+  const [showReceiptModal, setShowReceiptModal] = useState(false)
 
   const [pixCheckout, setPixCheckout] = useState<{
     paymentId: string
@@ -225,9 +228,11 @@ export default function SellerOperationsPanel({
     amount: number
     clientName: string
     contestName: string
+    receiptNumbers: number[]
+    receiptContestName: string
+    receiptContestCode?: string | null
+    receiptContestStartDate?: string | null
   } | null>(null)
-
-  const [pixPaidTickets, setPixPaidTickets] = useState<string[] | null>(null)
 
   const contestForSale = contests.find((c) => c.id === saleForm.contestId)
   const clientForSale = clients.find((u) => u.id === saleForm.userId)
@@ -357,12 +362,25 @@ export default function SellerOperationsPanel({
               contestId: saleForm.contestId,
               numbers: nums,
             })
+        const clientName = clientForSale?.name || 'Cliente'
+        const soldAt = new Date()
+        setSaleReceiptData(
+          buildSaleReceipt({
+            ticketCode: result.ticketCode,
+            numbers: nums,
+            contestName: c.name,
+            contestCode: c.contest_code,
+            contestStartDate: c.start_date,
+            clientName,
+            amount: result.amount,
+            paymentMethod: 'cash',
+            paymentStatusLabel: 'Pendente — aguarda validação',
+            sellerName: sellerDisplayName,
+            soldAt,
+          })
+        )
+        setShowSaleCompleteModal(true)
         setSaleForm({ userId: '', contestId: '', selectedNumbers: [], paymentMethod: '', clientCpf: '', notes: '' })
-        setCashSuccess({
-          ticketCode: result.ticketCode,
-          amount: result.amount,
-          clientName: clientForSale?.name || 'Cliente',
-        })
         await onSaleCompleted?.()
       } else {
         const cpfDigits = normalizeCpf(saleForm.clientCpf)
@@ -401,6 +419,10 @@ export default function SellerOperationsPanel({
           amount: contestValue,
           clientName: clientForSale?.name || 'Cliente',
           contestName: contestForSale?.name || 'Bolão',
+          receiptNumbers: nums,
+          receiptContestName: c.name,
+          receiptContestCode: c.contest_code,
+          receiptContestStartDate: c.start_date,
         })
       }
     } catch (e) {
@@ -1107,33 +1129,67 @@ export default function SellerOperationsPanel({
         </SectionShell>
       )}
 
-      {cashSuccess && (
+      {showSaleCompleteModal && saleReceiptData && (
         <div className="fixed inset-0 z-[9997] flex items-center justify-center bg-[#1F1F1F]/60 backdrop-blur-sm px-4 py-8">
           <div className="w-full max-w-md rounded-2xl border border-[#E5E7EB] bg-white shadow-2xl overflow-hidden">
             <div className="px-6 py-5 border-b border-[#EEF1F6] bg-gradient-to-br from-[#F0FDF4] to-white">
-              <h3 className="text-xl font-bold text-[#1F1F1F]">Venda registada</h3>
+              <h3 className="text-xl font-bold text-[#1F1F1F]">
+                {saleReceiptData.paymentMethod === 'pix' ? 'Pix confirmado' : 'Venda registada'}
+              </h3>
               <p className="mt-2 text-sm text-[#4B5563]">
-                Bilhete <strong>{cashSuccess.ticketCode}</strong> criado para{' '}
-                <strong>{cashSuccess.clientName}</strong> ({formatCurrency(cashSuccess.amount)}).
-                {isAdmin
-                  ? ' Valide o pagamento em dinheiro na área de Ativações para activar o bilhete.'
-                  : ' Aguarda validação do administrador — após confirmar o pagamento em dinheiro, a sua comissão será gerada.'}
+                {saleReceiptData.paymentMethod === 'cash' ? (
+                  <>
+                    Bilhete <strong>{saleReceiptData.ticketCode}</strong> criado para{' '}
+                    <strong>{saleReceiptData.clientName}</strong> ({formatCurrency(saleReceiptData.amount)}).
+                    {isAdmin
+                      ? ' Valide o pagamento em dinheiro na área de Ativações para activar o bilhete.'
+                      : ' Aguarda validação do administrador — após confirmar o pagamento em dinheiro, a sua comissão será gerada.'}
+                  </>
+                ) : (
+                  <>
+                    Bilhete activo: <strong>{saleReceiptData.ticketCode}</strong>.
+                    {!isAdmin && ' Comissão registada conforme o seu percentual.'}
+                  </>
+                )}
               </p>
             </div>
-            <div className="px-6 py-5">
+            <div className="px-6 py-5 grid grid-cols-2 gap-3">
               <button
                 type="button"
-                onClick={() => setCashSuccess(null)}
-                className="w-full min-h-[44px] rounded-xl bg-[#1E7F43] text-white font-bold hover:bg-[#196c3a]"
+                onClick={() => {
+                  setShowSaleCompleteModal(false)
+                  setSaleReceiptData(null)
+                }}
+                className="min-h-[48px] rounded-xl border-2 border-[#D1D5DB] bg-white text-[#374151] font-bold hover:bg-[#F9FAFB]"
               >
                 Fechar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSaleCompleteModal(false)
+                  setShowReceiptModal(true)
+                }}
+                className="min-h-[48px] rounded-xl bg-[#1E7F43] text-white font-bold hover:bg-[#196c3a] shadow-sm"
+              >
+                Comprovante
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {pixCheckout && !pixPaidTickets && (
+      {showReceiptModal && saleReceiptData && (
+        <SaleReceiptModal
+          data={saleReceiptData}
+          onClose={() => {
+            setShowReceiptModal(false)
+            setSaleReceiptData(null)
+          }}
+        />
+      )}
+
+      {pixCheckout && !showSaleCompleteModal && (
         <SellerPixCheckoutModal
           paymentId={pixCheckout.paymentId}
           qrImage={pixCheckout.qrImage}
@@ -1143,7 +1199,24 @@ export default function SellerOperationsPanel({
           clientName={pixCheckout.clientName}
           contestName={pixCheckout.contestName}
           onPaid={(ticketCodes) => {
-            setPixPaidTickets(ticketCodes)
+            const ticketCode = ticketCodes[0] || '—'
+            const soldAt = new Date()
+            setSaleReceiptData(
+              buildSaleReceipt({
+                ticketCode,
+                numbers: pixCheckout.receiptNumbers,
+                contestName: pixCheckout.receiptContestName,
+                contestCode: pixCheckout.receiptContestCode,
+                contestStartDate: pixCheckout.receiptContestStartDate,
+                clientName: pixCheckout.clientName,
+                amount: pixCheckout.amount,
+                paymentMethod: 'pix',
+                paymentStatusLabel: 'Pago',
+                sellerName: sellerDisplayName,
+                soldAt,
+              })
+            )
+            setShowSaleCompleteModal(true)
             setPixCheckout(null)
             setSaleForm({ userId: '', contestId: '', selectedNumbers: [], paymentMethod: '', clientCpf: '', notes: '' })
             void onSaleCompleted?.()
@@ -1155,29 +1228,6 @@ export default function SellerOperationsPanel({
             setPixCheckout(null)
           }}
         />
-      )}
-
-      {pixPaidTickets && (
-        <div className="fixed inset-0 z-[9997] flex items-center justify-center bg-[#1F1F1F]/60 backdrop-blur-sm px-4 py-8">
-          <div className="w-full max-w-md rounded-2xl border border-[#E5E7EB] bg-white shadow-2xl overflow-hidden">
-            <div className="px-6 py-5 border-b border-[#EEF1F6] bg-gradient-to-br from-[#F0FDF4] to-white">
-              <h3 className="text-xl font-bold text-[#1F1F1F]">Pix confirmado</h3>
-              <p className="mt-2 text-sm text-[#4B5563]">
-                Bilhete activo: <strong>{pixPaidTickets.join(', ')}</strong>.
-                {!isAdmin && ' Comissão registada conforme o seu percentual.'}
-              </p>
-            </div>
-            <div className="px-6 py-5">
-              <button
-                type="button"
-                onClick={() => setPixPaidTickets(null)}
-                className="w-full min-h-[44px] rounded-xl bg-[#1E7F43] text-white font-bold hover:bg-[#196c3a]"
-              >
-                Fechar
-              </button>
-            </div>
-          </div>
-        </div>
       )}
 
       {createdCredentials && (
