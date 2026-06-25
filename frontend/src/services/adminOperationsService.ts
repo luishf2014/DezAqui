@@ -83,7 +83,7 @@ export async function adminCreateClient(params: {
   })
 
   if (error) {
-    throw new Error(error.message || 'Erro ao cadastrar cliente')
+    throw new Error(await readEdgeFunctionErrorMessage(error, data))
   }
 
   const response = (data ?? {}) as Record<string, unknown>

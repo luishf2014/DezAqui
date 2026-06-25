@@ -46,6 +46,16 @@ function validateCpf(cpfValue: string): boolean {
   return remainder === parseInt(cleanCpf[10])
 }
 
+function profileFlagTrue(v: unknown): boolean {
+  if (typeof v === 'boolean') return v
+  if (typeof v === 'string') {
+    const s = v.trim().toLowerCase()
+    return s === 'true' || s === 't' || s === '1'
+  }
+  if (typeof v === 'number') return v !== 0
+  return false
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: corsHeaders })
@@ -90,12 +100,12 @@ serve(async (req) => {
 
     const isAdminActor =
       actorProf != null &&
-      (actorProf as { is_admin?: boolean }).is_admin === true &&
+      profileFlagTrue((actorProf as { is_admin?: unknown }).is_admin) &&
       (actorProf as { is_active?: boolean }).is_active !== false
 
     const isSellerActor =
       actorProf != null &&
-      (actorProf as { is_seller?: boolean }).is_seller === true &&
+      profileFlagTrue((actorProf as { is_seller?: unknown }).is_seller) &&
       (actorProf as { is_active?: boolean }).is_active !== false
 
     if (actorErr || !actorProf || (!isAdminActor && !isSellerActor)) {
