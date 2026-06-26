@@ -173,6 +173,8 @@ export interface PaymentFilters {
   paymentMethod?: 'pix' | 'cash' | 'manual'
   startDate?: string
   endDate?: string
+  /** UUID do cambista ou `'none'` para vendas directas (sem cambista) */
+  sellerId?: string
 }
 
 export interface PaymentWithDetails extends Payment {
@@ -189,6 +191,12 @@ export interface PaymentWithDetails extends Payment {
     id: string
     name: string
   } | null
+  seller?: {
+    id: string
+    name: string
+  } | null
+  /** Bilhete pendente registado mas ainda sem linha em payments (ex.: venda em dinheiro) */
+  awaitingValidation?: boolean
 }
 
 function dedupeLatestPaidPerParticipation(payments: PaymentWithDetails[]): PaymentWithDetails[] {
@@ -223,17 +231,190 @@ function normalizeEndDate(endDate: string): string {
   return endDate
 }
 
-export async function listAllPayments(filters?: PaymentFilters): Promise<PaymentWithDetails[]> {
-  // Quando filtrar por concurso: buscar IDs de participações primeiro (filtro via tabela relacionada pode falhar no PostgREST)
-  let participationIds: string[] | null = null
+function mapPaymentRow(item: Record<string, unknown>): PaymentWithDetails {
+  const participationData = Array.isArray(item.participations)
+    ? (item.participations[0] as Record<string, unknown> | undefined) || null
+    : (item.participations as Record<string, unknown> | null)
+
+  const intentData = Array.isArray(item.pix_payment_intents)
+    ? (item.pix_payment_intents[0] as Record<string, unknown> | undefined) || null
+    : (item.pix_payment_intents as Record<string, unknown> | null)
+
+  const contestFromParticipation = participationData?.contests
+    ? (Array.isArray(participationData.contests)
+        ? participationData.contests[0]
+        : participationData.contests) as { id: string; name: string }
+    : null
+
+  const contestFromIntent = intentData?.contests
+    ? (Array.isArray(intentData.contests)
+        ? intentData.contests[0]
+        : intentData.contests) as { id: string; name: string }
+    : null
+
+  const referrerData = participationData?.referrer
+    ? (Array.isArray(participationData.referrer)
+        ? participationData.referrer[0]
+        : participationData.referrer) as { id: string; name?: string }
+    : null
+
+  const contestData = contestFromParticipation ?? contestFromIntent
+
+  return {
+    ...(item as Payment),
+    participation: participationData
+      ? {
+          id: String(participationData.id),
+          ticket_code: participationData.ticket_code as string | undefined,
+          contest_id: String(participationData.contest_id),
+          user_id: String(participationData.user_id),
+          status: participationData.status as ParticipationStatus | undefined,
+          is_bonus: Boolean(participationData.is_bonus),
+        }
+      : null,
+    contest: contestData
+      ? { id: String(contestData.id), name: String(contestData.name) }
+      : null,
+    seller: referrerData
+      ? { id: String(referrerData.id), name: String(referrerData.name ?? 'Cambista') }
+      : null,
+  }
+}
+
+/** Participações pendentes (dinheiro) ainda sem registo em payments — aparecem no financeiro, não na arrecadação. */
+async function listPendingParticipationsAwaitingPayment(
+  filters?: PaymentFilters
+): Promise<PaymentWithDetails[]> {
+  if (filters?.status && filters.status !== 'pending') return []
+  if (filters?.paymentMethod && filters.paymentMethod !== 'cash') return []
+
+  let query = supabase
+    .from('participations')
+    .select(`
+      id,
+      ticket_code,
+      contest_id,
+      user_id,
+      status,
+      is_bonus,
+      amount,
+      created_at,
+      updated_at,
+      referred_by_profile_id,
+      contests ( id, name ),
+      referrer:referred_by_profile_id ( id, name )
+    `)
+    .eq('status', 'pending')
+    .eq('is_bonus', false)
+
   if (filters?.contestId) {
-    const { data: participationsData } = await supabase
-      .from('participations')
-      .select('id')
-      .eq('contest_id', filters.contestId)
+    query = query.eq('contest_id', filters.contestId)
+  }
+  if (filters?.sellerId === 'none') {
+    query = query.is('referred_by_profile_id', null)
+  } else if (filters?.sellerId) {
+    query = query.eq('referred_by_profile_id', filters.sellerId)
+  }
+  if (filters?.startDate) {
+    query = query.gte(
+      'created_at',
+      /^\d{4}-\d{2}-\d{2}$/.test(filters.startDate)
+        ? `${filters.startDate}T00:00:00.000`
+        : filters.startDate
+    )
+  }
+  if (filters?.endDate) {
+    query = query.lte('created_at', normalizeEndDate(filters.endDate))
+  }
+
+  const { data, error } = await query.order('created_at', { ascending: false })
+  if (error) {
+    throw new Error(`Erro ao buscar bilhetes pendentes: ${error.message}`)
+  }
+
+  const rows = (data || []) as Record<string, unknown>[]
+  if (rows.length === 0) return []
+
+  const participationIds = rows.map((r) => String(r.id))
+  const { data: existingPayments } = await supabase
+    .from('payments')
+    .select('participation_id')
+    .in('participation_id', participationIds)
+
+  const withPayment = new Set(
+    (existingPayments || [])
+      .map((p) => p.participation_id)
+      .filter((id): id is string => Boolean(id))
+  )
+
+  return rows
+    .filter((row) => !withPayment.has(String(row.id)))
+    .map((row) => {
+      const contestRaw = row.contests
+      const contest = contestRaw
+        ? (Array.isArray(contestRaw) ? contestRaw[0] : contestRaw) as { id: string; name: string }
+        : null
+      const referrerRaw = row.referrer
+      const referrer = referrerRaw
+        ? (Array.isArray(referrerRaw) ? referrerRaw[0] : referrerRaw) as { id: string; name?: string }
+        : null
+
+      return {
+        id: `awaiting-${String(row.id)}`,
+        participation_id: String(row.id),
+        amount: Number(row.amount ?? 0),
+        status: 'pending' as const,
+        payment_method: 'cash' as const,
+        created_at: String(row.created_at),
+        updated_at: String(row.updated_at ?? row.created_at),
+        awaitingValidation: true,
+        participation: {
+          id: String(row.id),
+          ticket_code: row.ticket_code as string | undefined,
+          contest_id: String(row.contest_id),
+          user_id: String(row.user_id),
+          status: 'pending' as ParticipationStatus,
+          is_bonus: false,
+        },
+        contest: contest ? { id: String(contest.id), name: String(contest.name) } : null,
+        seller: referrer
+          ? { id: String(referrer.id), name: String(referrer.name ?? 'Cambista') }
+          : null,
+      }
+    })
+}
+
+function isUnpaidPixAttempt(p: PaymentWithDetails): boolean {
+  return p.status === 'pending' && p.payment_method === 'pix'
+}
+
+/** Entradas que contam para o histórico financeiro admin (Pix não pago fica de fora). */
+function financeHistoryEntries(payments: PaymentWithDetails[]): PaymentWithDetails[] {
+  return payments.filter((p) => !isUnpaidPixAttempt(p))
+}
+
+export async function listAllPayments(filters?: PaymentFilters): Promise<PaymentWithDetails[]> {
+  let participationIds: string[] | null = null
+  if (filters?.contestId || filters?.sellerId) {
+    let participationQuery = supabase.from('participations').select('id')
+
+    if (filters.contestId) {
+      participationQuery = participationQuery.eq('contest_id', filters.contestId)
+    }
+    if (filters.sellerId === 'none') {
+      participationQuery = participationQuery.is('referred_by_profile_id', null)
+    } else if (filters.sellerId) {
+      participationQuery = participationQuery.eq('referred_by_profile_id', filters.sellerId)
+    }
+
+    const { data: participationsData, error: participationError } = await participationQuery
+    if (participationError) {
+      throw new Error(`Erro ao filtrar participações: ${participationError.message}`)
+    }
+
     participationIds = (participationsData || []).map((p) => p.id)
     if (participationIds.length === 0) {
-      return [] // Nenhuma participação no concurso = nenhum pagamento
+      return []
     }
   }
 
@@ -241,13 +422,26 @@ export async function listAllPayments(filters?: PaymentFilters): Promise<Payment
     .from('payments')
     .select(`
       *,
-      participations!inner (
+      participations (
         id,
         ticket_code,
         contest_id,
         user_id,
         status,
         is_bonus,
+        referred_by_profile_id,
+        contests (
+          id,
+          name
+        ),
+        referrer:referred_by_profile_id (
+          id,
+          name
+        )
+      ),
+      pix_payment_intents (
+        id,
+        contest_id,
         contests (
           id,
           name
@@ -285,37 +479,19 @@ export async function listAllPayments(filters?: PaymentFilters): Promise<Payment
     throw new Error(`Erro ao buscar pagamentos: ${error.message}`)
   }
 
-  const rows = (data || []) as any[]
+  const rows = (data || []) as Record<string, unknown>[]
 
-  // MODIFIQUEI AQUI - mapear sem chamadas extras
-  const paymentsWithDetails: PaymentWithDetails[] = rows.map((item: any) => {
-    const participationData = Array.isArray(item.participations)
-      ? item.participations[0] || null
-      : item.participations || null
+  const paymentsWithDetails = rows.map(mapPaymentRow)
 
-    const contestData =
-      participationData?.contests
-        ? (Array.isArray(participationData.contests) ? participationData.contests[0] : participationData.contests)
-        : null
+  const awaitingCash = await listPendingParticipationsAwaitingPayment(filters)
 
-    return {
-      ...item,
-      participation: participationData ? {
-        id: participationData.id,
-        ticket_code: participationData.ticket_code,
-        contest_id: participationData.contest_id,
-        user_id: participationData.user_id,
-        status: participationData.status as ParticipationStatus | undefined,
-        is_bonus: Boolean(participationData.is_bonus),
-      } : null,
-      contest: contestData ? {
-        id: contestData.id,
-        name: contestData.name,
-      } : null,
-    }
-  })
+  const merged = financeHistoryEntries(
+    [...paymentsWithDetails, ...awaitingCash].sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    )
+  )
 
-  return paymentsWithDetails
+  return merged
 }
 
 /**

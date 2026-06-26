@@ -12,11 +12,14 @@ import CustomSelect from '../../components/CustomSelect'
 import { listAllContests, updateContest } from '../../services/contestsService'
 import { listAllPayments, getFinancialStats, PaymentWithDetails, FinancialStats, PaymentFilters } from '../../services/paymentsService'
 import { listAllDiscounts, createDiscount, updateDiscount, deleteDiscount, CreateDiscountInput, UpdateDiscountInput } from '../../services/discountsService'
+import { listUsersWithTotalsForPartners, type PartnerUserRow } from '../../services/partnersAdminService'
+import { normalizeIsSellerFlag } from '../../services/profilesService'
 import { Contest, Discount, DiscountType } from '../../types'
 
 export default function AdminFinance() {
   const navigate = useNavigate()
   const [contests, setContests] = useState<Contest[]>([])
+  const [sellers, setSellers] = useState<PartnerUserRow[]>([])
   const [payments, setPayments] = useState<PaymentWithDetails[]>([])
   const [stats, setStats] = useState<FinancialStats | null>(null)
   const [loading, setLoading] = useState(true)
@@ -24,6 +27,7 @@ export default function AdminFinance() {
   
   // Estados para filtros
   const [filterContestId, setFilterContestId] = useState<string>('all')
+  const [filterSellerId, setFilterSellerId] = useState<string>('all')
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [filterMethod, setFilterMethod] = useState<string>('all')
   const [startDate, setStartDate] = useState<string>('')
@@ -62,14 +66,18 @@ export default function AdminFinance() {
   useEffect(() => {
     loadPayments()
     loadStats()
-  }, [filterContestId, filterStatus, filterMethod, startDate, endDate])
+  }, [filterContestId, filterSellerId, filterStatus, filterMethod, startDate, endDate])
 
   const loadData = async () => {
     try {
       setLoading(true)
       setError(null)
-      const contestsData = await listAllContests()
+      const [contestsData, partnerUsers] = await Promise.all([
+        listAllContests(),
+        listUsersWithTotalsForPartners(),
+      ])
       setContests(contestsData)
+      setSellers(partnerUsers.filter((u) => normalizeIsSellerFlag(u.is_seller)))
       await loadPayments()
       await loadStats()
     } catch (err) {
@@ -86,6 +94,9 @@ export default function AdminFinance() {
       
       if (filterContestId !== 'all') {
         filters.contestId = filterContestId
+      }
+      if (filterSellerId !== 'all') {
+        filters.sellerId = filterSellerId
       }
       if (filterStatus !== 'all') {
         filters.status = filterStatus as 'pending' | 'paid' | 'cancelled' | 'refunded'
@@ -114,6 +125,9 @@ export default function AdminFinance() {
       
       if (filterContestId !== 'all') {
         filters.contestId = filterContestId
+      }
+      if (filterSellerId !== 'all') {
+        filters.sellerId = filterSellerId
       }
       if (filterStatus !== 'all') {
         filters.status = filterStatus as 'pending' | 'paid' | 'cancelled' | 'refunded'
@@ -711,7 +725,7 @@ export default function AdminFinance() {
             {/* Filtros */}
             <div className="bg-white rounded-2xl border border-[#E5E5E5] p-4 sm:p-6 shadow-sm mb-6">
               <h2 className="text-xl font-bold text-[#1F1F1F] mb-4">Filtros</h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
                 <div>
                   <label htmlFor="contest-filter" className="block text-sm font-semibold text-[#1F1F1F] mb-2">
                     Concurso
@@ -723,6 +737,22 @@ export default function AdminFinance() {
                     options={[
                       { value: 'all', label: 'Todos' },
                       ...contests.map((c) => ({ value: c.id, label: c.name })),
+                    ]}
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="seller-filter" className="block text-sm font-semibold text-[#1F1F1F] mb-2">
+                    Cambista
+                  </label>
+                  <CustomSelect
+                    id="seller-filter"
+                    value={filterSellerId}
+                    onChange={setFilterSellerId}
+                    options={[
+                      { value: 'all', label: 'Todos' },
+                      { value: 'none', label: 'Sem cambista — plataforma/admin' },
+                      ...sellers.map((s) => ({ value: s.id, label: s.name })),
                     ]}
                   />
                 </div>
@@ -837,6 +867,7 @@ export default function AdminFinance() {
                         <th className="text-left py-3 px-3 sm:px-4 text-xs sm:text-sm font-semibold text-[#1F1F1F]">Data</th>
                         <th className="text-left py-3 px-4 text-sm font-semibold text-[#1F1F1F]">Concurso</th>
                         <th className="text-left py-3 px-4 text-sm font-semibold text-[#1F1F1F]">Ticket</th>
+                        <th className="text-left py-3 px-4 text-sm font-semibold text-[#1F1F1F]">Cambista</th>
                         <th className="text-left py-3 px-4 text-sm font-semibold text-[#1F1F1F]">Valor</th>
                         <th className="text-left py-3 px-4 text-sm font-semibold text-[#1F1F1F]">Método</th>
                         <th className="text-left py-3 px-4 text-sm font-semibold text-[#1F1F1F]">Status</th>
@@ -863,6 +894,11 @@ export default function AdminFinance() {
                             )}
                           </td>
                           <td className="py-3 px-4">
+                            <span className="text-sm text-[#1F1F1F]">
+                              {payment.seller?.name || 'Venda direta'}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4">
                             <span className="text-sm font-bold text-[#1E7F43]">
                               {formatCurrency(payment.amount)}
                             </span>
@@ -876,10 +912,17 @@ export default function AdminFinance() {
                           </td>
                           <td className="py-3 px-4">
                             <span className={`px-2 py-1 rounded-lg text-xs font-semibold ${getStatusBadgeClass(payment.status)}`}>
-                              {payment.status === 'paid' ? 'Pago' :
-                               payment.status === 'pending' ? 'Pendente' :
-                               payment.status === 'cancelled' ? 'Cancelado' :
-                               payment.status === 'refunded' ? 'Reembolsado' : payment.status}
+                              {payment.awaitingValidation
+                                ? 'Pendente — aguarda validação'
+                                : payment.status === 'paid'
+                                  ? 'Pago'
+                                  : payment.status === 'pending'
+                                    ? 'Pendente'
+                                    : payment.status === 'cancelled'
+                                      ? 'Cancelado'
+                                      : payment.status === 'refunded'
+                                        ? 'Reembolsado'
+                                        : payment.status}
                             </span>
                           </td>
                         </tr>
