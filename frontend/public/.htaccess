@@ -1,0 +1,20 @@
+# SPA fallback — HostGator / Apache (React Router + Vite)
+# Envia todas as rotas inexistentes para index.html (evita 404 ao recarregar F5)
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+  # Não reescrever pedidos ao index.html
+  RewriteRule ^index\.html$ - [L]
+
+  # Ficheiros e pastas reais (assets, favicon, etc.)
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+
+  # Resto → app React
+  RewriteRule . /index.html [L]
+</IfModule>
+
+# Opcional: evitar listagem de directórios
+Options -Indexes

@@ -4,7 +4,7 @@
  * 
  * Permite que usuários façam login ou criem uma nova conta
  */
-import { useState, FormEvent, useEffect, useMemo } from 'react'
+import { useState, FormEvent, useEffect } from 'react'
 import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
@@ -12,14 +12,8 @@ import Header from '../components/Header'
 import Footer from '../components/Footer'
 import MobilePhoneCountryInput from '../components/MobilePhoneCountryInput'
 import logodezaqui from '../assets/logodezaqui.png'
-import {
-  BIRTH_DATE_MIN,
-  brDigitsToIso,
-  formatBirthDateMask,
-  getMaxBirthDateForAdultsIso,
-  isoDateToBrDigits,
-  isValidAdultBirthDate,
-} from '../utils/birthDate'
+import BirthDateInput from '../components/BirthDateInput'
+import { brDigitsToIso, isValidAdultBirthDate } from '../utils/birthDate'
 import { useSitePagesVisibilityMap } from '../hooks/useSitePagesVisibilityMap'
 
 /** DDD + celular (9 após DDD) ou fixo (8 após DDD); teclado tel no mobile. */
@@ -62,10 +56,6 @@ export default function LoginPage() {
   const [cpf, setCpf] = useState('')
   /** dd/mm/aaaa (8 dígitos internos). Mobile: também abre calendário nativo pelo botão. */
   const [birthDateDigits, setBirthDateDigits] = useState('')
-  const birthDatePickerValue = useMemo(
-    () => brDigitsToIso(birthDateDigits) ?? '',
-    [birthDateDigits]
-  )
   const [acceptedTerms, setAcceptedTerms] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -493,69 +483,15 @@ export default function LoginPage() {
                     <div className="text-xs font-semibold uppercase tracking-[0.2em] text-[#1F1F1F]/60">
                       Data de nascimento <span className="text-red-500">*</span>
                     </div>
-                    <div className="md:hidden mt-2 flex gap-2">
-                      <input
-                        id="birthDate-mobile"
-                        name="birthDate"
-                        type="text"
-                        inputMode="numeric"
-                        autoComplete="bday"
-                        required={isMobileViewport}
-                        value={formatBirthDateMask(birthDateDigits)}
-                        onChange={(e) => {
-                          const digits = e.target.value.replace(/\D/g, '').slice(0, 8)
-                          setBirthDateDigits(digits)
-                        }}
-                        className="min-w-0 flex-1 rounded-xl border border-[#E5E5E5] bg-white px-4 py-3 text-sm text-[#1F1F1F] placeholder-[#1F1F1F]/40 shadow-sm focus:border-[#1E7F43] focus:outline-none focus:ring-2 focus:ring-[#3CCB7F]/40"
-                        placeholder="dd/mm/aaaa"
-                        maxLength={10}
-                      />
-                      {/*
-                        iOS Safari não abre o calendário com showPicker()/click() em input escondido (sr-only).
-                        O toque precisa ir direto ao type="date": input invisível cobre o ícone (área mín. ~44pt).
-                      */}
-                      <div className="relative flex min-h-[48px] min-w-[48px] shrink-0 items-center justify-center self-stretch rounded-xl border border-[#E5E5E5] bg-white text-[#1E7F43] shadow-sm">
-                        <input
-                          type="date"
-                          id="birthDate-picker-native"
-                          value={birthDatePickerValue}
-                          min={BIRTH_DATE_MIN}
-                          max={getMaxBirthDateForAdultsIso()}
-                          onChange={(e) => {
-                            const v = e.target.value
-                            if (v) setBirthDateDigits(isoDateToBrDigits(v))
-                          }}
-                          aria-label="Abrir calendário para escolher a data"
-                          className="absolute inset-0 z-10 h-full min-h-[48px] w-full cursor-pointer opacity-[0.01] appearance-none"
-                        />
-                        <span className="pointer-events-none flex items-center justify-center px-3 py-3" aria-hidden>
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                          </svg>
-                        </span>
-                      </div>
-                    </div>
-                    <div className="hidden md:block mt-2">
-                      <input
-                        id="birthDate-desktop"
-                        name="birthDate"
-                        type="text"
-                        inputMode="numeric"
-                        autoComplete="bday"
-                        required={!isMobileViewport}
-                        value={formatBirthDateMask(birthDateDigits)}
-                        onChange={(e) => {
-                          const digits = e.target.value.replace(/\D/g, '').slice(0, 8)
-                          setBirthDateDigits(digits)
-                        }}
-                        className="block w-full rounded-xl border border-[#E5E5E5] bg-white px-4 py-3 text-sm text-[#1F1F1F] placeholder-[#1F1F1F]/40 shadow-sm focus:border-[#1E7F43] focus:outline-none focus:ring-2 focus:ring-[#3CCB7F]/40"
-                        placeholder="dd/mm/aaaa"
-                        maxLength={10}
+                    <div className="mt-2">
+                      <BirthDateInput
+                        id="birthDate"
+                        valueDigits={birthDateDigits}
+                        onChangeDigits={setBirthDateDigits}
+                        required
+                        showAgeHint
                       />
                     </div>
-                    <p className="mt-1 text-xs text-[#1F1F1F]/50">
-                      É necessário ter pelo menos 18 anos.
-                    </p>
                   </div>
                 )}
                 {isSignUp && (

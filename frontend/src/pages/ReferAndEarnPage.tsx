@@ -6,17 +6,32 @@ import { Link, Navigate } from 'react-router-dom'
 import Header from '../components/Header'
 import Footer from '../components/Footer'
 import CustomSelect from '../components/CustomSelect'
+import NumberPicker from '../components/NumberPicker'
 import { useAuth } from '../contexts/AuthContext'
 import { normalizeIsSellerFlag } from '../services/profilesService'
 import { listActiveContests } from '../services/contestsService'
 import {
   fetchReferIndicateDashboardRpc,
+  type ReferIndicateContestProgress,
   type ReferIndicateDashboardPayload,
 } from '../services/referIndicateService'
 import { redeemReferralFreeCreditParticipation } from '../services/participationsService'
 import { formatCurrency } from '../utils/formatters'
 import { buildConcursosShareUrl, shareTelegramUrl, shareWhatsAppUrl } from '../utils/contestShareLink'
 import type { Contest } from '../types'
+
+function progressPercent(row: ReferIndicateContestProgress): number {
+  if (row.target_sales <= 0) return 0
+  return Math.min(100, Math.round((row.current_cycle_sales / row.target_sales) * 100))
+}
+
+function progressRewardLabel(row: ReferIndicateContestProgress): string {
+  if (row.reward_type === 'free_ticket') {
+    return 'Prêmio ao completar: 1 jogo grátis (crédito)'
+  }
+  const v = row.reward_value ?? 0
+  return `Prêmio ao completar: bônus Pix ${formatCurrency(v)}`
+}
 
 export default function ReferAndEarnPage() {
   const { user, profile, loading: authLoading, refreshProfile } = useAuth()
@@ -31,7 +46,7 @@ export default function ReferAndEarnPage() {
   const [linkContestId, setLinkContestId] = useState('')
   const [copied, setCopied] = useState(false)
 
-  const [creditNumbersRaw, setCreditNumbersRaw] = useState('')
+  const [creditSelectedNumbers, setCreditSelectedNumbers] = useState<number[]>([])
   const [creditContestId, setCreditContestId] = useState('')
   const [redeemBusy, setRedeemBusy] = useState(false)
   const [redeemMsg, setRedeemMsg] = useState<string | null>(null)
@@ -90,6 +105,12 @@ export default function ReferAndEarnPage() {
 
   const contestCredit = contests.find((c) => c.id === creditContestId)
 
+  const availableCredits = useMemo(() => {
+    const fromDash = dash?.profile.referral_bonus_credits
+    if (fromDash != null) return Math.max(0, fromDash)
+    return Math.max(0, profile?.referral_bonus_credits ?? 0)
+  }, [dash?.profile.referral_bonus_credits, profile?.referral_bonus_credits])
+
   const copyLink = async () => {
     if (!shareUrl) return
     try {
@@ -106,22 +127,21 @@ export default function ReferAndEarnPage() {
       setRedeemMsg('Escolha um bolão.')
       return
     }
-    const nums = creditNumbersRaw
-      .split(/[\s,;]+/)
-      .map((s) => parseInt(s.trim(), 10))
-      .filter((n) => Number.isInteger(n))
+    const nums = [...creditSelectedNumbers].sort((a, b) => a - b)
     if (nums.length !== contestCredit.numbers_per_participation) {
-      setRedeemMsg(`Informe exatamente ${contestCredit.numbers_per_participation} número(s).`)
+      setRedeemMsg(`Selecione exatamente ${contestCredit.numbers_per_participation} número(s) no volante.`)
       return
     }
     if (nums.some((n) => n < contestCredit.min_number || n > contestCredit.max_number)) {
       setRedeemMsg(`Números entre ${contestCredit.min_number} e ${contestCredit.max_number}.`)
       return
     }
-    if ((profile?.referral_bonus_credits ?? 0) < 1) {
+    if (redeemBusy) return
+    if (availableCredits < 1) {
       setRedeemMsg('Sem jogos grátis disponíveis no momento.')
       return
     }
+    const creditsBefore = availableCredits
     setRedeemBusy(true)
     setRedeemMsg(null)
     try {
@@ -129,15 +149,24 @@ export default function ReferAndEarnPage() {
         contestId: creditContestId,
         numbers: nums,
       })
+      const freshDash = await fetchReferIndicateDashboardRpc()
+      setDash(freshDash)
+      await refreshProfile()
+      const creditsAfter = freshDash.profile.referral_bonus_credits
+      if (creditsAfter >= creditsBefore) {
+        setRedeemMsg(
+          'O bilhete pode ter sido criado, mas o crédito não foi debitado. Atualize a página ou contacte o suporte.'
+        )
+        setRedeemBusy(false)
+        return
+      }
       setRedeemMsg(
         `Jogo grátis criado! Código ${res.ticket_code ?? '(veja em Meus tickets)'} — sem Pix, sem comissão, valor R$ 0,00.`
       )
-      setCreditNumbersRaw('')
-      await refreshProfile()
-      await loadDash()
+      setCreditSelectedNumbers([])
+      setRedeemBusy(false)
     } catch (e) {
       setRedeemMsg(e instanceof Error ? e.message : 'Falha ao usar jogo grátis')
-    } finally {
       setRedeemBusy(false)
     }
   }
@@ -163,6 +192,7 @@ export default function ReferAndEarnPage() {
   }
 
   const st = dash?.stats
+  const contestProgress = dash?.contest_progress ?? []
   const lineShare = 'Indique amigos na DezAqui e acompanhe seus bônus aqui.'
   const waHref = shareUrl ? shareWhatsAppUrl(lineShare, shareUrl) : '#'
   const tgHref = shareUrl ? shareTelegramUrl(lineShare, shareUrl) : '#'
@@ -195,8 +225,8 @@ export default function ReferAndEarnPage() {
             Indique e Ganhe
           </h1>
           <p className="text-sm text-[#1F1F1F]/70 mt-2">
-            {/* MODIFIQUEI AQUI */}
-            Os bônus são conferidos pela administração e pagos manualmente via Pix quando aplicável.
+            Cada bolão com meta configurada tem sua própria barra de progresso. Ao atingir a meta, o bônus é gerado e a
+            barra recomeça do zero para o próximo ciclo.
           </p>
         </div>
 
@@ -205,6 +235,82 @@ export default function ReferAndEarnPage() {
             {dashErr}
           </div>
         )}
+
+        {/* Progresso por bolão */}
+        <section className="rounded-2xl border border-[#E5E5E5] bg-white p-4 sm:p-6 shadow-sm space-y-4">
+          <div>
+            <h2 className="text-lg font-bold text-[#1F1F1F]">Progresso por bolão</h2>
+            <p className="text-sm text-[#1F1F1F]/65 mt-1">
+              Vendas confirmadas no ciclo atual. Ao fechar a meta, o crédito ou bônus Pix é liberado e a contagem zera
+              para continuar indicando.
+            </p>
+          </div>
+
+          {dashLoading ? (
+            <div className="flex justify-center py-6">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#1E7F43]" />
+            </div>
+          ) : contestProgress.length === 0 ? (
+            <p className="text-sm text-[#1F1F1F]/60 rounded-xl border border-dashed border-[#E5E5E5] px-4 py-5 text-center">
+              Nenhum bolão ativo com meta de indicação no momento. Quando o administrador configurar, sua barra aparecerá
+              aqui.
+            </p>
+          ) : (
+            <ul className="space-y-4">
+              {contestProgress.map((row) => {
+                const pct = progressPercent(row)
+                const atGoal = row.target_sales > 0 && row.current_cycle_sales === 0 && row.confirmed_sales_total > 0
+                return (
+                  <li
+                    key={row.contest_id}
+                    className="rounded-xl border border-[#EEF1F6] bg-[#FAFBFC] px-4 py-4 space-y-3"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <h3 className="font-bold text-[#1F1F1F] truncate">{row.contest_name}</h3>
+                        <p className="text-xs text-[#1F1F1F]/60 mt-0.5">{progressRewardLabel(row)}</p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className="text-sm font-extrabold text-[#1E7F43] tabular-nums">
+                          {row.current_cycle_sales} / {row.target_sales}
+                        </div>
+                        <div className="text-[11px] text-[#1F1F1F]/50">vendas neste ciclo</div>
+                      </div>
+                    </div>
+
+                    <div
+                      className="h-3 w-full rounded-full bg-[#E5E7EB] overflow-hidden"
+                      role="progressbar"
+                      aria-valuenow={row.current_cycle_sales}
+                      aria-valuemin={0}
+                      aria-valuemax={row.target_sales}
+                      aria-label={`Progresso em ${row.contest_name}`}
+                    >
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-[#1E7F43] to-[#3CCB7F] transition-all duration-500"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-[#1F1F1F]/55">
+                      <span>
+                        Total no bolão: <strong className="text-[#1F1F1F]">{row.confirmed_sales_total}</strong> venda(s)
+                      </span>
+                      <span>
+                        Metas batidas: <strong className="text-[#1F1F1F]">{row.milestones_reached}</strong>
+                      </span>
+                      {atGoal && (
+                        <span className="text-[#1E7F43] font-semibold">
+                          Meta recém-atingida — barra reiniciada para o próximo ciclo
+                        </span>
+                      )}
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </section>
 
         {/* Resumo */}
         <div className="grid grid-cols-2 gap-3 sm:gap-4">
@@ -301,33 +407,43 @@ export default function ReferAndEarnPage() {
         </section>
 
         {/* Jogo grátis */}
-        {(st?.free_tickets_available ?? 0) > 0 && profile?.is_active !== false && (
+        {availableCredits > 0 && profile?.is_active !== false && (
           <section className="rounded-2xl border border-[#E5E5E5] bg-white p-4 sm:p-6 shadow-sm space-y-3">
             <h2 className="text-lg font-bold text-[#1F1F1F]">Usar jogo grátis</h2>
             <p className="text-sm text-[#1F1F1F]/75">
-              {/* MODIFIQUEI AQUI */}Escolha os números; a participação entra no ranking, sem Pix e sem comissão (valor R$
-              0,00).
+              Você tem <strong>{availableCredits}</strong> crédito(s) disponível(is). Cada confirmação consome{' '}
+              <strong>1</strong> crédito e gera <strong>1</strong> bilhete — sem Pix e sem comissão (valor R$ 0,00).
             </p>
             <CustomSelect
               value={creditContestId}
               options={contests.length ? contests.map((c) => ({ value: c.id, label: c.name })) : [{ value: '', label: '—' }]}
-              onChange={(v: string) => setCreditContestId(v)}
+              onChange={(v: string) => {
+                setCreditContestId(v)
+                setCreditSelectedNumbers([])
+                setRedeemMsg(null)
+              }}
             />
-            <textarea
-              className="w-full rounded-xl border px-3 py-2 text-sm min-h-[48px]"
-              placeholder={
-                contestCredit
-                  ? `${contestCredit.numbers_per_participation} números (ex.: 01 02 03…)`
-                  : 'Números'
-              }
-              value={creditNumbersRaw}
-              onChange={(e) => setCreditNumbersRaw(e.target.value)}
-            />
+            {contestCredit ? (
+              <div className="rounded-2xl border border-[#E5E5E5] bg-white p-4 sm:p-5 shadow-sm">
+                <h3 className="text-lg sm:text-xl font-extrabold text-[#1F1F1F] mb-4">
+                  Escolha seus números
+                </h3>
+                <NumberPicker
+                  min={contestCredit.min_number}
+                  max={contestCredit.max_number}
+                  maxSelected={contestCredit.numbers_per_participation}
+                  selectedNumbers={creditSelectedNumbers}
+                  onChange={setCreditSelectedNumbers}
+                />
+              </div>
+            ) : (
+              <p className="text-sm text-[#1F1F1F]/60">Escolha um bolão ativo para abrir o volante.</p>
+            )}
             <button
               type="button"
-              disabled={redeemBusy}
+              disabled={redeemBusy || !contestCredit || availableCredits < 1}
               onClick={() => void handleRedeem()}
-              className="rounded-xl bg-[#1E7F43] text-white font-bold px-6 py-3 hover:bg-[#3CCB7F] disabled:opacity-50 w-full sm:w-auto"
+              className="rounded-xl bg-[#1E7F43] text-white font-bold px-6 py-3 hover:bg-[#3CCB7F] disabled:opacity-50 w-full sm:w-auto min-h-[48px] touch-manipulation"
             >
               {redeemBusy ? '…' : 'Confirmar jogo grátis'}
             </button>

@@ -281,14 +281,13 @@ export default function BonusParticipationSection({
                 htmlFor="bonus-consume-credit"
                 className="min-w-0 flex-1 text-sm leading-snug text-[#374151] touch-manipulation"
               >
-                <strong>Debitar 1 crédito de bonificação do cliente (opcional)</strong>
+                <strong>Debitar 1 crédito de bonificação do cliente (opcional — só ADM)</strong>
                 {!userForBonusPick && (
                   <span className="block text-xs text-[#6B7280] mt-0.5">Escolha um cliente para ver o saldo de créditos.</span>
                 )}
                 {!!userForBonusPick && (
                   <span className="block text-xs text-[#6B7280] mt-0.5">
-                    Sem marcar esta opção, criar mesmo com <strong>0</strong> créditos disponíveis é permitido — bilhete
-                    institucional, sem tocar na arrecadação. Disponível agora:{' '}
+                    Somente administradores podem criar bilhete institucional sem debitar crédito. Disponível agora:{' '}
                     <strong>{userForBonusPick.referral_bonus_credits ?? 0}</strong>; já utilizados (consumo nesta fila):{' '}
                     <strong>{userForBonusPick.referral_bonus_credits_used ?? 0}</strong>.
                   </span>

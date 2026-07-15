@@ -425,7 +425,11 @@ export default function CheckoutPage() {
       setError('Conta inativa — não é possível usar créditos.')
       return
     }
-    if ((profile.referral_bonus_credits ?? 0) <= 0) return
+    const credits = profile.referral_bonus_credits ?? 0
+    if (credits <= 0) {
+      setError('Sem créditos de indicação disponíveis.')
+      return
+    }
     if (processing) return
 
     try {
@@ -828,7 +832,7 @@ export default function CheckoutPage() {
             <button
               type="button"
               onClick={handleRedeemFreeCredit}
-              disabled={processing}
+              disabled={processing || (profile?.referral_bonus_credits ?? 0) < 1}
               className="w-full py-3 px-4 rounded-xl font-semibold bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-50 transition-colors"
             >
               Usar 1 crédito nestes números

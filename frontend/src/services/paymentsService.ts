@@ -195,6 +195,10 @@ export interface PaymentWithDetails extends Payment {
     id: string
     name: string
   } | null
+  client?: {
+    id: string
+    name: string
+  } | null
   /** Bilhete pendente registado mas ainda sem linha em payments (ex.: venda em dinheiro) */
   awaitingValidation?: boolean
 }
@@ -231,6 +235,18 @@ function normalizeEndDate(endDate: string): string {
   return endDate
 }
 
+function extractProfileName(
+  parent: Record<string, unknown> | null | undefined
+): { id: string; name: string } | null {
+  if (!parent) return null
+  const raw = parent.profiles
+  const profile = raw
+    ? (Array.isArray(raw) ? raw[0] : raw) as { id: string; name?: string }
+    : null
+  if (!profile?.id) return null
+  return { id: String(profile.id), name: String(profile.name ?? 'Cliente') }
+}
+
 function mapPaymentRow(item: Record<string, unknown>): PaymentWithDetails {
   const participationData = Array.isArray(item.participations)
     ? (item.participations[0] as Record<string, unknown> | undefined) || null
@@ -259,6 +275,7 @@ function mapPaymentRow(item: Record<string, unknown>): PaymentWithDetails {
     : null
 
   const contestData = contestFromParticipation ?? contestFromIntent
+  const client = extractProfileName(participationData ?? undefined)
 
   return {
     ...(item as Payment),
@@ -278,6 +295,7 @@ function mapPaymentRow(item: Record<string, unknown>): PaymentWithDetails {
     seller: referrerData
       ? { id: String(referrerData.id), name: String(referrerData.name ?? 'Cambista') }
       : null,
+    client,
   }
 }
 
@@ -302,7 +320,8 @@ async function listPendingParticipationsAwaitingPayment(
       updated_at,
       referred_by_profile_id,
       contests ( id, name ),
-      referrer:referred_by_profile_id ( id, name )
+      referrer:referred_by_profile_id ( id, name ),
+      profiles:user_id ( id, name )
     `)
     .eq('status', 'pending')
     .eq('is_bonus', false)
@@ -358,6 +377,7 @@ async function listPendingParticipationsAwaitingPayment(
       const referrer = referrerRaw
         ? (Array.isArray(referrerRaw) ? referrerRaw[0] : referrerRaw) as { id: string; name?: string }
         : null
+      const client = extractProfileName(row)
 
       return {
         id: `awaiting-${String(row.id)}`,
@@ -380,6 +400,7 @@ async function listPendingParticipationsAwaitingPayment(
         seller: referrer
           ? { id: String(referrer.id), name: String(referrer.name ?? 'Cambista') }
           : null,
+        client,
       }
     })
 }
@@ -388,9 +409,11 @@ function isUnpaidPixAttempt(p: PaymentWithDetails): boolean {
   return p.status === 'pending' && p.payment_method === 'pix'
 }
 
-/** Entradas que contam para o histórico financeiro admin (Pix não pago fica de fora). */
+/** Entradas que contam para o histórico financeiro admin (Pix não pago e cancelados ficam de fora). */
 function financeHistoryEntries(payments: PaymentWithDetails[]): PaymentWithDetails[] {
-  return payments.filter((p) => !isUnpaidPixAttempt(p))
+  return payments.filter(
+    (p) => !isUnpaidPixAttempt(p) && p.status !== 'cancelled'
+  )
 }
 
 export async function listAllPayments(filters?: PaymentFilters): Promise<PaymentWithDetails[]> {
@@ -435,6 +458,10 @@ export async function listAllPayments(filters?: PaymentFilters): Promise<Payment
           name
         ),
         referrer:referred_by_profile_id (
+          id,
+          name
+        ),
+        profiles:user_id (
           id,
           name
         )

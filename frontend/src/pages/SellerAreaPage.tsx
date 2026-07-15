@@ -17,7 +17,7 @@ import {
   type SellerAreaSaleRow,
   type SellerBonusClientRow,
 } from '../services/sellerAreaService'
-import { formatCurrency } from '../utils/formatters'
+import { formatCurrency, formatDate } from '../utils/formatters'
 import { shareTelegramUrl, shareWhatsAppUrl } from '../utils/contestShareLink'
 import type { Contest } from '../types'
 
@@ -441,7 +441,7 @@ export default function SellerAreaPage() {
                       dash.sales.map((row: SellerAreaSaleRow) => (
                         <tr key={row.commission_id} className="border-b hover:bg-[#FBFBFB]">
                           <td className="p-3 whitespace-nowrap">
-                            {row.sale_at ? new Date(row.sale_at).toLocaleString('pt-BR') : '—'}
+                            {row.sale_at ? formatDate(row.sale_at, true) : '—'}
                           </td>
                           <td className="p-3 max-w-[10rem] break-words">{row.contest_name}</td>
                           <td className="p-3">

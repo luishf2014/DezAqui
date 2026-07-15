@@ -25,6 +25,18 @@ export type ReferIndicateStats = {
   free_tickets_used: number
 }
 
+/** Progresso do ciclo atual por bolão (zera ao atingir a meta e gerar o bônus). */
+export type ReferIndicateContestProgress = {
+  contest_id: string
+  contest_name: string
+  target_sales: number
+  reward_type: 'free_ticket' | 'manual_pix_bonus'
+  reward_value: number | null
+  confirmed_sales_total: number
+  current_cycle_sales: number
+  milestones_reached: number
+}
+
 export type ReferIndicateDashboardPayload = {
   profile: {
     referral_code: string
@@ -34,6 +46,7 @@ export type ReferIndicateDashboardPayload = {
   stats: ReferIndicateStats
   last_bonus: Record<string, unknown> | null
   recent_rewards: ReferIndicateRewardRow[]
+  contest_progress: ReferIndicateContestProgress[]
 }
 
 export async function fetchReferIndicateDashboardRpc(): Promise<ReferIndicateDashboardPayload> {
@@ -50,6 +63,7 @@ export async function fetchReferIndicateDashboardRpc(): Promise<ReferIndicateDas
   const stats = j.stats as Record<string, unknown>
   const last = j.last_bonus as Record<string, unknown> | null | undefined
   const rewards = Array.isArray(j.recent_rewards) ? j.recent_rewards : []
+  const progressRows = Array.isArray(j.contest_progress) ? j.contest_progress : []
 
   return {
     profile: {
@@ -79,6 +93,20 @@ export async function fetchReferIndicateDashboardRpc(): Promise<ReferIndicateDas
         contest_name: String(row.contest_name ?? ''),
         paid_at: row.paid_at == null ? null : String(row.paid_at),
         admin_payment_note: row.admin_payment_note == null ? null : String(row.admin_payment_note),
+      }
+    }),
+    contest_progress: progressRows.map((r) => {
+      const row = r as Record<string, unknown>
+      const rt = String(row.reward_type ?? '')
+      return {
+        contest_id: String(row.contest_id ?? ''),
+        contest_name: String(row.contest_name ?? ''),
+        target_sales: Number(row.target_sales ?? 0),
+        reward_type: (rt === 'manual_pix_bonus' ? 'manual_pix_bonus' : 'free_ticket') as ReferIndicateContestProgress['reward_type'],
+        reward_value: row.reward_value == null ? null : Number(row.reward_value),
+        confirmed_sales_total: Number(row.confirmed_sales_total ?? 0),
+        current_cycle_sales: Number(row.current_cycle_sales ?? 0),
+        milestones_reached: Number(row.milestones_reached ?? 0),
       }
     }),
   }

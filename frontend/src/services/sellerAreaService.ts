@@ -2,7 +2,7 @@
  * MODIFIQUEI AQUI: área do vendedor (leituras restritas pelo RPC no Supabase).
  */
 import { supabase } from '../lib/supabase'
-import type { CreatePixPaymentResponse } from './mercadopagoService'
+import type { CartItemForPix, CreatePixPaymentResponse } from './mercadopagoService'
 
 export type SellerAreaProfileSnip = {
   referral_code: string
@@ -123,30 +123,6 @@ export async function listSellerBonusClientsRpc(): Promise<SellerBonusClientRow[
   })
 }
 
-export async function sellerCreateBonusParticipationRpc(params: {
-  userId: string
-  contestId: string
-  numbers: number[]
-  reason: string
-}): Promise<string> {
-  const { data, error } = await supabase.rpc('rpc_seller_create_bonus_participation', {
-    p_user_id: params.userId,
-    p_contest_id: params.contestId,
-    p_numbers: params.numbers,
-    p_reason: params.reason,
-  })
-  if (error) {
-    const code = error.code != null ? String(error.code).trim() : ''
-    const bits = [
-      error.message,
-      error.details && typeof error.details === 'string' && error.details.trim() ? error.details.trim() : null,
-      error.hint && typeof error.hint === 'string' && error.hint.trim() ? error.hint.trim() : null,
-      code ? `código ${code}` : null,
-    ].filter(Boolean) as string[]
-    throw new Error(bits.join(' · '))
-  }
-  return data as string
-}
 
 export type SellerCreateClientResult = {
   clientId: string
@@ -277,6 +253,66 @@ export async function sellerCreatePixSale(params: {
       selectedNumbers: params.numbers,
       amount: params.amount,
       description: 'Venda cambista — DezAqui',
+      customerName: params.customerName,
+      customerEmail: params.customerEmail,
+      customerPhone: params.customerPhone,
+      customerCpfCnpj: params.customerCpfCnpj,
+    },
+  })
+
+  if (error) {
+    throw new Error(error.message || 'Erro ao gerar Pix')
+  }
+
+  const response = (data ?? {}) as Record<string, unknown>
+  if (response.error) {
+    throw new Error(String(response.error))
+  }
+  if (!response.id || !(response.qrCode as Record<string, unknown>)?.encodedImage) {
+    throw new Error('Resposta inválida do servidor Pix')
+  }
+
+  const qr = response.qrCode as Record<string, string>
+  return {
+    id: String(response.id),
+    status: String(response.status ?? 'pending'),
+    expirationDate: String(response.expirationDate ?? qr.expirationDate ?? ''),
+    qrCode: {
+      payload: qr.payload,
+      encodedImage: qr.encodedImage,
+      expirationDate: qr.expirationDate || String(response.expirationDate ?? ''),
+    },
+  }
+}
+
+/** Carrinho cambista: 1 Pix com valor total; cada item gera bilhete após confirmação (igual carrinho público). */
+export async function sellerCreatePixCartSale(params: {
+  buyerUserId: string
+  cartItems: CartItemForPix[]
+  amount: number
+  customerName: string
+  customerEmail?: string
+  customerPhone?: string
+  customerCpfCnpj?: string
+}): Promise<CreatePixPaymentResponse> {
+  const first = params.cartItems[0]
+  if (!first) {
+    throw new Error('Carrinho vazio')
+  }
+
+  const { data: { user }, error: userError } = await supabase.auth.getUser()
+  if (userError || !user) {
+    throw new Error('Sessão expirada. Inicie sessão novamente.')
+  }
+
+  const { data, error } = await supabase.functions.invoke('mercadopago-create-pix', {
+    body: {
+      buyerUserId: params.buyerUserId,
+      contestId: first.contestId,
+      selectedNumbers: first.selectedNumbers,
+      amount: params.amount,
+      description: 'Venda cambista — DezAqui',
+      cartItems: params.cartItems,
       customerName: params.customerName,
       customerEmail: params.customerEmail,
       customerPhone: params.customerPhone,

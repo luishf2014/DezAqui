@@ -1,31 +1,26 @@
-import { useMemo, useRef, useState, useEffect, type ReactNode } from 'react'
+import { useRef, useState, useEffect, type ReactNode } from 'react'
 import CustomSelect from './CustomSelect'
 import NumberPicker from './NumberPicker'
 import MobilePhoneCountryInput from './MobilePhoneCountryInput'
+import BirthDateInput from './BirthDateInput'
 import { formatCurrency } from '../utils/formatters'
-import {
-  BIRTH_DATE_MIN,
-  brDigitsToIso,
-  formatBirthDateMask,
-  getMaxBirthDateForAdultsIso,
-  isoDateToBrDigits,
-  isValidAdultBirthDate,
-} from '../utils/birthDate'
+import { brDigitsToIso, isValidAdultBirthDate } from '../utils/birthDate'
+import { useSellerCart, type SellerCartItem } from '../hooks/useSellerCart'
 import type { Contest } from '../types'
 import type { SellerBonusClientRow, SellerCreateClientResult } from '../services/sellerAreaService'
 import {
   sellerCreateClient,
   sellerCreateCashSale,
-  sellerCreatePixSale,
+  sellerCreatePixCartSale,
   sellerCancelPendingPixPayment,
 } from '../services/sellerAreaService'
 import {
   adminCreateClient,
   adminCreateCashSale,
-  adminCreatePixSale,
+  adminCreatePixCartSale,
   type AdminOperationsClientRow,
 } from '../services/adminOperationsService'
-import SellerPixCheckoutModal from './SellerPixCheckoutModal'
+import SellerPixCheckoutModal, { type SellerPixCartLineItem } from './SellerPixCheckoutModal'
 import SaleReceiptModal from './SaleReceiptModal'
 import { buildSaleReceipt, type SaleReceiptData } from './SaleReceiptCard'
 import { useAuth } from '../contexts/AuthContext'
@@ -150,6 +145,47 @@ function validatePhone(national: string, dial: string): boolean {
   return clean.length >= 6 && clean.length <= 15
 }
 
+function formatNumbersList(nums: number[]): string {
+  return [...nums]
+    .sort((a, b) => a - b)
+    .map((n) => String(n).padStart(2, '0'))
+    .join(', ')
+}
+
+function validateSaleNumbers(
+  contest: Contest,
+  nums: number[]
+): { ok: true } | { ok: false; message: string } {
+  if (nums.length !== contest.numbers_per_participation) {
+    return {
+      ok: false,
+      message: `Quantidade inválida: este bolão exige exatamente ${contest.numbers_per_participation} número(s).`,
+    }
+  }
+  const outOfRange = nums.some((n) => n < contest.min_number || n > contest.max_number)
+  if (outOfRange) {
+    return {
+      ok: false,
+      message: `Números precisam estar entre ${contest.min_number} e ${contest.max_number}.`,
+    }
+  }
+  return { ok: true }
+}
+
+type SaleCompleteSummary = {
+  clientName: string
+  paymentMethod: 'cash' | 'pix'
+  totalAmount: number
+  tickets: Array<{
+    ticketCode: string
+    contestName: string
+    numbers: number[]
+    amount: number
+    contestCode?: string | null
+    contestStartDate?: string | null
+  }>
+}
+
 const TAB_LABELS: Record<TabId, string> = {
   sale: 'Nova venda',
   account: 'Novo cliente',
@@ -174,6 +210,7 @@ export default function SellerOperationsPanel({
   const isAdmin = variant === 'admin'
   const { profile } = useAuth()
   const sellerDisplayName = profile?.name?.trim() || (isAdmin ? 'Administração' : 'Cambista')
+  const sellerCart = useSellerCart()
   const showBonusTab = Boolean(onBonusSubmit)
   const visibleTabs: TabId[] = showBonusTab ? ['sale', 'account', 'bonus'] : ['sale', 'account']
   const [activeTab, setActiveTab] = useState<TabId>('sale')
@@ -217,6 +254,8 @@ export default function SellerOperationsPanel({
   const [bonusOkMsg, setBonusOkMsg] = useState<string | null>(null)
 
   const [saleReceiptData, setSaleReceiptData] = useState<SaleReceiptData | null>(null)
+  const [saleReceiptList, setSaleReceiptList] = useState<SaleReceiptData[]>([])
+  const [saleCompleteSummary, setSaleCompleteSummary] = useState<SaleCompleteSummary | null>(null)
   const [showSaleCompleteModal, setShowSaleCompleteModal] = useState(false)
   const [showReceiptModal, setShowReceiptModal] = useState(false)
 
@@ -228,10 +267,10 @@ export default function SellerOperationsPanel({
     amount: number
     clientName: string
     contestName: string
-    receiptNumbers: number[]
-    receiptContestName: string
-    receiptContestCode?: string | null
-    receiptContestStartDate?: string | null
+    cartLineItems: SellerPixCartLineItem[]
+    receiptCartItems: SellerCartItem[]
+    checkoutMode: 'single' | 'cart'
+    resetAllAfterSuccess: boolean
   } | null>(null)
 
   const contestForSale = contests.find((c) => c.id === saleForm.contestId)
@@ -256,10 +295,6 @@ export default function SellerOperationsPanel({
       ? (contestValue * commissionPercent) / 100
       : null
 
-  const birthDatePickerValue = useMemo(
-    () => brDigitsToIso(accountForm.birthDateDigits) ?? '',
-    [accountForm.birthDateDigits]
-  )
 
   const scrollFeedbackIntoView = () => {
     const el = feedbackRef.current
@@ -318,94 +353,203 @@ export default function SellerOperationsPanel({
     })),
   ]
 
-  const submitSale = async () => {
+  const resetCurrentTicketForm = () => {
+    setSaleForm((s) => ({
+      ...s,
+      contestId: '',
+      selectedNumbers: [],
+      paymentMethod: '',
+      notes: '',
+    }))
+  }
+
+  const resetSaleFormAfterCartChange = () => {
+    resetCurrentTicketForm()
+  }
+
+  const resetSaleSession = () => {
+    setSaleForm({
+      userId: '',
+      contestId: '',
+      selectedNumbers: [],
+      paymentMethod: '',
+      clientCpf: '',
+      notes: '',
+    })
+    sellerCart.clearCart()
+  }
+
+  const openReceipt = (receipt: SaleReceiptData) => {
+    setSaleReceiptData(receipt)
+    setShowReceiptModal(true)
+  }
+
+  const finishSaleSuccess = (
+    summary: SaleCompleteSummary,
+    options?: { resetAll?: boolean }
+  ) => {
+    const soldAt = new Date()
+    const paymentStatusLabel =
+      summary.paymentMethod === 'pix' ? 'Pago' : 'Pendente — aguarda validação'
+    const receipts = summary.tickets.map((ticket) =>
+      buildSaleReceipt({
+        ticketCode: ticket.ticketCode,
+        numbers: ticket.numbers,
+        contestName: ticket.contestName,
+        contestCode: ticket.contestCode,
+        contestStartDate: ticket.contestStartDate,
+        clientName: summary.clientName,
+        amount: ticket.amount,
+        paymentMethod: summary.paymentMethod,
+        paymentStatusLabel,
+        sellerName: sellerDisplayName,
+        soldAt,
+      })
+    )
+
+    setSaleCompleteSummary(summary)
+    setSaleReceiptList(receipts)
+    setSaleReceiptData(null)
+    setShowSaleCompleteModal(true)
+    if (options?.resetAll !== false) {
+      resetSaleSession()
+    } else {
+      resetCurrentTicketForm()
+    }
+  }
+
+  const buildCurrentTicketItem = ():
+    | { ok: true; item: Omit<SellerCartItem, 'id' | 'addedAt'> }
+    | { ok: false; message: string } => {
+    if (!saleForm.userId) {
+      return { ok: false, message: 'Escolha o cliente.' }
+    }
+
     const nums = [...saleForm.selectedNumbers].sort((a, b) => a - b)
-    setSaleOkMsg(null)
-    setSaleInlineError(null)
-
-    if (!saleForm.userId || !saleForm.contestId || nums.length === 0 || !saleForm.paymentMethod) {
-      showProblem(
-        nums.length === 0 && contestForSale
-          ? `Selecione exatamente ${contestForSale.numbers_per_participation} número(s) no grid abaixo.`
-          : 'Preencha cliente, bolão, números e forma de pagamento.',
-        'sale'
-      )
-      return
-    }
-
     const c = contests.find((x) => x.id === saleForm.contestId)
-    if (!c || nums.length !== c.numbers_per_participation) {
-      showProblem(
-        `Quantidade inválida: este bolão exige exatamente ${c?.numbers_per_participation ?? '?'} número(s).`,
-        'sale'
-      )
+    if (!c) {
+      return { ok: false, message: 'Escolha um bolão ativo.' }
+    }
+
+    const validation = validateSaleNumbers(c, nums)
+    if (!validation.ok) {
+      return {
+        ok: false,
+        message:
+          nums.length === 0
+            ? `Selecione exatamente ${c.numbers_per_participation} número(s) no grid abaixo.`
+            : validation.message,
+      }
+    }
+
+    const price = Number(c.participation_value ?? 0)
+    if (!Number.isFinite(price) || price <= 0) {
+      return { ok: false, message: 'Valor do bolão inválido.' }
+    }
+
+    return {
+      ok: true,
+      item: {
+        contestId: c.id,
+        contestName: c.name,
+        contestCode: c.contest_code,
+        contestStartDate: c.start_date,
+        selectedNumbers: nums,
+        price,
+      },
+    }
+  }
+
+  const processSale = async (
+    cartSnapshot: SellerCartItem[],
+    mode: 'single' | 'cart'
+  ) => {
+    if (!saleForm.userId) {
+      showProblem('Escolha o cliente.', 'sale')
+      return
+    }
+    if (cartSnapshot.length === 0) {
+      showProblem(mode === 'cart' ? 'O carrinho está vazio.' : 'Monte o bilhete antes de pagar.', 'sale')
+      return
+    }
+    if (!saleForm.paymentMethod) {
+      showProblem('Escolha a forma de pagamento.', 'sale')
       return
     }
 
-    const outOfRange = nums.some((n) => n < c.min_number || n > c.max_number)
-    if (outOfRange) {
-      showProblem(`Números precisam estar entre ${c.min_number} e ${c.max_number}.`, 'sale')
-      return
+    const clientName = clientForSale?.name || 'Cliente'
+    const totalAmount = cartSnapshot.reduce((sum, item) => sum + item.price, 0)
+    const resetAllAfterSuccess = mode === 'cart' || sellerCart.itemCount === 0
+
+    if (saleForm.paymentMethod === 'pix') {
+      const cpfDigits = normalizeCpf(saleForm.clientCpf)
+      if (cpfDigits.length !== 11 || !validateCpf(saleForm.clientCpf)) {
+        showProblem('Informe o CPF válido do cliente para gerar o Pix.', 'sale')
+        return
+      }
     }
 
     setSaleSubmitting(true)
     try {
       if (saleForm.paymentMethod === 'cash') {
-        const result = isAdmin
-          ? await adminCreateCashSale({
-              userId: saleForm.userId,
-              contestId: saleForm.contestId,
-              numbers: nums,
-            })
-          : await sellerCreateCashSale({
-              userId: saleForm.userId,
-              contestId: saleForm.contestId,
-              numbers: nums,
-            })
-        const clientName = clientForSale?.name || 'Cliente'
-        const soldAt = new Date()
-        setSaleReceiptData(
-          buildSaleReceipt({
+        const tickets: SaleCompleteSummary['tickets'] = []
+
+        for (const item of cartSnapshot) {
+          const result = isAdmin
+            ? await adminCreateCashSale({
+                userId: saleForm.userId,
+                contestId: item.contestId,
+                numbers: item.selectedNumbers,
+              })
+            : await sellerCreateCashSale({
+                userId: saleForm.userId,
+                contestId: item.contestId,
+                numbers: item.selectedNumbers,
+              })
+          tickets.push({
             ticketCode: result.ticketCode,
-            numbers: nums,
-            contestName: c.name,
-            contestCode: c.contest_code,
-            contestStartDate: c.start_date,
-            clientName,
+            contestName: item.contestName,
+            numbers: item.selectedNumbers,
             amount: result.amount,
-            paymentMethod: 'cash',
-            paymentStatusLabel: 'Pendente — aguarda validação',
-            sellerName: sellerDisplayName,
-            soldAt,
+            contestCode: item.contestCode,
+            contestStartDate: item.contestStartDate,
           })
+        }
+
+        finishSaleSuccess(
+          {
+            clientName,
+            paymentMethod: 'cash',
+            totalAmount,
+            tickets,
+          },
+          { resetAll: resetAllAfterSuccess }
         )
-        setShowSaleCompleteModal(true)
-        setSaleForm({ userId: '', contestId: '', selectedNumbers: [], paymentMethod: '', clientCpf: '', notes: '' })
         await onSaleCompleted?.()
       } else {
         const cpfDigits = normalizeCpf(saleForm.clientCpf)
-        if (cpfDigits.length !== 11 || !validateCpf(saleForm.clientCpf)) {
-          showProblem('Informe o CPF válido do cliente para gerar o Pix.', 'sale')
-          return
-        }
+
+        const cartItemsForPix = cartSnapshot.map((item) => ({
+          contestId: item.contestId,
+          selectedNumbers: item.selectedNumbers,
+          amount: item.price,
+        }))
 
         const pix = isAdmin
-          ? await adminCreatePixSale({
+          ? await adminCreatePixCartSale({
               buyerUserId: saleForm.userId,
-              contestId: saleForm.contestId,
-              numbers: nums,
-              amount: contestValue,
-              customerName: clientForSale?.name || 'Cliente',
+              cartItems: cartItemsForPix,
+              amount: totalAmount,
+              customerName: clientName,
               customerEmail: clientForSale?.email || undefined,
               customerPhone: clientForSale?.phone || undefined,
               customerCpfCnpj: cpfDigits,
             })
-          : await sellerCreatePixSale({
+          : await sellerCreatePixCartSale({
               buyerUserId: saleForm.userId,
-              contestId: saleForm.contestId,
-              numbers: nums,
-              amount: contestValue,
-              customerName: clientForSale?.name || 'Cliente',
+              cartItems: cartItemsForPix,
+              amount: totalAmount,
+              customerName: clientName,
               customerEmail: clientForSale?.email || undefined,
               customerPhone: clientForSale?.phone || undefined,
               customerCpfCnpj: cpfDigits,
@@ -416,13 +560,17 @@ export default function SellerOperationsPanel({
           qrImage: pix.qrCode.encodedImage,
           payload: pix.qrCode.payload,
           expirationDate: pix.qrCode.expirationDate || pix.expirationDate,
-          amount: contestValue,
-          clientName: clientForSale?.name || 'Cliente',
-          contestName: contestForSale?.name || 'Bolão',
-          receiptNumbers: nums,
-          receiptContestName: c.name,
-          receiptContestCode: c.contest_code,
-          receiptContestStartDate: c.start_date,
+          amount: totalAmount,
+          clientName,
+          contestName: cartSnapshot[0]?.contestName || 'Bolão',
+          cartLineItems: cartSnapshot.map((item) => ({
+            contestName: item.contestName,
+            selectedNumbers: item.selectedNumbers,
+            price: item.price,
+          })),
+          receiptCartItems: cartSnapshot,
+          checkoutMode: mode,
+          resetAllAfterSuccess,
         })
       }
     } catch (e) {
@@ -430,6 +578,45 @@ export default function SellerOperationsPanel({
     } finally {
       setSaleSubmitting(false)
     }
+  }
+
+  const addToCart = () => {
+    setSaleOkMsg(null)
+    setSaleInlineError(null)
+
+    const built = buildCurrentTicketItem()
+    if (!built.ok) {
+      showProblem(built.message, 'sale')
+      return
+    }
+
+    sellerCart.addItem(built.item)
+    resetSaleFormAfterCartChange()
+    setSaleOkMsg('Bilhete adicionado ao carrinho — pode montar outro ou finalizar o carrinho.')
+  }
+
+  const payCurrentTicket = async () => {
+    setSaleOkMsg(null)
+    setSaleInlineError(null)
+
+    const built = buildCurrentTicketItem()
+    if (!built.ok) {
+      showProblem(built.message, 'sale')
+      return
+    }
+
+    const ticket: SellerCartItem = {
+      ...built.item,
+      id: 'current-ticket',
+      addedAt: Date.now(),
+    }
+    await processSale([ticket], 'single')
+  }
+
+  const checkoutCart = async () => {
+    setSaleOkMsg(null)
+    setSaleInlineError(null)
+    await processSale([...sellerCart.items], 'cart')
   }
 
   const submitAccount = async () => {
@@ -612,8 +799,9 @@ export default function SellerOperationsPanel({
         Bilhete com valor integral do bolão — entra na <strong className="text-[#374151]">arrecadação</strong>, no{' '}
         <strong className="text-[#374151]">ranking</strong> e nas contas financeiras.{' '}
         <strong className="text-[#374151]">Dinheiro:</strong> bilhete fica pendente até validação em{' '}
-        <strong className="text-[#374151]">Ativações</strong>. <strong className="text-[#374151]">Pix:</strong> QR code
-        na hora — activação automática após pagamento confirmado.
+        <strong className="text-[#374151]">Ativações</strong>.         <strong className="text-[#374151]">Pix:</strong> QR code
+        na hora — activação automática após pagamento confirmado. Vários bilhetes podem ir para o{' '}
+        <strong className="text-[#374151]">carrinho</strong> com um único Pix pelo total.
       </span>
     </>
   ) : (
@@ -631,8 +819,9 @@ export default function SellerOperationsPanel({
         {commissionMode === 'first_purchase_only'
           ? ' (modo: só na primeira compra paga do cliente)'
           : ' (modo: em todas as compras pagas)'}
-        . Só aparecem clientes <strong className="text-[#374151]">vinculados ao seu código</strong> ou com compra
-        anterior pelo seu link.
+        . Monte vários bilhetes no <strong className="text-[#374151]">carrinho</strong> antes de finalizar — no Pix, um
+        único QR code com o valor total. Só aparecem clientes <strong className="text-[#374151]">vinculados ao seu código</strong>{' '}
+        ou com compra anterior pelo seu link.
       </span>
     </>
   )
@@ -740,8 +929,13 @@ export default function SellerOperationsPanel({
                   value={saleForm.userId}
                   options={clientOptions}
                   onChange={(v: string) => setSaleForm((s) => ({ ...s, userId: v }))}
-                  disabled={clientsLoading}
+                  disabled={clientsLoading || sellerCart.itemCount > 0}
                 />
+                {sellerCart.itemCount > 0 && (
+                  <p className="mt-1 text-xs text-[#6B7280]">
+                    Cliente bloqueado enquanto houver itens no carrinho — remova os bilhetes ou finalize a venda.
+                  </p>
+                )}
               </div>
 
               <div className="md:col-span-2">
@@ -846,23 +1040,115 @@ export default function SellerOperationsPanel({
                   placeholder="Ex.: Pagamento recebido em espécie, cliente presencial, etc."
                 />
               </div>
+
+              <div className="md:col-span-2 flex flex-col sm:flex-row flex-wrap gap-3">
+                <button
+                  type="button"
+                  onClick={() => addToCart()}
+                  disabled={saleSubmitting || clientsLoading || contestsLoading || !saleForm.userId}
+                  className="w-full sm:w-auto min-h-[48px] px-6 py-3 sm:py-2.5 rounded-xl border-2 border-[#1E7F43] bg-white text-[#1E7F43] text-[15px] sm:text-sm font-bold shadow-sm hover:bg-[#F0FDF4] transition-colors disabled:opacity-60 disabled:cursor-not-allowed touch-manipulation"
+                >
+                  Adicionar ao carrinho
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void payCurrentTicket()}
+                  disabled={
+                    saleSubmitting ||
+                    clientsLoading ||
+                    contestsLoading ||
+                    !saleForm.userId ||
+                    !saleForm.paymentMethod
+                  }
+                  className="w-full sm:w-auto min-h-[48px] px-6 py-3 sm:py-2.5 rounded-xl bg-[#1E7F43] text-white text-[15px] sm:text-sm font-bold shadow-sm hover:bg-[#196c3a] transition-colors disabled:opacity-60 disabled:cursor-not-allowed touch-manipulation active:brightness-95"
+                >
+                  {saleSubmitting
+                    ? 'A processar…'
+                    : saleForm.paymentMethod === 'pix'
+                      ? 'Gerar Pix deste bilhete'
+                      : saleForm.paymentMethod === 'cash'
+                        ? 'Registrar este bilhete'
+                        : 'Pagar este bilhete'}
+                </button>
+              </div>
+              <p className="md:col-span-2 text-xs text-[#6B7280] -mt-2">
+                Pague só o bilhete montado acima, ou adicione ao carrinho para montar mais jogos antes de fechar a venda.
+              </p>
+
+              {sellerCart.itemCount > 0 && (
+                <div className="md:col-span-2 rounded-2xl border border-[#E5E7EB] bg-[#FAFAFB] overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-[#E5E7EB] bg-white">
+                    <h3 className="text-sm font-bold text-[#1F1F1F]">
+                      Carrinho ({sellerCart.itemCount} bilhete{sellerCart.itemCount !== 1 ? 's' : ''})
+                    </h3>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (window.confirm('Limpar todos os bilhetes do carrinho?')) {
+                          sellerCart.clearCart()
+                          setSaleOkMsg(null)
+                        }
+                      }}
+                      className="text-xs font-semibold text-red-700 hover:underline"
+                    >
+                      Limpar carrinho
+                    </button>
+                  </div>
+                  <ul className="divide-y divide-[#E5E7EB]">
+                    {sellerCart.items.map((item) => (
+                      <li key={item.id} className="flex flex-col sm:flex-row sm:items-start gap-2 px-4 py-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="font-semibold text-sm text-[#1F1F1F]">{item.contestName}</div>
+                          <div className="text-xs text-[#6B7280] mt-0.5">
+                            Números: {formatNumbersList(item.selectedNumbers)}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0">
+                          <span className="text-sm font-bold text-[#1E7F43] tabular-nums">
+                            {formatCurrency(item.price)}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => sellerCart.removeItem(item.id)}
+                            className="text-xs font-semibold text-[#6B7280] hover:text-red-700"
+                            aria-label="Remover bilhete"
+                          >
+                            Remover
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="flex justify-between items-center px-4 py-3 border-t border-[#E5E7EB] bg-white">
+                    <span className="text-sm font-semibold text-[#374151]">Total do carrinho</span>
+                    <span className="text-lg font-extrabold text-[#1E7F43] tabular-nums">
+                      {formatCurrency(sellerCart.getTotalPrice())}
+                    </span>
+                  </div>
+                  <div className="px-4 py-3 border-t border-[#E5E7EB] bg-[#FAFAFB]">
+                    <button
+                      type="button"
+                      onClick={() => void checkoutCart()}
+                      disabled={saleSubmitting || !saleForm.paymentMethod}
+                      className="w-full min-h-[48px] px-6 py-3 rounded-xl bg-[#166534] text-white text-[15px] sm:text-sm font-bold shadow-sm hover:bg-[#14532d] transition-colors disabled:opacity-60 disabled:cursor-not-allowed touch-manipulation"
+                    >
+                      {saleSubmitting
+                        ? 'A processar…'
+                        : saleForm.paymentMethod === 'pix'
+                          ? `Gerar Pix do carrinho (${sellerCart.itemCount})`
+                          : saleForm.paymentMethod === 'cash'
+                            ? `Registrar carrinho (${sellerCart.itemCount})`
+                            : `Finalizar carrinho (${sellerCart.itemCount})`}
+                    </button>
+                    <p className="mt-2 text-xs text-[#6B7280] text-center">
+                      Usa a forma de pagamento seleccionada acima para todos os bilhetes do carrinho.
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div ref={feedbackRef} className="mt-6 space-y-3 scroll-mt-28 sm:scroll-mt-24" aria-live="polite">
-              <button
-                type="button"
-                onClick={() => void submitSale()}
-                disabled={saleSubmitting || clientsLoading || contestsLoading}
-                className="w-full sm:w-auto min-h-[48px] px-6 py-3 sm:py-2.5 rounded-xl bg-[#1E7F43] text-white text-[15px] sm:text-sm font-bold shadow-sm hover:bg-[#196c3a] transition-colors disabled:opacity-60 disabled:cursor-not-allowed touch-manipulation active:brightness-95"
-              >
-                {saleSubmitting
-                ? 'A processar…'
-                : saleForm.paymentMethod === 'pix'
-                  ? 'Gerar Pix para o cliente'
-                  : saleForm.paymentMethod === 'cash'
-                    ? 'Registrar venda em dinheiro'
-                    : 'Criar bilhete e registrar venda'}
-              </button>
               {saleInlineError && (
                 <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-3 sm:py-2 break-words leading-relaxed">
                   {saleInlineError}
@@ -936,36 +1222,15 @@ export default function SellerOperationsPanel({
                 <label className="block text-[11px] font-bold uppercase tracking-wide text-[#6B7280] mb-1.5">
                   Data de nascimento
                 </label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    placeholder="dd/mm/aaaa"
-                    className="w-full min-h-[48px] border border-[#E5E7EB] rounded-xl px-3 py-3 sm:py-2.5 text-[16px] md:text-[15px] text-[#111827] focus:ring-2 focus:ring-[#1E7F43]/25 focus:border-[#1E7F43]"
-                    value={formatBirthDateMask(accountForm.birthDateDigits)}
-                    onChange={(e) =>
-                      setAccountForm((s) => ({
-                        ...s,
-                        birthDateDigits: e.target.value.replace(/\D/g, '').slice(0, 8),
-                      }))
-                    }
-                  />
-                  <input
-                    type="date"
-                    className="absolute inset-0 opacity-0 w-full h-full cursor-pointer md:hidden"
-                    min={BIRTH_DATE_MIN}
-                    max={getMaxBirthDateForAdultsIso()}
-                    value={birthDatePickerValue}
-                    onChange={(e) =>
-                      setAccountForm((s) => ({
-                        ...s,
-                        birthDateDigits: isoDateToBrDigits(e.target.value),
-                      }))
-                    }
-                    aria-hidden
-                    tabIndex={-1}
-                  />
-                </div>
+                <BirthDateInput
+                  id="seller-account-birthDate"
+                  valueDigits={accountForm.birthDateDigits}
+                  onChangeDigits={(digits) =>
+                    setAccountForm((s) => ({ ...s, birthDateDigits: digits }))
+                  }
+                  textInputClassName="w-full min-h-[48px] border border-[#E5E7EB] rounded-xl px-3 py-3 sm:py-2.5 text-[16px] md:text-[15px] text-[#111827] focus:ring-2 focus:ring-[#1E7F43]/25 focus:border-[#1E7F43]"
+                  calendarButtonClassName="relative flex min-h-[48px] min-w-[48px] shrink-0 items-center justify-center self-stretch rounded-xl border border-[#E5E7EB] bg-white text-[#1E7F43]"
+                />
               </div>
 
               <div className="md:col-span-2 flex items-start gap-3 rounded-xl border border-[#E5E7EB] bg-[#FAFAFB] px-3 py-3 sm:px-4">
@@ -1077,7 +1342,7 @@ export default function SellerOperationsPanel({
                   htmlFor="admin-bonus-consume-credit"
                   className="min-w-0 flex-1 text-sm leading-snug text-[#374151] touch-manipulation"
                 >
-                  <strong>Debitar 1 crédito de bonificação do cliente (opcional)</strong>
+                  <strong>Debitar 1 crédito de bonificação do cliente (opcional — só ADM)</strong>
                   {!userForBonus && (
                     <span className="block text-xs text-[#6B7280] mt-0.5">
                       Escolha um cliente para ver o saldo de créditos.
@@ -1085,8 +1350,8 @@ export default function SellerOperationsPanel({
                   )}
                   {!!userForBonus && (
                     <span className="block text-xs text-[#6B7280] mt-0.5">
-                      Sem marcar esta opção, criar mesmo com <strong>0</strong> créditos disponíveis é permitido — bilhete
-                      institucional, sem tocar na arrecadação. Disponível agora:{' '}
+                      Somente administradores podem criar bilhete institucional sem debitar crédito. Cambistas e clientes
+                      seguem o limite de créditos. Disponível agora:{' '}
                       <strong>{(userForBonus as BonusParticipationUserOption).referral_bonus_credits ?? 0}</strong>; já
                       utilizados:{' '}
                       <strong>{(userForBonus as BonusParticipationUserOption).referral_bonus_credits_used ?? 0}</strong>.
@@ -1129,51 +1394,106 @@ export default function SellerOperationsPanel({
         </SectionShell>
       )}
 
-      {showSaleCompleteModal && saleReceiptData && (
+      {showSaleCompleteModal && saleCompleteSummary && (
         <div className="fixed inset-0 z-[9997] flex items-center justify-center bg-[#1F1F1F]/60 backdrop-blur-sm px-4 py-8">
-          <div className="w-full max-w-md rounded-2xl border border-[#E5E7EB] bg-white shadow-2xl overflow-hidden">
-            <div className="px-6 py-5 border-b border-[#EEF1F6] bg-gradient-to-br from-[#F0FDF4] to-white">
+          <div className="w-full max-w-md rounded-2xl border border-[#E5E7EB] bg-white shadow-2xl overflow-hidden max-h-[95vh] flex flex-col">
+            <div className="px-6 py-5 border-b border-[#EEF1F6] bg-gradient-to-br from-[#F0FDF4] to-white shrink-0">
               <h3 className="text-xl font-bold text-[#1F1F1F]">
-                {saleReceiptData.paymentMethod === 'pix' ? 'Pix confirmado' : 'Venda registada'}
+                {saleCompleteSummary.paymentMethod === 'pix' ? 'Pix confirmado' : 'Venda registada'}
               </h3>
               <p className="mt-2 text-sm text-[#4B5563]">
-                {saleReceiptData.paymentMethod === 'cash' ? (
-                  <>
-                    Bilhete <strong>{saleReceiptData.ticketCode}</strong> criado para{' '}
-                    <strong>{saleReceiptData.clientName}</strong> ({formatCurrency(saleReceiptData.amount)}).
-                    {isAdmin
-                      ? ' Valide o pagamento em dinheiro na área de Ativações para activar o bilhete.'
-                      : ' Aguarda validação do administrador — após confirmar o pagamento em dinheiro, a sua comissão será gerada.'}
-                  </>
+                {saleCompleteSummary.tickets.length === 1 ? (
+                  saleCompleteSummary.paymentMethod === 'cash' ? (
+                    <>
+                      Bilhete <strong>{saleCompleteSummary.tickets[0].ticketCode}</strong> criado para{' '}
+                      <strong>{saleCompleteSummary.clientName}</strong> (
+                      {formatCurrency(saleCompleteSummary.totalAmount)}).
+                      {isAdmin
+                        ? ' Valide o pagamento em dinheiro na área de Ativações para activar o bilhete.'
+                        : ' Aguarda validação do administrador — após confirmar o pagamento em dinheiro, a sua comissão será gerada.'}
+                    </>
+                  ) : (
+                    <>
+                      Bilhete activo: <strong>{saleCompleteSummary.tickets[0].ticketCode}</strong>.
+                      {!isAdmin && ' Comissão registada conforme o seu percentual.'}
+                    </>
+                  )
                 ) : (
                   <>
-                    Bilhete activo: <strong>{saleReceiptData.ticketCode}</strong>.
-                    {!isAdmin && ' Comissão registada conforme o seu percentual.'}
+                    <strong>{saleCompleteSummary.tickets.length} bilhetes</strong> criados para{' '}
+                    <strong>{saleCompleteSummary.clientName}</strong> — total{' '}
+                    {formatCurrency(saleCompleteSummary.totalAmount)}.
+                    {' '}
+                    Toque em <strong>Comprovante</strong> em cada bilhete abaixo para imprimir ou partilhar.
+                    {saleCompleteSummary.paymentMethod === 'cash' &&
+                      (isAdmin
+                        ? ' Valide os pagamentos em dinheiro na área de Ativações.'
+                        : ' Aguarda validação do administrador para activar os bilhetes.')}
+                    {saleCompleteSummary.paymentMethod === 'pix' &&
+                      !isAdmin &&
+                      ' Comissões registadas conforme o seu percentual.'}
                   </>
                 )}
               </p>
             </div>
-            <div className="px-6 py-5 grid grid-cols-2 gap-3">
+            {saleCompleteSummary.tickets.length > 1 && (
+              <ul className="px-6 py-4 space-y-3 overflow-y-auto flex-1 min-h-0">
+                {saleCompleteSummary.tickets.map((ticket, index) => (
+                  <li
+                    key={ticket.ticketCode}
+                    className="rounded-xl border border-[#E5E7EB] bg-[#FAFAFB] px-3 py-2.5 text-sm"
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="font-semibold text-[#1F1F1F]">{ticket.contestName}</div>
+                        <div className="text-xs text-[#6B7280] mt-0.5">
+                          Bilhete: <strong className="text-[#1E7F43]">{ticket.ticketCode}</strong>
+                        </div>
+                        <div className="text-xs text-[#6B7280] mt-0.5">
+                          Números: {formatNumbersList(ticket.numbers)}
+                        </div>
+                        <div className="text-xs font-medium text-[#374151] mt-1">
+                          {formatCurrency(ticket.amount)}
+                        </div>
+                      </div>
+                      {saleReceiptList[index] && (
+                        <button
+                          type="button"
+                          onClick={() => openReceipt(saleReceiptList[index])}
+                          className="shrink-0 min-h-[40px] px-3 py-2 rounded-lg bg-[#1E7F43] text-white text-xs font-bold hover:bg-[#196c3a] touch-manipulation"
+                        >
+                          Comprovante
+                        </button>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div
+              className={`px-6 py-5 grid gap-3 shrink-0 ${saleReceiptList.length === 1 ? 'grid-cols-2' : 'grid-cols-1'}`}
+            >
               <button
                 type="button"
                 onClick={() => {
                   setShowSaleCompleteModal(false)
+                  setSaleCompleteSummary(null)
+                  setSaleReceiptList([])
                   setSaleReceiptData(null)
                 }}
                 className="min-h-[48px] rounded-xl border-2 border-[#D1D5DB] bg-white text-[#374151] font-bold hover:bg-[#F9FAFB]"
               >
                 Fechar
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowSaleCompleteModal(false)
-                  setShowReceiptModal(true)
-                }}
-                className="min-h-[48px] rounded-xl bg-[#1E7F43] text-white font-bold hover:bg-[#196c3a] shadow-sm"
-              >
-                Comprovante
-              </button>
+              {saleReceiptList.length === 1 && (
+                <button
+                  type="button"
+                  onClick={() => openReceipt(saleReceiptList[0])}
+                  className="min-h-[48px] rounded-xl bg-[#1E7F43] text-white font-bold hover:bg-[#196c3a] shadow-sm"
+                >
+                  Comprovante
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -1198,27 +1518,31 @@ export default function SellerOperationsPanel({
           amount={pixCheckout.amount}
           clientName={pixCheckout.clientName}
           contestName={pixCheckout.contestName}
+          cartLineItems={pixCheckout.cartLineItems}
           onPaid={(ticketCodes) => {
-            const ticketCode = ticketCodes[0] || '—'
-            const soldAt = new Date()
-            setSaleReceiptData(
-              buildSaleReceipt({
-                ticketCode,
-                numbers: pixCheckout.receiptNumbers,
-                contestName: pixCheckout.receiptContestName,
-                contestCode: pixCheckout.receiptContestCode,
-                contestStartDate: pixCheckout.receiptContestStartDate,
+            const cartItems = pixCheckout.receiptCartItems
+            const tickets = ticketCodes.map((code, index) => {
+              const item = cartItems[index]
+              return {
+                ticketCode: code,
+                contestName: item?.contestName ?? pixCheckout.contestName,
+                numbers: item?.selectedNumbers ?? [],
+                amount: item?.price ?? 0,
+                contestCode: item?.contestCode,
+                contestStartDate: item?.contestStartDate,
+              }
+            })
+
+            finishSaleSuccess(
+              {
                 clientName: pixCheckout.clientName,
-                amount: pixCheckout.amount,
                 paymentMethod: 'pix',
-                paymentStatusLabel: 'Pago',
-                sellerName: sellerDisplayName,
-                soldAt,
-              })
+                totalAmount: pixCheckout.amount,
+                tickets,
+              },
+              { resetAll: pixCheckout.resetAllAfterSuccess }
             )
-            setShowSaleCompleteModal(true)
             setPixCheckout(null)
-            setSaleForm({ userId: '', contestId: '', selectedNumbers: [], paymentMethod: '', clientCpf: '', notes: '' })
             void onSaleCompleted?.()
           }}
           onCancel={async () => {

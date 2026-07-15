@@ -861,12 +861,13 @@ export default function AdminFinance() {
                 </div>
               ) : (
                 <div className="overflow-x-auto custom-scrollbar">
-                  <table className="w-full min-w-[600px]">
+                  <table className="w-full min-w-[720px]">
                     <thead>
                       <tr className="border-b border-[#E5E5E5]">
                         <th className="text-left py-3 px-3 sm:px-4 text-xs sm:text-sm font-semibold text-[#1F1F1F]">Data</th>
                         <th className="text-left py-3 px-4 text-sm font-semibold text-[#1F1F1F]">Concurso</th>
                         <th className="text-left py-3 px-4 text-sm font-semibold text-[#1F1F1F]">Ticket</th>
+                        <th className="text-left py-3 px-4 text-sm font-semibold text-[#1F1F1F]">Cliente</th>
                         <th className="text-left py-3 px-4 text-sm font-semibold text-[#1F1F1F]">Cambista</th>
                         <th className="text-left py-3 px-4 text-sm font-semibold text-[#1F1F1F]">Valor</th>
                         <th className="text-left py-3 px-4 text-sm font-semibold text-[#1F1F1F]">Método</th>
@@ -895,6 +896,11 @@ export default function AdminFinance() {
                           </td>
                           <td className="py-3 px-4">
                             <span className="text-sm text-[#1F1F1F]">
+                              {payment.client?.name || '—'}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="text-sm text-[#1F1F1F]">
                               {payment.seller?.name || 'Venda direta'}
                             </span>
                           </td>
@@ -912,17 +918,15 @@ export default function AdminFinance() {
                           </td>
                           <td className="py-3 px-4">
                             <span className={`px-2 py-1 rounded-lg text-xs font-semibold ${getStatusBadgeClass(payment.status)}`}>
-                              {payment.awaitingValidation
-                                ? 'Pendente — aguarda validação'
-                                : payment.status === 'paid'
-                                  ? 'Pago'
-                                  : payment.status === 'pending'
-                                    ? 'Pendente'
-                                    : payment.status === 'cancelled'
-                                      ? 'Cancelado'
-                                      : payment.status === 'refunded'
-                                        ? 'Reembolsado'
-                                        : payment.status}
+                              {payment.status === 'paid'
+                                ? 'Pago'
+                                : payment.status === 'pending'
+                                  ? 'Pendente'
+                                  : payment.status === 'cancelled'
+                                    ? 'Cancelado'
+                                    : payment.status === 'refunded'
+                                      ? 'Reembolsado'
+                                      : payment.status}
                             </span>
                           </td>
                         </tr>

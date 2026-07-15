@@ -2,6 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import { checkPixPaymentStatus } from '../services/paymentsService'
 import { formatCurrency } from '../utils/formatters'
 
+export type SellerPixCartLineItem = {
+  contestName: string
+  selectedNumbers: number[]
+  price: number
+}
+
 type SellerPixCheckoutModalProps = {
   paymentId: string
   qrImage: string
@@ -10,8 +16,16 @@ type SellerPixCheckoutModalProps = {
   amount: number
   clientName: string
   contestName: string
+  cartLineItems?: SellerPixCartLineItem[]
   onPaid: (ticketCodes: string[]) => void
   onCancel: () => void | Promise<void>
+}
+
+function formatNumbersList(nums: number[]): string {
+  return [...nums]
+    .sort((a, b) => a - b)
+    .map((n) => String(n).padStart(2, '0'))
+    .join(', ')
 }
 
 export default function SellerPixCheckoutModal({
@@ -22,6 +36,7 @@ export default function SellerPixCheckoutModal({
   amount,
   clientName,
   contestName,
+  cartLineItems,
   onPaid,
   onCancel,
 }: SellerPixCheckoutModalProps) {
@@ -92,12 +107,34 @@ export default function SellerPixCheckoutModal({
         <div className="px-6 py-5 border-b border-[#EEF1F6] bg-gradient-to-br from-[#F0FDF4] to-white">
           <h3 className="text-xl font-bold text-[#1F1F1F]">Pagamento Pix</h3>
           <p className="mt-2 text-sm text-[#4B5563]">
-            Peça ao cliente <strong>{clientName}</strong> para pagar o bilhete de{' '}
-            <strong>{contestName}</strong>. A activação é automática após confirmação.
+            Peça ao cliente <strong>{clientName}</strong> para pagar{' '}
+            {cartLineItems && cartLineItems.length > 1 ? (
+              <>
+                <strong>{cartLineItems.length} bilhetes</strong> no total de{' '}
+                <strong>{formatCurrency(amount)}</strong>
+              </>
+            ) : (
+              <>
+                o bilhete de <strong>{contestName}</strong>
+              </>
+            )}
+            . A activação é automática após confirmação.
           </p>
         </div>
 
         <div className="px-6 py-5 space-y-4">
+          {cartLineItems && cartLineItems.length > 0 && (
+            <div className="rounded-xl border border-[#E5E7EB] bg-[#FAFAFB] p-3 space-y-3 max-h-48 overflow-y-auto">
+              {cartLineItems.map((item, idx) => (
+                <div key={idx} className={idx > 0 ? 'pt-3 border-t border-[#E5E7EB]' : ''}>
+                  <div className="text-sm font-semibold text-[#1F1F1F]">{item.contestName}</div>
+                  <div className="text-xs text-[#6B7280] mt-0.5">Números: {formatNumbersList(item.selectedNumbers)}</div>
+                  <div className="text-xs font-medium text-[#374151] mt-1">{formatCurrency(item.price)}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
           <div className="flex justify-between items-center text-sm">
             <span className="text-[#6B7280]">Valor</span>
             <span className="text-lg font-bold text-[#1E7F43]">{formatCurrency(amount)}</span>

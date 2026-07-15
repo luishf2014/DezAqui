@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabase'
-import type { CreatePixPaymentResponse } from './mercadopagoService'
+import type { CartItemForPix, CreatePixPaymentResponse } from './mercadopagoService'
 import type { SellerCreateClientResult } from './sellerAreaService'
 import { FunctionsHttpError } from '@supabase/supabase-js'
 
@@ -167,6 +167,68 @@ export async function adminCreatePixSale(params: {
       selectedNumbers: params.numbers,
       amount: params.amount,
       description: 'Venda administrativa — DezAqui',
+      customerName: params.customerName,
+      customerEmail: params.customerEmail,
+      customerPhone: params.customerPhone,
+      customerCpfCnpj: params.customerCpfCnpj,
+    },
+  })
+
+  if (error) {
+    throw new Error(await readEdgeFunctionErrorMessage(error, data))
+  }
+
+  const response = (data ?? {}) as Record<string, unknown>
+  if (response.error) {
+    throw new Error(String(response.error))
+  }
+  if (!response.id || !(response.qrCode as Record<string, unknown>)?.encodedImage) {
+    throw new Error('Resposta inválida do servidor Pix')
+  }
+
+  const qr = response.qrCode as Record<string, string>
+  return {
+    id: String(response.id),
+    status: String(response.status ?? 'pending'),
+    expirationDate: String(response.expirationDate ?? qr.expirationDate ?? ''),
+    qrCode: {
+      payload: qr.payload,
+      encodedImage: qr.encodedImage,
+      expirationDate: qr.expirationDate || String(response.expirationDate ?? ''),
+    },
+  }
+}
+
+/** Carrinho admin/cambista: 1 Pix com valor total; bilhetes criados após confirmação. */
+export async function adminCreatePixCartSale(params: {
+  buyerUserId: string
+  cartItems: CartItemForPix[]
+  amount: number
+  customerName: string
+  customerEmail?: string
+  customerPhone?: string
+  customerCpfCnpj?: string
+}): Promise<CreatePixPaymentResponse> {
+  const first = params.cartItems[0]
+  if (!first) {
+    throw new Error('Carrinho vazio')
+  }
+
+  const { data: { user }, error: userError } = await supabase.auth.getUser()
+  if (userError || !user) {
+    throw new Error('Sessão expirada. Inicie sessão novamente.')
+  }
+
+  const { data, error } = await supabase.functions.invoke('mercadopago-create-pix', {
+    body: {
+      buyerUserId: params.buyerUserId,
+      adminProxySale: true,
+      proxyMode: 'admin',
+      contestId: first.contestId,
+      selectedNumbers: first.selectedNumbers,
+      amount: params.amount,
+      description: 'Venda administrativa — DezAqui',
+      cartItems: params.cartItems,
       customerName: params.customerName,
       customerEmail: params.customerEmail,
       customerPhone: params.customerPhone,

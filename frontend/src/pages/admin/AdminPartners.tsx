@@ -20,7 +20,7 @@ import {
 } from '../../services/partnersAdminService'
 import { listAllContests, updateContest } from '../../services/contestsService'
 import type { Contest } from '../../types'
-import { formatCurrency, navigateToTop } from '../../utils/formatters'
+import { formatCurrency, formatDate, navigateToTop } from '../../utils/formatters'
 import { normalizeIsSellerFlag } from '../../services/profilesService'
 
 function contestStatusLabelPt(status: Contest['status']): string {
@@ -1048,7 +1048,7 @@ export default function AdminPartners() {
                   </td>
                   <td className="p-2 text-[11px] text-[#374151] max-w-[14rem]">
                     {cRow.paid_at && (
-                      <div className="text-[#166534] font-semibold">{new Date(cRow.paid_at).toLocaleString('pt-BR')}</div>
+                      <div className="text-[#166534] font-semibold">{formatDate(cRow.paid_at, true)}</div>
                     )}
                     {cRow.admin_payment_note && <div>{cRow.admin_payment_note}</div>}
                     {cRow.status === 'pending' && (
@@ -1146,7 +1146,7 @@ export default function AdminPartners() {
                   </td>
                   <td className="p-2 text-[11px] text-[#374151] max-w-[14rem]">
                     {ev.paid_at && (
-                      <div className="text-[#166534] font-semibold">{new Date(ev.paid_at).toLocaleString('pt-BR')}</div>
+                      <div className="text-[#166534] font-semibold">{formatDate(ev.paid_at, true)}</div>
                     )}
                     {ev.admin_payment_note && <div>{ev.admin_payment_note}</div>}
                     {ev.reward_type === 'manual_pix_bonus' && ev.status === 'pending' && (
