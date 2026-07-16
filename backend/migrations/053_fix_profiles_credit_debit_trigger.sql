@@ -339,3 +339,35 @@ $$;
 
 COMMENT ON FUNCTION public.rpc_redeem_referral_free_credit(uuid, integer[]) IS
   'MODIFIQUEI AQUI: consome 1 referral_bonus_credit (com verificação pós-débito) e cria bilhete bonificado.';
+
+-- ---------------------------------------------------------------------------
+-- 4) Backfill — créditos não concedidos antes desta correção do trigger
+-- (reward em referral_indication_rewards existe, mas referral_bonus_credits ficou 0)
+-- ---------------------------------------------------------------------------
+DO $$
+DECLARE
+  r RECORD;
+  accounted int;
+  missing int;
+BEGIN
+  FOR r IN
+    SELECT rir.beneficiary_profile_id AS pid, COUNT(*)::int AS earned
+    FROM public.referral_indication_rewards rir
+    WHERE rir.reward_type = 'free_ticket'
+    GROUP BY rir.beneficiary_profile_id
+  LOOP
+    SELECT COALESCE(p.referral_bonus_credits, 0) + COALESCE(p.referral_bonus_credits_used, 0)
+    INTO accounted
+    FROM public.profiles p
+    WHERE p.id = r.pid;
+
+    missing := r.earned - COALESCE(accounted, 0);
+    IF missing > 0 THEN
+      PERFORM set_config('app.referral_grant_credit', '1', true);
+      UPDATE public.profiles
+      SET referral_bonus_credits = referral_bonus_credits + missing
+      WHERE id = r.pid;
+    END IF;
+  END LOOP;
+END;
+$$;

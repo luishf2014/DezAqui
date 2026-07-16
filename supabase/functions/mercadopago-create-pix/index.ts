@@ -114,6 +114,54 @@ async function assertSellerLinkedClient(
   return { ok: false, error: 'Cliente não vinculado a este cambista' }
 }
 
+type ContestParticipationWindow = {
+  status: string
+  start_date: string
+  end_date: string
+  name?: string | null
+}
+
+function contestAcceptsParticipations(c: ContestParticipationWindow): boolean {
+  if (c.status !== 'active') return false
+  const now = Date.now()
+  if (new Date(c.start_date).getTime() > now) return false
+  if (new Date(c.end_date).getTime() < now) return false
+  return true
+}
+
+async function assertContestsAcceptParticipations(
+  admin: ReturnType<typeof createClient>,
+  contestIds: string[]
+): Promise<Response | null> {
+  const uniqueIds = [...new Set(contestIds.filter(Boolean))]
+  for (const contestId of uniqueIds) {
+    const { data: contest, error } = await admin
+      .from('contests')
+      .select('status, start_date, end_date, name')
+      .eq('id', contestId)
+      .maybeSingle()
+
+    if (error || !contest) {
+      return jsonResponse(
+        { error: 'Bolão não encontrado', debug: { step: 'contest_validation', contestId } },
+        400
+      )
+    }
+
+    if (!contestAcceptsParticipations(contest as ContestParticipationWindow)) {
+      const label = trim(String((contest as { name?: string | null }).name ?? '')) || contestId
+      return jsonResponse(
+        {
+          error: `O bolão "${label}" não está aceitando participações no momento`,
+          debug: { step: 'contest_closed', contestId },
+        },
+        400
+      )
+    }
+  }
+  return null
+}
+
 // ============================================
 // Edge Function
 // ============================================
@@ -347,6 +395,17 @@ serve(async (req) => {
         ? referrerResolved.referredById
         : null
     refSnap = refId ? referrerResolved.snapshot : null
+
+    const contestIdsForValidation = isCartFlow
+      ? [
+          ...new Set(
+            (cartItemsRaw as Array<{ contestId?: string }>).map((it) => trim(it?.contestId)).filter(Boolean)
+          ),
+        ]
+      : [contestId]
+
+    const contestBlock = await assertContestsAcceptParticipations(admin, contestIdsForValidation)
+    if (contestBlock) return contestBlock
 
     if (isCartFlow) {
       // ============================================

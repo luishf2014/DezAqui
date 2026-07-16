@@ -10,11 +10,12 @@ import { useCart } from '../contexts/CartContext'
 import { createParticipation } from '../services/participationsService'
 import { createPixPayment } from '../services/mercadopagoService'
 import { checkPixPaymentStatus } from '../services/paymentsService'
-import { listActiveContests } from '../services/contestsService'
+import { listActiveContests, getContestById } from '../services/contestsService'
 import { Contest } from '../types'
 import Header from '../components/Header'
 import Footer from '../components/Footer'
 import { peekPendingReferralCode, clearPendingReferralCode } from '../utils/referralCodeStorage'
+import { canAcceptParticipations, getContestState } from '../utils/contestHelpers'
 
 // MODIFIQUEI AQUI - Última compra (localStorage)
 const LAST_PURCHASE_KEY = 'dezaqui_last_purchase_v1'
@@ -354,6 +355,18 @@ export default function CartPage() {
       processingRef.current = true
       setProcessing(true)
       setError(null)
+
+      const contestIds = [...new Set(items.map((it) => it.contestId).filter(Boolean))]
+      for (const contestId of contestIds) {
+        const contestData = await getContestById(contestId)
+        if (!contestData || !canAcceptParticipations(contestData)) {
+          const label = contestData?.name ?? contestId
+          const msg = contestData
+            ? `${label}: ${getContestState(contestData).message}`
+            : `Bolão não encontrado (${contestId})`
+          throw new Error(msg)
+        }
+      }
 
       const firstItem = items[0]
       const cartContestId = firstItem?.contestId ? String(firstItem.contestId) : ''

@@ -231,6 +231,12 @@ export default function JoinContestPage() {
       return
     }
 
+    const hasDraws = draws.length > 0
+    if (!canAcceptParticipations(contest, hasDraws)) {
+      setError(getContestState(contest, hasDraws).message)
+      return
+    }
+
     // Validação no frontend
     if (selectedNumbers.length !== contest.numbers_per_participation) {
       setError(
@@ -270,6 +276,12 @@ export default function JoinContestPage() {
     // MODIFIQUEI AQUI
     if (profile?.is_active === false) {
       setError('Conta inativa — não é possível adicionar ao carrinho.')
+      return
+    }
+
+    const hasDraws = draws.length > 0
+    if (!canAcceptParticipations(contest, hasDraws)) {
+      setError(getContestState(contest, hasDraws).message)
       return
     }
 

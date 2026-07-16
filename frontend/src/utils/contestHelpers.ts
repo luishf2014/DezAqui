@@ -23,29 +23,15 @@ import { Contest } from '../types'
  * @returns true se o concurso ainda aceita participações
  */
 export function canAcceptParticipations(contest: Contest, hasDraws: boolean = false): boolean {
-  // Se o status não for 'active', não aceita participações
-  if (contest.status !== 'active') {
-    return false
-  }
+  return getContestState(contest, hasDraws).acceptsParticipations
+}
 
-  // REMOVIDO: Sorteios não bloqueiam mais participações
-  // O concurso aceita participações enquanto estiver 'active'
-
-  const now = new Date()
-  const startDate = new Date(contest.start_date)
-  const endDate = new Date(contest.end_date)
-
-  // MODIFIQUEI AQUI - Verificar se a data de início já começou
-  if (now < startDate) {
-    return false
-  }
-
-  // Verificar se a data de encerramento já passou
-  if (endDate < now) {
-    return false
-  }
-
-  return true
+/** Bolões em que o utilizador pode registar participação (exclui «Aguardando Resultado»). */
+export function filterContestsAcceptingParticipations(
+  contests: Contest[],
+  drawsByContestId?: Record<string, boolean>
+): Contest[] {
+  return contests.filter((c) => canAcceptParticipations(c, drawsByContestId?.[c.id] ?? false))
 }
 
 /**

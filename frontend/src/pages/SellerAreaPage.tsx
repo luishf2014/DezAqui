@@ -18,6 +18,7 @@ import {
   type SellerBonusClientRow,
 } from '../services/sellerAreaService'
 import { formatCurrency, formatDate } from '../utils/formatters'
+import { filterContestsAcceptingParticipations } from '../utils/contestHelpers'
 import { shareTelegramUrl, shareWhatsAppUrl } from '../utils/contestShareLink'
 import type { Contest } from '../types'
 
@@ -93,7 +94,7 @@ export default function SellerAreaPage() {
     setContestsLoading(true)
     setContestsError(null)
     try {
-      const cs = await listActiveContests()
+      const cs = filterContestsAcceptingParticipations(await listActiveContests())
       setContests(cs)
       setLinkContestId((prev) => {
         if (!cs.length) return ''

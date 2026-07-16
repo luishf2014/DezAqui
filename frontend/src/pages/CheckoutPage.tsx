@@ -7,6 +7,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate, useLocation, Link } from 'react-router-dom'
 import { getContestById } from '../services/contestsService'
+import { listDrawsByContestId } from '../services/drawsService'
 import { createParticipation, redeemReferralFreeCreditParticipation } from '../services/participationsService'
 import { createPixPayment } from '../services/mercadopagoService'
 import { checkPixPaymentStatus } from '../services/paymentsService'
@@ -16,6 +17,7 @@ import { useAuth } from '../contexts/AuthContext'
 import Header from '../components/Header'
 import Footer from '../components/Footer'
 import { peekPendingReferralCode, clearPendingReferralCode } from '../utils/referralCodeStorage'
+import { canAcceptParticipations, getContestState } from '../utils/contestHelpers'
 
 interface LocationState {
   selectedNumbers: number[]
@@ -148,8 +150,10 @@ export default function CheckoutPage() {
         setLoading(true)
         setError(null)
 
-        // Carregar concurso
-        const contestData = await getContestById(id)
+        const [contestData, drawsData] = await Promise.all([
+          getContestById(id),
+          listDrawsByContestId(id),
+        ])
         if (cancelled) return
 
         if (!contestData) {
@@ -157,8 +161,9 @@ export default function CheckoutPage() {
           return
         }
 
-        if (contestData.status !== 'active') {
-          setError('Este concurso não está ativo para participação')
+        const hasDraws = drawsData.length > 0
+        if (!canAcceptParticipations(contestData, hasDraws)) {
+          setError(getContestState(contestData, hasDraws).message)
           return
         }
 

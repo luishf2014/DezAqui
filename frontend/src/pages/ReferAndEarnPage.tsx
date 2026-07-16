@@ -7,6 +7,7 @@ import Header from '../components/Header'
 import Footer from '../components/Footer'
 import CustomSelect from '../components/CustomSelect'
 import NumberPicker from '../components/NumberPicker'
+import ContestStatusBadge from '../components/ContestStatusBadge'
 import { useAuth } from '../contexts/AuthContext'
 import { normalizeIsSellerFlag } from '../services/profilesService'
 import { listActiveContests } from '../services/contestsService'
@@ -17,6 +18,7 @@ import {
 } from '../services/referIndicateService'
 import { redeemReferralFreeCreditParticipation } from '../services/participationsService'
 import { formatCurrency } from '../utils/formatters'
+import { filterContestsAcceptingParticipations, canAcceptParticipations, getContestState } from '../utils/contestHelpers'
 import { buildConcursosShareUrl, shareTelegramUrl, shareWhatsAppUrl } from '../utils/contestShareLink'
 import type { Contest } from '../types'
 
@@ -41,6 +43,7 @@ export default function ReferAndEarnPage() {
   const [dashLoading, setDashLoading] = useState(true)
   const [dashErr, setDashErr] = useState<string | null>(null)
 
+  const [activeContests, setActiveContests] = useState<Contest[]>([])
   const [contests, setContests] = useState<Contest[]>([])
   const [contestsLoading, setContestsLoading] = useState(true)
   const [linkContestId, setLinkContestId] = useState('')
@@ -68,19 +71,22 @@ export default function ReferAndEarnPage() {
   const loadContests = useCallback(async () => {
     setContestsLoading(true)
     try {
-      const cs = await listActiveContests()
-      setContests(cs)
+      const all = await listActiveContests()
+      const accepting = filterContestsAcceptingParticipations(all)
+      setActiveContests(all)
+      setContests(accepting)
       setLinkContestId((prev) => {
-        if (!cs.length) return ''
-        const ok = prev && cs.some((c) => c.id === prev)
-        return ok ? prev : cs[0].id
+        if (!accepting.length) return ''
+        const ok = prev && accepting.some((c) => c.id === prev)
+        return ok ? prev : accepting[0].id
       })
       setCreditContestId((prev) => {
-        if (!cs.length) return ''
-        const ok = prev && cs.some((c) => c.id === prev)
-        return ok ? prev : cs[0].id
+        if (!accepting.length) return ''
+        const ok = prev && accepting.some((c) => c.id === prev)
+        return ok ? prev : accepting[0].id
       })
     } catch {
+      setActiveContests([])
       setContests([])
     } finally {
       setContestsLoading(false)
@@ -96,6 +102,12 @@ export default function ReferAndEarnPage() {
     if (authLoading || !user || isSeller) return
     void loadContests()
   }, [authLoading, user, isSeller, loadContests])
+
+  const contestById = useMemo(() => {
+    const map = new Map<string, Contest>()
+    for (const c of activeContests) map.set(c.id, c)
+    return map
+  }, [activeContests])
 
   const referralCode = dash?.profile.referral_code?.trim() ?? profile?.referral_code?.trim() ?? ''
   const shareUrl = useMemo(() => {
@@ -260,15 +272,25 @@ export default function ReferAndEarnPage() {
               {contestProgress.map((row) => {
                 const pct = progressPercent(row)
                 const atGoal = row.target_sales > 0 && row.current_cycle_sales === 0 && row.confirmed_sales_total > 0
+                const contest = contestById.get(row.contest_id)
+                const accepts = contest ? canAcceptParticipations(contest) : false
+                const contestState = contest ? getContestState(contest) : null
                 return (
                   <li
                     key={row.contest_id}
-                    className="rounded-xl border border-[#EEF1F6] bg-[#FAFBFC] px-4 py-4 space-y-3"
+                    className={`rounded-xl border px-4 py-4 space-y-3 ${
+                      accepts
+                        ? 'border-[#EEF1F6] bg-[#FAFBFC]'
+                        : 'border-[#F4C430]/30 bg-[#FFFBEB]/40'
+                    }`}
                   >
                     <div className="flex flex-wrap items-start justify-between gap-2">
-                      <div className="min-w-0">
+                      <div className="min-w-0 space-y-2">
+                        {contest ? (
+                          <ContestStatusBadge contest={contest} variant="card" />
+                        ) : null}
                         <h3 className="font-bold text-[#1F1F1F] truncate">{row.contest_name}</h3>
-                        <p className="text-xs text-[#1F1F1F]/60 mt-0.5">{progressRewardLabel(row)}</p>
+                        <p className="text-xs text-[#1F1F1F]/60">{progressRewardLabel(row)}</p>
                       </div>
                       <div className="text-right shrink-0">
                         <div className="text-sm font-extrabold text-[#1E7F43] tabular-nums">
@@ -287,10 +309,18 @@ export default function ReferAndEarnPage() {
                       aria-label={`Progresso em ${row.contest_name}`}
                     >
                       <div
-                        className="h-full rounded-full bg-gradient-to-r from-[#1E7F43] to-[#3CCB7F] transition-all duration-500"
+                        className={`h-full rounded-full transition-all duration-500 ${
+                          accepts
+                            ? 'bg-gradient-to-r from-[#1E7F43] to-[#3CCB7F]'
+                            : 'bg-[#F4C430]/70'
+                        }`}
                         style={{ width: `${pct}%` }}
                       />
                     </div>
+
+                    {!accepts && contestState && (
+                      <p className="text-xs text-[#92400E] font-medium">{contestState.message}</p>
+                    )}
 
                     <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-[#1F1F1F]/55">
                       <span>
@@ -299,7 +329,7 @@ export default function ReferAndEarnPage() {
                       <span>
                         Metas batidas: <strong className="text-[#1F1F1F]">{row.milestones_reached}</strong>
                       </span>
-                      {atGoal && (
+                      {atGoal && accepts && (
                         <span className="text-[#1E7F43] font-semibold">
                           Meta recém-atingida — barra reiniciada para o próximo ciclo
                         </span>
