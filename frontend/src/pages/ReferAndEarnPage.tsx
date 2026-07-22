@@ -18,7 +18,7 @@ import {
 } from '../services/referIndicateService'
 import { redeemReferralFreeCreditParticipation } from '../services/participationsService'
 import { formatCurrency } from '../utils/formatters'
-import { filterContestsAcceptingParticipations, canAcceptParticipations, getContestState } from '../utils/contestHelpers'
+import { filterContestsAcceptingParticipations } from '../utils/contestHelpers'
 import { buildConcursosShareUrl, shareTelegramUrl, shareWhatsAppUrl } from '../utils/contestShareLink'
 import type { Contest } from '../types'
 
@@ -43,7 +43,7 @@ export default function ReferAndEarnPage() {
   const [dashLoading, setDashLoading] = useState(true)
   const [dashErr, setDashErr] = useState<string | null>(null)
 
-  const [activeContests, setActiveContests] = useState<Contest[]>([])
+  /** Bolões que ainda aceitam participação (exclui cancelados, finalizados e «Aguardando Resultado»). */
   const [contests, setContests] = useState<Contest[]>([])
   const [contestsLoading, setContestsLoading] = useState(true)
   const [linkContestId, setLinkContestId] = useState('')
@@ -73,7 +73,6 @@ export default function ReferAndEarnPage() {
     try {
       const all = await listActiveContests()
       const accepting = filterContestsAcceptingParticipations(all)
-      setActiveContests(all)
       setContests(accepting)
       setLinkContestId((prev) => {
         if (!accepting.length) return ''
@@ -86,7 +85,6 @@ export default function ReferAndEarnPage() {
         return ok ? prev : accepting[0].id
       })
     } catch {
-      setActiveContests([])
       setContests([])
     } finally {
       setContestsLoading(false)
@@ -105,9 +103,17 @@ export default function ReferAndEarnPage() {
 
   const contestById = useMemo(() => {
     const map = new Map<string, Contest>()
-    for (const c of activeContests) map.set(c.id, c)
+    for (const c of contests) map.set(c.id, c)
     return map
-  }, [activeContests])
+  }, [contests])
+
+  const contestProgress = dash?.contest_progress ?? []
+
+  const visibleContestProgress = useMemo(() => {
+    if (contestsLoading) return []
+    const acceptingIds = new Set(contests.map((c) => c.id))
+    return contestProgress.filter((row) => acceptingIds.has(row.contest_id))
+  }, [contestProgress, contests, contestsLoading])
 
   const referralCode = dash?.profile.referral_code?.trim() ?? profile?.referral_code?.trim() ?? ''
   const shareUrl = useMemo(() => {
@@ -204,7 +210,6 @@ export default function ReferAndEarnPage() {
   }
 
   const st = dash?.stats
-  const contestProgress = dash?.contest_progress ?? []
   const lineShare = 'Indique amigos na DezAqui e acompanhe seus bônus aqui.'
   const waHref = shareUrl ? shareWhatsAppUrl(lineShare, shareUrl) : '#'
   const tgHref = shareUrl ? shareTelegramUrl(lineShare, shareUrl) : '#'
@@ -258,31 +263,25 @@ export default function ReferAndEarnPage() {
             </p>
           </div>
 
-          {dashLoading ? (
+          {dashLoading || contestsLoading ? (
             <div className="flex justify-center py-6">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#1E7F43]" />
             </div>
-          ) : contestProgress.length === 0 ? (
+          ) : visibleContestProgress.length === 0 ? (
             <p className="text-sm text-[#1F1F1F]/60 rounded-xl border border-dashed border-[#E5E5E5] px-4 py-5 text-center">
-              Nenhum bolão ativo com meta de indicação no momento. Quando o administrador configurar, sua barra aparecerá
-              aqui.
+              Nenhum bolão aceitando participações com meta de indicação no momento. Quando houver um bolão aberto para
+              inscrições, sua barra aparecerá aqui.
             </p>
           ) : (
             <ul className="space-y-4">
-              {contestProgress.map((row) => {
+              {visibleContestProgress.map((row) => {
                 const pct = progressPercent(row)
                 const atGoal = row.target_sales > 0 && row.current_cycle_sales === 0 && row.confirmed_sales_total > 0
                 const contest = contestById.get(row.contest_id)
-                const accepts = contest ? canAcceptParticipations(contest) : false
-                const contestState = contest ? getContestState(contest) : null
                 return (
                   <li
                     key={row.contest_id}
-                    className={`rounded-xl border px-4 py-4 space-y-3 ${
-                      accepts
-                        ? 'border-[#EEF1F6] bg-[#FAFBFC]'
-                        : 'border-[#F4C430]/30 bg-[#FFFBEB]/40'
-                    }`}
+                    className="rounded-xl border border-[#EEF1F6] bg-[#FAFBFC] px-4 py-4 space-y-3"
                   >
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div className="min-w-0 space-y-2">
@@ -309,18 +308,10 @@ export default function ReferAndEarnPage() {
                       aria-label={`Progresso em ${row.contest_name}`}
                     >
                       <div
-                        className={`h-full rounded-full transition-all duration-500 ${
-                          accepts
-                            ? 'bg-gradient-to-r from-[#1E7F43] to-[#3CCB7F]'
-                            : 'bg-[#F4C430]/70'
-                        }`}
+                        className="h-full rounded-full transition-all duration-500 bg-gradient-to-r from-[#1E7F43] to-[#3CCB7F]"
                         style={{ width: `${pct}%` }}
                       />
                     </div>
-
-                    {!accepts && contestState && (
-                      <p className="text-xs text-[#92400E] font-medium">{contestState.message}</p>
-                    )}
 
                     <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-[#1F1F1F]/55">
                       <span>
@@ -329,7 +320,7 @@ export default function ReferAndEarnPage() {
                       <span>
                         Metas batidas: <strong className="text-[#1F1F1F]">{row.milestones_reached}</strong>
                       </span>
-                      {atGoal && accepts && (
+                      {atGoal && (
                         <span className="text-[#1E7F43] font-semibold">
                           Meta recém-atingida — barra reiniciada para o próximo ciclo
                         </span>
