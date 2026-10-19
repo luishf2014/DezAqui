@@ -38,6 +38,7 @@ export default function AdminDraws() {
   const [useCustomNumbersCount, setUseCustomNumbersCount] = useState(false)
   const [savingDraw, setSavingDraw] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null)
+  const [deletingDraw, setDeletingDraw] = useState(false)
   // MODIFIQUEI AQUI - Modal Concurso Oficial (informativo, antes do sorteio, sem vínculo com draws)
   const [showOfficialContestFormModal, setShowOfficialContestFormModal] = useState(false)
   const [officialContestForm, setOfficialContestForm] = useState({
@@ -456,17 +457,21 @@ export default function AdminDraws() {
         // Removida chamada manual para evitar duplicatas
       }
 
-      const input: CreateDrawInput | UpdateDrawInput = {
-        ...drawForm,
-        draw_date: new Date(drawForm.draw_date).toISOString(),
-        // Só incluir numbers_count se o toggle estiver ativo e houver um valor
-        numbers_count: useCustomNumbersCount ? drawForm.numbers_count : undefined,
-      }
-
       if (editingDraw) {
-        await updateDraw(editingDraw.id, input as UpdateDrawInput)
+        const updateInput: UpdateDrawInput = {
+          numbers: drawForm.numbers,
+          draw_date: new Date(drawForm.draw_date).toISOString(),
+          // NULL remove uma quantidade customizada já salva.
+          numbers_count: useCustomNumbersCount ? drawForm.numbers_count : null,
+        }
+        await updateDraw(editingDraw.id, updateInput)
       } else {
-        const createInput = input as CreateDrawInput
+        const createInput: CreateDrawInput = {
+          contest_id: drawForm.contest_id,
+          numbers: drawForm.numbers,
+          draw_date: new Date(drawForm.draw_date).toISOString(),
+          numbers_count: useCustomNumbersCount ? drawForm.numbers_count : undefined,
+        }
         const createdDraw = await createDraw(createInput)
         console.log('[AdminDraws] Sorteio criado:', createdDraw.id)
 
@@ -546,6 +551,7 @@ export default function AdminDraws() {
 
   const handleDeleteDraw = async (id: string) => {
     try {
+      setDeletingDraw(true)
       await deleteDraw(id)
       await loadDraws()
       setShowDeleteConfirm(null)
@@ -585,6 +591,8 @@ export default function AdminDraws() {
         err instanceof Error ? err.message : 'Erro ao deletar sorteio',
         'error'
       )
+    } finally {
+      setDeletingDraw(false)
     }
   }
 
@@ -1308,6 +1316,21 @@ export default function AdminDraws() {
                   <p className="text-[#1F1F1F]/70 mb-6">
                     Tem certeza que deseja excluir este sorteio? Esta ação não pode ser desfeita.
                     <br />
+                    {(() => {
+                      const draw = draws.find(item => item.id === showDeleteConfirm)
+                      const contest = contests.find(item => item.id === draw?.contest_id)
+                      if (!draw) return null
+
+                      return (
+                        <span className="block my-4 rounded-lg bg-[#F9F9F9] p-3 text-sm text-[#1F1F1F]">
+                          <strong>{draw.code || 'Sorteio sem código'}</strong>
+                          <br />
+                          {contest?.name || 'Concurso não identificado'} — {formatDate(draw.draw_date)}
+                          <br />
+                          Números: {draw.numbers.map(number => String(number).padStart(2, '0')).join(', ')}
+                        </span>
+                      )
+                    })()}
                     <span className="text-sm font-semibold text-red-600">
                       ⚠️ Atenção: Sorteios são eventos históricos e geralmente não devem ser deletados.
                     </span>
@@ -1315,15 +1338,17 @@ export default function AdminDraws() {
                   <div className="flex items-center justify-end gap-4">
                     <button
                       onClick={() => setShowDeleteConfirm(null)}
-                      className="px-6 py-2 bg-gray-300 text-[#1F1F1F] rounded-lg hover:bg-gray-400 transition-colors font-semibold"
+                      disabled={deletingDraw}
+                      className="px-6 py-2 bg-gray-300 text-[#1F1F1F] rounded-lg hover:bg-gray-400 transition-colors font-semibold disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       Cancelar
                     </button>
                     <button
                       onClick={() => handleDeleteDraw(showDeleteConfirm)}
-                      className="px-6 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors font-semibold"
+                      disabled={deletingDraw}
+                      className="px-6 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors font-semibold disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      Excluir
+                      {deletingDraw ? 'Excluindo...' : 'Excluir'}
                     </button>
                   </div>
                 </div>

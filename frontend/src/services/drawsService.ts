@@ -215,7 +215,7 @@ export async function createDraw(input: CreateDrawInput): Promise<Draw> {
 export interface UpdateDrawInput {
   numbers?: number[]
   draw_date?: string
-  numbers_count?: number // Quantidade de números para este sorteio específico
+  numbers_count?: number | null // NULL volta a usar a quantidade padrão do concurso
 }
 
 /**
@@ -244,7 +244,7 @@ export async function updateDraw(id: string, input: UpdateDrawInput): Promise<Dr
     .update(input)
     .eq('id', id)
     .select()
-    .single()
+    .maybeSingle()
 
   if (error) {
     if (error.code === '42501') {
@@ -253,18 +253,24 @@ export async function updateDraw(id: string, input: UpdateDrawInput): Promise<Dr
     throw new Error(`Erro ao atualizar sorteio: ${error.message}`)
   }
 
+  // Um UPDATE bloqueado pelo RLS pode retornar sucesso com zero linhas.
+  // Evita o 406 do .single() e apresenta uma orientação útil ao administrador.
+  if (!data) {
+    throw new Error('O sorteio não foi atualizado. Aplique a migração 056 no Supabase e confirme que sua conta possui permissão de administrador.')
+  }
+
   // MODIFIQUEI AQUI - Reprocessar concurso após atualizar sorteio
-  if (data) {
-    try {
-      console.log(`[drawsService] Iniciando reprocessamento do concurso ${data.contest_id} após atualizar sorteio...`)
-      await reprocessContestAfterDraw(data.contest_id)
-      // MODIFIQUEI AQUI - Reprocessar prêmios do sorteio atualizado
-      await reprocessDrawResults(id)
-      console.log(`[drawsService] Reprocessamento concluído para concurso ${data.contest_id}`)
-    } catch (reprocessError) {
-      console.error('[drawsService] Erro ao reprocessar concurso após atualizar sorteio:', reprocessError)
-      // Não falhar a atualização do sorteio se o reprocessamento falhar
-    }
+  try {
+    console.log(`[drawsService] Iniciando reprocessamento do concurso ${data.contest_id} após atualizar sorteio...`)
+    await reprocessContestAfterDraw(data.contest_id, {
+      reopenFinishedContestWithoutWinner: true,
+    })
+    // MODIFIQUEI AQUI - Reprocessar prêmios do sorteio atualizado
+    await reprocessDrawResults(id)
+    console.log(`[drawsService] Reprocessamento concluído para concurso ${data.contest_id}`)
+  } catch (reprocessError) {
+    console.error('[drawsService] Erro ao reprocessar concurso após atualizar sorteio:', reprocessError)
+    // Não falhar a atualização do sorteio se o reprocessamento falhar
   }
 
   return data
@@ -291,16 +297,24 @@ export async function deleteDraw(id: string): Promise<void> {
 
   const contestId = drawData?.contest_id
 
-  const { error } = await supabase
+  const { data: deletedDraw, error } = await supabase
     .from('draws')
     .delete()
     .eq('id', id)
+    .select('id')
+    .maybeSingle()
 
   if (error) {
     if (error.code === '42501') {
       throw new Error('Você não tem permissão para deletar este sorteio')
     }
     throw new Error(`Erro ao deletar sorteio: ${error.message}`)
+  }
+
+  // Com RLS, um DELETE sem permissão pode afetar zero linhas sem retornar erro.
+  // Validar o retorno evita informar sucesso quando o sorteio continua no banco.
+  if (!deletedDraw) {
+    throw new Error('O sorteio não foi excluído. Verifique se ele ainda existe e se sua conta possui permissão de administrador.')
   }
 
   // MODIFIQUEI AQUI - Reprocessar concurso após deletar sorteio

@@ -11,13 +11,43 @@ import { getAllHitNumbers } from '../utils/rankingHelpers'
 import { calculateRateio, calculateDrawPayouts, RateioConfig } from '../utils/rateioCalculator'
 import { getPrizePoolTotalForContest } from '../utils/contestPrizePool'
 
+interface ReprocessContestAfterDrawOptions {
+  /**
+   * Reativa um concurso finalizado quando, após a correção do sorteio,
+   * nenhuma participação continua com todos os números acertados.
+   */
+  reopenFinishedContestWithoutWinner?: boolean
+}
+
+async function reopenFinishedContest(contestId: string): Promise<void> {
+  const { data, error } = await supabase
+    .from('contests')
+    .update({ status: 'active', updated_at: new Date().toISOString() })
+    .eq('id', contestId)
+    .eq('status', 'finished')
+    .select('id')
+    .maybeSingle()
+
+  if (error) {
+    throw new Error(`Erro ao reativar concurso sem ganhador: ${error.message}`)
+  }
+
+  if (data) {
+    console.log(`[reprocessService] Concurso ${contestId} reativado porque não há mais ganhador TOP`)
+  }
+}
+
 /**
  * Reprocessa um concurso após mudanças em sorteios
  * MODIFIQUEI AQUI - Função central para reprocessar acertos, pontuações e rateio
  * 
  * @param contestId ID do concurso a ser reprocessado
+ * @param options Opções específicas do fluxo que iniciou o reprocessamento
  */
-export async function reprocessContestAfterDraw(contestId: string): Promise<void> {
+export async function reprocessContestAfterDraw(
+  contestId: string,
+  options: ReprocessContestAfterDrawOptions = {}
+): Promise<void> {
   console.log(`[reprocessService] Iniciando reprocessamento do concurso ${contestId}...`)
 
   try {
@@ -35,6 +65,9 @@ export async function reprocessContestAfterDraw(contestId: string): Promise<void
 
     if (!participations || participations.length === 0) {
       console.log(`[reprocessService] Nenhuma participação ativa encontrada para o concurso ${contestId}`)
+      if (options.reopenFinishedContestWithoutWinner) {
+        await reopenFinishedContest(contestId)
+      }
       return
     }
 
@@ -52,6 +85,9 @@ export async function reprocessContestAfterDraw(contestId: string): Promise<void
             .eq('id', participation.id)
         })
       )
+      if (options.reopenFinishedContestWithoutWinner) {
+        await reopenFinishedContest(contestId)
+      }
       return
     }
 
@@ -137,6 +173,8 @@ export async function reprocessContestAfterDraw(contestId: string): Promise<void
         } else {
           console.log(`[reprocessService] Concurso ${contestId} encerrado com sucesso!`)
         }
+      } else if (options.reopenFinishedContestWithoutWinner) {
+        await reopenFinishedContest(contestId)
       }
     }
 
